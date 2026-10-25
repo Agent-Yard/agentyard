@@ -106,16 +106,16 @@ public class ChannelProfileRecord extends UpdatableRecordImpl<ChannelProfileReco
     }
 
     /**
-     * Setter for <code>public.channel_profile.assistant_binding</code>.
+     * Setter for <code>public.channel_profile.entry_binding</code>.
      */
-    public void setAssistantBinding(JSONB value) {
+    public void setEntryBinding(JSONB value) {
         set(6, value);
     }
 
     /**
-     * Getter for <code>public.channel_profile.assistant_binding</code>.
+     * Getter for <code>public.channel_profile.entry_binding</code>.
      */
-    public JSONB getAssistantBinding() {
+    public JSONB getEntryBinding() {
         return (JSONB) get(6);
     }
 
@@ -212,7 +212,7 @@ public class ChannelProfileRecord extends UpdatableRecordImpl<ChannelProfileReco
     /**
      * Create a detached, initialised ChannelProfileRecord
      */
-    public ChannelProfileRecord(String id, String providerType, String displayName, String status, Boolean inboundEnabled, JSONB config, JSONB assistantBinding, String integrationAccountId, String externalSecretRef, Long revision, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+    public ChannelProfileRecord(String id, String providerType, String displayName, String status, Boolean inboundEnabled, JSONB config, JSONB entryBinding, String integrationAccountId, String externalSecretRef, Long revision, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
         super(ChannelProfile.CHANNEL_PROFILE);
 
         setId(id);
@@ -221,7 +221,7 @@ public class ChannelProfileRecord extends UpdatableRecordImpl<ChannelProfileReco
         setStatus(status);
         setInboundEnabled(inboundEnabled);
         setConfig(config);
-        setAssistantBinding(assistantBinding);
+        setEntryBinding(entryBinding);
         setIntegrationAccountId(integrationAccountId);
         setExternalSecretRef(externalSecretRef);
         setRevision(revision);

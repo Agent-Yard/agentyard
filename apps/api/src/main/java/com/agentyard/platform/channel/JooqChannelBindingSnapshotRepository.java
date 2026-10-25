@@ -13,7 +13,9 @@ import org.jooq.Record;
 import org.springframework.stereotype.Repository;
 
 import static com.agentyard.persistence.jooq.Tables.CHANNEL_SESSION_BINDING_SNAPSHOT;
-import static com.agentyard.persistence.jooq.Tables.SESSION_RUNTIME_SESSION;
+import static com.agentyard.persistence.jooq.Tables.AGENT_SESSION;
+import static com.agentyard.persistence.jooq.Tables.AGENT_RECEPTION_BINDING;
+import static com.agentyard.persistence.jooq.Tables.CATALOG_ENTRY;
 
 @Repository
 public class JooqChannelBindingSnapshotRepository {
@@ -34,8 +36,8 @@ public class JooqChannelBindingSnapshotRepository {
             .set(CHANNEL_SESSION_BINDING_SNAPSHOT.PROVIDER_TYPE, snapshot.providerType())
             .set(CHANNEL_SESSION_BINDING_SNAPSHOT.EXTERNAL_CONVERSATION_ID, blankToNull(snapshot.externalConversationId()))
             .set(CHANNEL_SESSION_BINDING_SNAPSHOT.EXTERNAL_USER_ID, blankToNull(snapshot.externalUserId()))
-            .set(CHANNEL_SESSION_BINDING_SNAPSHOT.ASSISTANT_ID, blankToNull(snapshot.assistantId()))
-            .set(CHANNEL_SESSION_BINDING_SNAPSHOT.CUSTOMER_ID, blankToNull(snapshot.customerId()))
+            .set(CHANNEL_SESSION_BINDING_SNAPSHOT.ENTRY_ID, blankToNull(snapshot.entryId()))
+            .set(CHANNEL_SESSION_BINDING_SNAPSHOT.PARTICIPANT_ID, blankToNull(snapshot.participantId()))
             .set(CHANNEL_SESSION_BINDING_SNAPSHOT.BINDING_STATUS, snapshot.bindingStatus())
             .set(CHANNEL_SESSION_BINDING_SNAPSHOT.PROFILE_STATUS, snapshot.profileStatus().name())
             .set(CHANNEL_SESSION_BINDING_SNAPSHOT.PROFILE_REVISION, snapshot.profileRevision())
@@ -49,8 +51,8 @@ public class JooqChannelBindingSnapshotRepository {
             .set(CHANNEL_SESSION_BINDING_SNAPSHOT.PROVIDER_TYPE, snapshot.providerType())
             .set(CHANNEL_SESSION_BINDING_SNAPSHOT.EXTERNAL_CONVERSATION_ID, blankToNull(snapshot.externalConversationId()))
             .set(CHANNEL_SESSION_BINDING_SNAPSHOT.EXTERNAL_USER_ID, blankToNull(snapshot.externalUserId()))
-            .set(CHANNEL_SESSION_BINDING_SNAPSHOT.ASSISTANT_ID, blankToNull(snapshot.assistantId()))
-            .set(CHANNEL_SESSION_BINDING_SNAPSHOT.CUSTOMER_ID, blankToNull(snapshot.customerId()))
+            .set(CHANNEL_SESSION_BINDING_SNAPSHOT.ENTRY_ID, blankToNull(snapshot.entryId()))
+            .set(CHANNEL_SESSION_BINDING_SNAPSHOT.PARTICIPANT_ID, blankToNull(snapshot.participantId()))
             .set(CHANNEL_SESSION_BINDING_SNAPSHOT.BINDING_STATUS, snapshot.bindingStatus())
             .set(CHANNEL_SESSION_BINDING_SNAPSHOT.PROFILE_STATUS, snapshot.profileStatus().name())
             .set(CHANNEL_SESSION_BINDING_SNAPSHOT.PROFILE_REVISION, snapshot.profileRevision())
@@ -70,11 +72,16 @@ public class JooqChannelBindingSnapshotRepository {
     public Optional<ChannelOutboundBindingSnapshot> findActiveBySessionId(String sessionId) {
         List<ChannelOutboundBindingSnapshot> rows = dsl.select(CHANNEL_SESSION_BINDING_SNAPSHOT.fields())
             .from(CHANNEL_SESSION_BINDING_SNAPSHOT)
-            .join(SESSION_RUNTIME_SESSION)
-            .on(SESSION_RUNTIME_SESSION.ID.eq(CHANNEL_SESSION_BINDING_SNAPSHOT.SESSION_ID))
+            .join(AGENT_SESSION)
+            .on(AGENT_SESSION.ID.eq(CHANNEL_SESSION_BINDING_SNAPSHOT.SESSION_ID))
+            .join(AGENT_RECEPTION_BINDING)
+            .on(AGENT_RECEPTION_BINDING.SESSION_ID.eq(AGENT_SESSION.ID))
+            .join(CATALOG_ENTRY).on(CATALOG_ENTRY.ID.eq(AGENT_RECEPTION_BINDING.ENTRY_ID))
             .where(CHANNEL_SESSION_BINDING_SNAPSHOT.SESSION_ID.eq(requireText(sessionId, "sessionId")))
             .and(activeSnapshotCondition())
             .and(activeSessionChannelIdentityMatchesSnapshot())
+            .and(CATALOG_ENTRY.ENABLED.isTrue())
+            .and(ChannelParticipantIdentityRepository.matchesSnapshot())
             .orderBy(CHANNEL_SESSION_BINDING_SNAPSHOT.UPDATED_AT.desc(), CHANNEL_SESSION_BINDING_SNAPSHOT.BINDING_ID.asc())
             .limit(2)
             .fetch(this::map);
@@ -132,12 +139,9 @@ public class JooqChannelBindingSnapshotRepository {
     }
 
     private static org.jooq.Condition activeSessionChannelIdentityMatchesSnapshot() {
-        return SESSION_RUNTIME_SESSION.ENTRY_SCOPE.eq("CHANNEL")
-            .and(SESSION_RUNTIME_SESSION.STATUS.ne("ENDED"))
-            .and(SESSION_RUNTIME_SESSION.CHANNEL_PROFILE_ID.eq(CHANNEL_SESSION_BINDING_SNAPSHOT.CHANNEL_PROFILE_ID))
-            .and(SESSION_RUNTIME_SESSION.EXTERNAL_CONVERSATION_ID.eq(CHANNEL_SESSION_BINDING_SNAPSHOT.EXTERNAL_CONVERSATION_ID))
-            .and(SESSION_RUNTIME_SESSION.CUSTOMER_ID.eq(CHANNEL_SESSION_BINDING_SNAPSHOT.CUSTOMER_ID))
-            .and(SESSION_RUNTIME_SESSION.ASSISTANT_ID.eq(CHANNEL_SESSION_BINDING_SNAPSHOT.ASSISTANT_ID));
+        return AGENT_SESSION.STATUS.ne("CLOSED")
+            .and(AGENT_RECEPTION_BINDING.PARTICIPANT_ID.eq(CHANNEL_SESSION_BINDING_SNAPSHOT.PARTICIPANT_ID))
+            .and(AGENT_RECEPTION_BINDING.ENTRY_ID.eq(CHANNEL_SESSION_BINDING_SNAPSHOT.ENTRY_ID));
     }
 
     private ChannelOutboundBindingSnapshot map(Record record) {
@@ -148,8 +152,8 @@ public class JooqChannelBindingSnapshotRepository {
             record.get(CHANNEL_SESSION_BINDING_SNAPSHOT.PROVIDER_TYPE),
             record.get(CHANNEL_SESSION_BINDING_SNAPSHOT.EXTERNAL_CONVERSATION_ID),
             record.get(CHANNEL_SESSION_BINDING_SNAPSHOT.EXTERNAL_USER_ID),
-            record.get(CHANNEL_SESSION_BINDING_SNAPSHOT.ASSISTANT_ID),
-            record.get(CHANNEL_SESSION_BINDING_SNAPSHOT.CUSTOMER_ID),
+            record.get(CHANNEL_SESSION_BINDING_SNAPSHOT.ENTRY_ID),
+            record.get(CHANNEL_SESSION_BINDING_SNAPSHOT.PARTICIPANT_ID),
             record.get(CHANNEL_SESSION_BINDING_SNAPSHOT.BINDING_STATUS),
             ChannelProfileStatus.valueOf(record.get(CHANNEL_SESSION_BINDING_SNAPSHOT.PROFILE_STATUS)),
             record.get(CHANNEL_SESSION_BINDING_SNAPSHOT.PROFILE_REVISION),

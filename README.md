@@ -26,16 +26,11 @@
 
 ## 当前状态
 
-项目处于 alpha。**上述目标已记录，代码尚未完成相应重构。** 当前代码已有 Task/组织工作台、内容版本与授权、后台执行、Session 对话、Playbook、知识检索及渠道扩展，但仍有两条 Agent 运行链：
+项目处于 alpha，现行代码采用统一的 Session / Activation 运行链。持续接待、Agent 委派、Task 共享内容与决定、版本化角色和能力、持久消息/安排、流程工具及渠道接入已完成本版实现与集成验收。
 
-| 当前行为 | 目标变化 |
-| --- | --- |
-| 后台 Task 推理使用合成 Session ID，未保存真实 Session transcript | 全部 Agent 运行关联真实持久实例 |
-| 目录 Agent 依赖 Assistant Release | 独立角色模板与实例配置 |
-| Task 工作台手工组织执行 | 持续接待 Agent 组织协作 |
-| Session Owner 切换、特殊 handoff 和会话专属流程 | 实例间协作消息、明确控制指令和流程工具 |
+实际模型与工具记录保存在 Runtime PostgreSQL；后台实例使用与接待相同的持久上下文。Task 进展来自真实协作命令，执行结束不自动代表业务完成。
 
-当前实际能力与限制见[代码现状](docs/architecture/code-framework.md)，改造工作和真实场景验收见[实施计划](docs/todo/agent-collaboration-refactor.md)。允许直接重构数据、接口和配置，不以兼容旧数据为目标。
+实现分工见[代码框架](docs/architecture/code-framework.md)，工作包及真实场景验证见[实施与验收基线](docs/architecture/collaboration-acceptance.md)。本次为直接架构替换，数据库迁移会清理旧原型的配置、运行及工作数据。
 
 ## 服务与仓库
 
@@ -53,13 +48,6 @@
 
 技术基础继续采用 Spring Boot、Temporal、Python/FastAPI、Vue、PostgreSQL、Redis 和 S3-compatible 存储。扩展使用 Channel Provider / Tool Connector 协议。详见[技术路线](docs/technical_route.md)和[完整目录](docs/project_structure.md)。
 
-## 演示
-
-以下为已有实现的历史演示，界面与运行方式不代表待落地的新入口：
-
-- [会话演示](https://www.bilibili.com/video/BV1eDLp6hEV4/)
-- [配置管理演示](https://www.bilibili.com/video/BV1eSLp6wE9X/)
-
 ## 快速开始
 
 ### 0. 前置条件
@@ -76,7 +64,7 @@ docker compose -f deploy/local/docker-compose.yml up -d
 ```
 
 依赖包含 PostgreSQL（自带 `pgvector` / `pg_trgm`）、MinIO、Redis、Temporal 与 sandbox。
-PostgreSQL 启动时会自动准备 `agentyard_core`、`agentyard_channel_gateway`、`agentyard_knowledge`、`agentyard_agent_runtime` 四个库，分别给 API/worker、channel-gateway、knowledge service、agent-runtime 使用。
+PostgreSQL 启动时会自动准备 `agentyard_core`、`agentyard_channel_gateway`、`agentyard_knowledge`、`agentyard_agent_runtime` 四个库，分别给 API、channel-gateway、knowledge service、agent-runtime 使用；Worker 通过控制面 HTTP 访问业务状态，不直连 Core 数据库。
 
 ### 2. 准备环境变量
 
@@ -126,17 +114,18 @@ pnpm local:web
 | Temporal UI | <http://localhost:8088> |
 | MinIO Console | <http://localhost:9001> |
 
-### 5. 模型与知识检索配置
+### 5. 管理员准备能力，用户直接交流
 
-至少配置一个真实 LLM provider 的 API key，运行态没有本地假响应 fallback。
-OpenAI 兼容 endpoint 示例：
+本地 profile 启用开发登录，可使用 `/api/auth/dev-bootstrap-login`；共享或生产环境按部署说明配置 OIDC。
 
-```bash
-AGENTYARD_OPENAI_COMPATIBLE_BASE_URL=http://localhost:11434/v1
-AGENTYARD_OPENAI_COMPATIBLE_MODEL_ID=custom-compatible-model
-AGENTYARD_OPENAI_COMPATIBLE_API_KEY_ENV_VAR=OPENAI_COMPATIBLE_API_KEY
-OPENAI_COMPATIBLE_API_KEY=your-token-if-needed
-```
+首次安装由管理员在管理区完成：
+
+1. 创建并发布模型资源，填写实际 provider、modelId、baseUrl 与 apiKeyEnvVar。将密钥保存在 Runtime 环境中对应的变量，例如 `DEEPSEEK_API_KEY`；不把密钥写进提示词。
+2. 选择接待、通用执行、审阅等预制角色上下文，选择已发布模型及所需工具/知识/流程版本，发布角色版本。
+3. 配置接待入口，指定接待角色、允许委派的模板、实际操作范围以及哪些权限可转授。
+4. 普通用户进入首页开始交流。接待关系自动建立；第二项工作仍在同一入口提出，无需创建 Session。
+
+角色模板与授权分开配置。可以只先启用 `task.create`、所需模板的 `agent.create`，再按实际工具添加资源范围；调度、订阅和外部操作需要各自的授权。缺少入口或模型时页面说明原因，普通用户无需承担配置流程。
 
 知识服务的 embedding provider 单独配置：
 
@@ -147,13 +136,7 @@ AGENTYARD_KNOWLEDGE_EMBEDDING_API_KEY=your-token-if-needed
 AGENTYARD_KNOWLEDGE_EMBEDDING_DIMENSIONS=768
 ```
 
-如果模型响应较慢，可同步调大 worker 的 Temporal activity 超时：
-
-```bash
-AGENTYARD_TEMPORAL_ACTIVITY_START_TO_CLOSE_TIMEOUT=PT2M
-```
-
-当前代码仍需要在控制台或 API 配置目录、资源及发布后使用。持续接待、自动建 Task 与委派的目标入口待本轮架构方案落地。
+`AGENTYARD_AGENT_MAX_TOOL_STEPS` 控制单次模型工具循环，`AGENTYARD_AGENT_MAX_CONCURRENT_ACTIVATIONS` 控制跨 API 实例的运行并发，均默认 32。到达执行边界保留实际记录，不把预算耗尽当成业务完成。
 
 ### 6. 构建前端与站点
 
@@ -182,20 +165,40 @@ pnpm dev:source        # 在服务器上从源码热加载运行
 ./gradlew :apps:api:test :apps:worker:test :apps:channel-gateway:test
 pnpm test:web
 uv run --all-packages pytest
-# 跨语言协作端到端测试（先 uv sync --all-packages，无需 Docker 或模型密钥）
+# 跨语言协作端到端测试（先 uv sync --all-packages，提供可访问的 Redis）
 ./gradlew :apps:api:taskE2eTest
 ```
 
 CI 在 `.github/workflows/ci.yml` 中分别跑 Java / Node / Python 三套检查，并对 jOOQ 生成产物做差异校验。
 
-现有 Task E2E 使用确定性模型服务，并未启用后台 Session transcript 生命周期。它验证当前跨语言执行链，不能替代目标架构验收或真实模型/渠道测试，具体边界见[代码现状](docs/architecture/code-framework.md)。
+Task E2E 启动独立 PostgreSQL、Temporal 测试服务、真实 Worker/API/Python Runtime 和确定性模型/工具 HTTP 服务，Runtime 使用真实 transcript 生命周期与 Redis。`-Pdeepseek=true` 另外启用真实模型验收，通过独立的测试变量配置：
+
+| 变量 | 默认值 |
+| --- | --- |
+| `AGENTYARD_E2E_MODEL_ID` | `deepseek-chat` |
+| `AGENTYARD_E2E_MODEL_BASE_URL` | `https://api.deepseek.com/v1` |
+| `AGENTYARD_E2E_MODEL_API_KEY_ENV_VAR` | `DEEPSEEK_API_KEY` |
+
+`API_KEY_ENV_VAR` 的值是保存凭证的环境变量名称。先私下装载已有凭证，再指定测试模型；例如凭证已经位于 `OPENAI_COMPATIBLE_API_KEY`：
+
+```bash
+source scripts/common/env.sh
+load_agentyard_env apps/agent-runtime local
+export AGENTYARD_E2E_MODEL_ID=deepseek-flash
+export AGENTYARD_E2E_MODEL_BASE_URL=https://api.deepseek.com
+export AGENTYARD_E2E_MODEL_API_KEY_ENV_VAR=OPENAI_COMPATIBLE_API_KEY
+./gradlew :apps:api:taskE2eTest -Pdeepseek=true
+```
+
+报告在 `apps/api/build/reports/tests/taskE2eTest/`，调用证据在 `apps/api/build/task-e2e/`。真实模型、真实外部账号和确定性测试的验证范围分别记录。
 
 ## 文档
 
 - [文档入口](docs/README.md)
 - [目标架构与决策](docs/architecture/agent-collaboration.md)
-- [实施与验收计划](docs/todo/agent-collaboration-refactor.md)
+- [实施与验收基线](docs/architecture/collaboration-acceptance.md)
 - [当前代码框架](docs/architecture/code-framework.md)
+- [实际验收结果与范围](docs/architecture/collaboration-verification.md)
 - [项目待办](docs/project_todos.md)
 - [Extension 接入](docs/architecture/extension-integration.md)
 - [Tool Connector 开发](docs/architecture/tool-connector-development.md)

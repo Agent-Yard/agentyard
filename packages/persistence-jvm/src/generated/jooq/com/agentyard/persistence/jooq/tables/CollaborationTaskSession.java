@@ -6,9 +6,9 @@ package com.agentyard.persistence.jooq.tables;
 
 import com.agentyard.persistence.jooq.Keys;
 import com.agentyard.persistence.jooq.Public;
+import com.agentyard.persistence.jooq.tables.AgentSession.AgentSessionPath;
 import com.agentyard.persistence.jooq.tables.CollaborationActor.CollaborationActorPath;
 import com.agentyard.persistence.jooq.tables.CollaborationTask.CollaborationTaskPath;
-import com.agentyard.persistence.jooq.tables.SessionRuntimeSession.SessionRuntimeSessionPath;
 import com.agentyard.persistence.jooq.tables.records.CollaborationTaskSessionRecord;
 
 import java.time.OffsetDateTime;
@@ -171,17 +171,17 @@ public class CollaborationTaskSession extends TableImpl<CollaborationTaskSession
         return _collaborationActor;
     }
 
-    private transient SessionRuntimeSessionPath _sessionRuntimeSession;
+    private transient AgentSessionPath _agentSession;
 
     /**
-     * Get the implicit join path to the
-     * <code>public.session_runtime_session</code> table.
+     * Get the implicit join path to the <code>public.agent_session</code>
+     * table.
      */
-    public SessionRuntimeSessionPath sessionRuntimeSession() {
-        if (_sessionRuntimeSession == null)
-            _sessionRuntimeSession = new SessionRuntimeSessionPath(this, Keys.COLLABORATION_TASK_SESSION__COLLABORATION_TASK_SESSION_SESSION_ID_FKEY, null);
+    public AgentSessionPath agentSession() {
+        if (_agentSession == null)
+            _agentSession = new AgentSessionPath(this, Keys.COLLABORATION_TASK_SESSION__COLLABORATION_TASK_SESSION_SESSION_ID_FKEY, null);
 
-        return _sessionRuntimeSession;
+        return _agentSession;
     }
 
     private transient CollaborationTaskPath _collaborationTask;

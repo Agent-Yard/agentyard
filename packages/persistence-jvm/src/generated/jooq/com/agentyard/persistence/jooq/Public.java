@@ -5,34 +5,41 @@ package com.agentyard.persistence.jooq;
 
 
 import com.agentyard.persistence.jooq.tables.Agent;
+import com.agentyard.persistence.jooq.tables.AgentActivation;
 import com.agentyard.persistence.jooq.tables.AgentGroup;
+import com.agentyard.persistence.jooq.tables.AgentReceptionBinding;
+import com.agentyard.persistence.jooq.tables.AgentSchedule;
+import com.agentyard.persistence.jooq.tables.AgentSession;
+import com.agentyard.persistence.jooq.tables.AgentSubscription;
+import com.agentyard.persistence.jooq.tables.AgentToolRun;
+import com.agentyard.persistence.jooq.tables.AgentToolRunSignal;
 import com.agentyard.persistence.jooq.tables.BusinessDomain;
-import com.agentyard.persistence.jooq.tables.CatalogAgent;
-import com.agentyard.persistence.jooq.tables.CatalogAssistant;
-import com.agentyard.persistence.jooq.tables.CatalogAssistantReleases;
-import com.agentyard.persistence.jooq.tables.CatalogDomain;
+import com.agentyard.persistence.jooq.tables.CatalogEntry;
 import com.agentyard.persistence.jooq.tables.CatalogPlaybook;
-import com.agentyard.persistence.jooq.tables.CatalogRefKnowledgeBinding;
-import com.agentyard.persistence.jooq.tables.CatalogRefReleaseKnowledge;
-import com.agentyard.persistence.jooq.tables.CatalogRefReleaseResource;
-import com.agentyard.persistence.jooq.tables.CatalogRefResourceBinding;
+import com.agentyard.persistence.jooq.tables.CatalogPlaybookVersion;
 import com.agentyard.persistence.jooq.tables.CatalogResource;
 import com.agentyard.persistence.jooq.tables.CatalogResourceVersions;
-import com.agentyard.persistence.jooq.tables.CatalogScenario;
+import com.agentyard.persistence.jooq.tables.CatalogRoleTemplate;
+import com.agentyard.persistence.jooq.tables.CatalogRoleTemplateVersion;
+import com.agentyard.persistence.jooq.tables.ChannelCollaborationOutbox;
+import com.agentyard.persistence.jooq.tables.ChannelParticipantIdentity;
 import com.agentyard.persistence.jooq.tables.ChannelSessionBindingSnapshot;
 import com.agentyard.persistence.jooq.tables.CollaborationActor;
 import com.agentyard.persistence.jooq.tables.CollaborationContextEntry;
 import com.agentyard.persistence.jooq.tables.CollaborationContextVersion;
-import com.agentyard.persistence.jooq.tables.CollaborationExecution;
-import com.agentyard.persistence.jooq.tables.CollaborationExecutionSignal;
+import com.agentyard.persistence.jooq.tables.CollaborationDecision;
+import com.agentyard.persistence.jooq.tables.CollaborationDelivery;
+import com.agentyard.persistence.jooq.tables.CollaborationEventOutbox;
+import com.agentyard.persistence.jooq.tables.CollaborationGrant;
 import com.agentyard.persistence.jooq.tables.CollaborationMembership;
+import com.agentyard.persistence.jooq.tables.CollaborationMessage;
+import com.agentyard.persistence.jooq.tables.CollaborationOperationReceipt;
 import com.agentyard.persistence.jooq.tables.CollaborationOrganization;
 import com.agentyard.persistence.jooq.tables.CollaborationParticipant;
 import com.agentyard.persistence.jooq.tables.CollaborationTask;
 import com.agentyard.persistence.jooq.tables.CollaborationTaskCommand;
 import com.agentyard.persistence.jooq.tables.CollaborationTaskEvent;
 import com.agentyard.persistence.jooq.tables.CollaborationTaskRelation;
-import com.agentyard.persistence.jooq.tables.CollaborationTaskReview;
 import com.agentyard.persistence.jooq.tables.CollaborationTaskSession;
 import com.agentyard.persistence.jooq.tables.IntegrationAccount;
 import com.agentyard.persistence.jooq.tables.KnowledgeBase;
@@ -44,18 +51,12 @@ import com.agentyard.persistence.jooq.tables.PlatformUserRoleBinding;
 import com.agentyard.persistence.jooq.tables.Resource;
 import com.agentyard.persistence.jooq.tables.ResourceBinding;
 import com.agentyard.persistence.jooq.tables.Scenario;
-import com.agentyard.persistence.jooq.tables.SessionRuntimeEvent;
-import com.agentyard.persistence.jooq.tables.SessionRuntimeMessage;
-import com.agentyard.persistence.jooq.tables.SessionRuntimePlaybookRun;
-import com.agentyard.persistence.jooq.tables.SessionRuntimeSession;
-import com.agentyard.persistence.jooq.tables.SessionRuntimeTurn;
 import com.agentyard.persistence.jooq.tables.SharedStateRevision;
 
 import java.util.Arrays;
 import java.util.List;
 
 import org.jooq.Catalog;
-import org.jooq.Sequence;
 import org.jooq.Table;
 import org.jooq.impl.SchemaImpl;
 
@@ -79,9 +80,44 @@ public class Public extends SchemaImpl {
     public final Agent AGENT = Agent.AGENT;
 
     /**
+     * The table <code>public.agent_activation</code>.
+     */
+    public final AgentActivation AGENT_ACTIVATION = AgentActivation.AGENT_ACTIVATION;
+
+    /**
      * The table <code>public.agent_group</code>.
      */
     public final AgentGroup AGENT_GROUP = AgentGroup.AGENT_GROUP;
+
+    /**
+     * The table <code>public.agent_reception_binding</code>.
+     */
+    public final AgentReceptionBinding AGENT_RECEPTION_BINDING = AgentReceptionBinding.AGENT_RECEPTION_BINDING;
+
+    /**
+     * The table <code>public.agent_schedule</code>.
+     */
+    public final AgentSchedule AGENT_SCHEDULE = AgentSchedule.AGENT_SCHEDULE;
+
+    /**
+     * The table <code>public.agent_session</code>.
+     */
+    public final AgentSession AGENT_SESSION = AgentSession.AGENT_SESSION;
+
+    /**
+     * The table <code>public.agent_subscription</code>.
+     */
+    public final AgentSubscription AGENT_SUBSCRIPTION = AgentSubscription.AGENT_SUBSCRIPTION;
+
+    /**
+     * The table <code>public.agent_tool_run</code>.
+     */
+    public final AgentToolRun AGENT_TOOL_RUN = AgentToolRun.AGENT_TOOL_RUN;
+
+    /**
+     * The table <code>public.agent_tool_run_signal</code>.
+     */
+    public final AgentToolRunSignal AGENT_TOOL_RUN_SIGNAL = AgentToolRunSignal.AGENT_TOOL_RUN_SIGNAL;
 
     /**
      * The table <code>public.business_domain</code>.
@@ -89,24 +125,9 @@ public class Public extends SchemaImpl {
     public final BusinessDomain BUSINESS_DOMAIN = BusinessDomain.BUSINESS_DOMAIN;
 
     /**
-     * The table <code>public.catalog_agent</code>.
+     * The table <code>public.catalog_entry</code>.
      */
-    public final CatalogAgent CATALOG_AGENT = CatalogAgent.CATALOG_AGENT;
-
-    /**
-     * The table <code>public.catalog_assistant</code>.
-     */
-    public final CatalogAssistant CATALOG_ASSISTANT = CatalogAssistant.CATALOG_ASSISTANT;
-
-    /**
-     * The table <code>public.catalog_assistant_releases</code>.
-     */
-    public final CatalogAssistantReleases CATALOG_ASSISTANT_RELEASES = CatalogAssistantReleases.CATALOG_ASSISTANT_RELEASES;
-
-    /**
-     * The table <code>public.catalog_domain</code>.
-     */
-    public final CatalogDomain CATALOG_DOMAIN = CatalogDomain.CATALOG_DOMAIN;
+    public final CatalogEntry CATALOG_ENTRY = CatalogEntry.CATALOG_ENTRY;
 
     /**
      * The table <code>public.catalog_playbook</code>.
@@ -114,24 +135,9 @@ public class Public extends SchemaImpl {
     public final CatalogPlaybook CATALOG_PLAYBOOK = CatalogPlaybook.CATALOG_PLAYBOOK;
 
     /**
-     * The table <code>public.catalog_ref_knowledge_binding</code>.
+     * The table <code>public.catalog_playbook_version</code>.
      */
-    public final CatalogRefKnowledgeBinding CATALOG_REF_KNOWLEDGE_BINDING = CatalogRefKnowledgeBinding.CATALOG_REF_KNOWLEDGE_BINDING;
-
-    /**
-     * The table <code>public.catalog_ref_release_knowledge</code>.
-     */
-    public final CatalogRefReleaseKnowledge CATALOG_REF_RELEASE_KNOWLEDGE = CatalogRefReleaseKnowledge.CATALOG_REF_RELEASE_KNOWLEDGE;
-
-    /**
-     * The table <code>public.catalog_ref_release_resource</code>.
-     */
-    public final CatalogRefReleaseResource CATALOG_REF_RELEASE_RESOURCE = CatalogRefReleaseResource.CATALOG_REF_RELEASE_RESOURCE;
-
-    /**
-     * The table <code>public.catalog_ref_resource_binding</code>.
-     */
-    public final CatalogRefResourceBinding CATALOG_REF_RESOURCE_BINDING = CatalogRefResourceBinding.CATALOG_REF_RESOURCE_BINDING;
+    public final CatalogPlaybookVersion CATALOG_PLAYBOOK_VERSION = CatalogPlaybookVersion.CATALOG_PLAYBOOK_VERSION;
 
     /**
      * The table <code>public.catalog_resource</code>.
@@ -144,9 +150,24 @@ public class Public extends SchemaImpl {
     public final CatalogResourceVersions CATALOG_RESOURCE_VERSIONS = CatalogResourceVersions.CATALOG_RESOURCE_VERSIONS;
 
     /**
-     * The table <code>public.catalog_scenario</code>.
+     * The table <code>public.catalog_role_template</code>.
      */
-    public final CatalogScenario CATALOG_SCENARIO = CatalogScenario.CATALOG_SCENARIO;
+    public final CatalogRoleTemplate CATALOG_ROLE_TEMPLATE = CatalogRoleTemplate.CATALOG_ROLE_TEMPLATE;
+
+    /**
+     * The table <code>public.catalog_role_template_version</code>.
+     */
+    public final CatalogRoleTemplateVersion CATALOG_ROLE_TEMPLATE_VERSION = CatalogRoleTemplateVersion.CATALOG_ROLE_TEMPLATE_VERSION;
+
+    /**
+     * The table <code>public.channel_collaboration_outbox</code>.
+     */
+    public final ChannelCollaborationOutbox CHANNEL_COLLABORATION_OUTBOX = ChannelCollaborationOutbox.CHANNEL_COLLABORATION_OUTBOX;
+
+    /**
+     * The table <code>public.channel_participant_identity</code>.
+     */
+    public final ChannelParticipantIdentity CHANNEL_PARTICIPANT_IDENTITY = ChannelParticipantIdentity.CHANNEL_PARTICIPANT_IDENTITY;
 
     /**
      * The table <code>public.channel_session_binding_snapshot</code>.
@@ -169,19 +190,39 @@ public class Public extends SchemaImpl {
     public final CollaborationContextVersion COLLABORATION_CONTEXT_VERSION = CollaborationContextVersion.COLLABORATION_CONTEXT_VERSION;
 
     /**
-     * The table <code>public.collaboration_execution</code>.
+     * The table <code>public.collaboration_decision</code>.
      */
-    public final CollaborationExecution COLLABORATION_EXECUTION = CollaborationExecution.COLLABORATION_EXECUTION;
+    public final CollaborationDecision COLLABORATION_DECISION = CollaborationDecision.COLLABORATION_DECISION;
 
     /**
-     * The table <code>public.collaboration_execution_signal</code>.
+     * The table <code>public.collaboration_delivery</code>.
      */
-    public final CollaborationExecutionSignal COLLABORATION_EXECUTION_SIGNAL = CollaborationExecutionSignal.COLLABORATION_EXECUTION_SIGNAL;
+    public final CollaborationDelivery COLLABORATION_DELIVERY = CollaborationDelivery.COLLABORATION_DELIVERY;
+
+    /**
+     * The table <code>public.collaboration_event_outbox</code>.
+     */
+    public final CollaborationEventOutbox COLLABORATION_EVENT_OUTBOX = CollaborationEventOutbox.COLLABORATION_EVENT_OUTBOX;
+
+    /**
+     * The table <code>public.collaboration_grant</code>.
+     */
+    public final CollaborationGrant COLLABORATION_GRANT = CollaborationGrant.COLLABORATION_GRANT;
 
     /**
      * The table <code>public.collaboration_membership</code>.
      */
     public final CollaborationMembership COLLABORATION_MEMBERSHIP = CollaborationMembership.COLLABORATION_MEMBERSHIP;
+
+    /**
+     * The table <code>public.collaboration_message</code>.
+     */
+    public final CollaborationMessage COLLABORATION_MESSAGE = CollaborationMessage.COLLABORATION_MESSAGE;
+
+    /**
+     * The table <code>public.collaboration_operation_receipt</code>.
+     */
+    public final CollaborationOperationReceipt COLLABORATION_OPERATION_RECEIPT = CollaborationOperationReceipt.COLLABORATION_OPERATION_RECEIPT;
 
     /**
      * The table <code>public.collaboration_organization</code>.
@@ -212,11 +253,6 @@ public class Public extends SchemaImpl {
      * The table <code>public.collaboration_task_relation</code>.
      */
     public final CollaborationTaskRelation COLLABORATION_TASK_RELATION = CollaborationTaskRelation.COLLABORATION_TASK_RELATION;
-
-    /**
-     * The table <code>public.collaboration_task_review</code>.
-     */
-    public final CollaborationTaskReview COLLABORATION_TASK_REVIEW = CollaborationTaskReview.COLLABORATION_TASK_REVIEW;
 
     /**
      * The table <code>public.collaboration_task_session</code>.
@@ -274,31 +310,6 @@ public class Public extends SchemaImpl {
     public final Scenario SCENARIO = Scenario.SCENARIO;
 
     /**
-     * The table <code>public.session_runtime_event</code>.
-     */
-    public final SessionRuntimeEvent SESSION_RUNTIME_EVENT = SessionRuntimeEvent.SESSION_RUNTIME_EVENT;
-
-    /**
-     * The table <code>public.session_runtime_message</code>.
-     */
-    public final SessionRuntimeMessage SESSION_RUNTIME_MESSAGE = SessionRuntimeMessage.SESSION_RUNTIME_MESSAGE;
-
-    /**
-     * The table <code>public.session_runtime_playbook_run</code>.
-     */
-    public final SessionRuntimePlaybookRun SESSION_RUNTIME_PLAYBOOK_RUN = SessionRuntimePlaybookRun.SESSION_RUNTIME_PLAYBOOK_RUN;
-
-    /**
-     * The table <code>public.session_runtime_session</code>.
-     */
-    public final SessionRuntimeSession SESSION_RUNTIME_SESSION = SessionRuntimeSession.SESSION_RUNTIME_SESSION;
-
-    /**
-     * The table <code>public.session_runtime_turn</code>.
-     */
-    public final SessionRuntimeTurn SESSION_RUNTIME_TURN = SessionRuntimeTurn.SESSION_RUNTIME_TURN;
-
-    /**
      * The table <code>public.shared_state_revision</code>.
      */
     public final SharedStateRevision SHARED_STATE_REVISION = SharedStateRevision.SHARED_STATE_REVISION;
@@ -317,44 +328,44 @@ public class Public extends SchemaImpl {
     }
 
     @Override
-    public final List<Sequence<?>> getSequences() {
-        return Arrays.asList(
-            Sequences.CHANNEL_OUTBOUND_FINAL_SEQUENCE
-        );
-    }
-
-    @Override
     public final List<Table<?>> getTables() {
         return Arrays.asList(
             Agent.AGENT,
+            AgentActivation.AGENT_ACTIVATION,
             AgentGroup.AGENT_GROUP,
+            AgentReceptionBinding.AGENT_RECEPTION_BINDING,
+            AgentSchedule.AGENT_SCHEDULE,
+            AgentSession.AGENT_SESSION,
+            AgentSubscription.AGENT_SUBSCRIPTION,
+            AgentToolRun.AGENT_TOOL_RUN,
+            AgentToolRunSignal.AGENT_TOOL_RUN_SIGNAL,
             BusinessDomain.BUSINESS_DOMAIN,
-            CatalogAgent.CATALOG_AGENT,
-            CatalogAssistant.CATALOG_ASSISTANT,
-            CatalogAssistantReleases.CATALOG_ASSISTANT_RELEASES,
-            CatalogDomain.CATALOG_DOMAIN,
+            CatalogEntry.CATALOG_ENTRY,
             CatalogPlaybook.CATALOG_PLAYBOOK,
-            CatalogRefKnowledgeBinding.CATALOG_REF_KNOWLEDGE_BINDING,
-            CatalogRefReleaseKnowledge.CATALOG_REF_RELEASE_KNOWLEDGE,
-            CatalogRefReleaseResource.CATALOG_REF_RELEASE_RESOURCE,
-            CatalogRefResourceBinding.CATALOG_REF_RESOURCE_BINDING,
+            CatalogPlaybookVersion.CATALOG_PLAYBOOK_VERSION,
             CatalogResource.CATALOG_RESOURCE,
             CatalogResourceVersions.CATALOG_RESOURCE_VERSIONS,
-            CatalogScenario.CATALOG_SCENARIO,
+            CatalogRoleTemplate.CATALOG_ROLE_TEMPLATE,
+            CatalogRoleTemplateVersion.CATALOG_ROLE_TEMPLATE_VERSION,
+            ChannelCollaborationOutbox.CHANNEL_COLLABORATION_OUTBOX,
+            ChannelParticipantIdentity.CHANNEL_PARTICIPANT_IDENTITY,
             ChannelSessionBindingSnapshot.CHANNEL_SESSION_BINDING_SNAPSHOT,
             CollaborationActor.COLLABORATION_ACTOR,
             CollaborationContextEntry.COLLABORATION_CONTEXT_ENTRY,
             CollaborationContextVersion.COLLABORATION_CONTEXT_VERSION,
-            CollaborationExecution.COLLABORATION_EXECUTION,
-            CollaborationExecutionSignal.COLLABORATION_EXECUTION_SIGNAL,
+            CollaborationDecision.COLLABORATION_DECISION,
+            CollaborationDelivery.COLLABORATION_DELIVERY,
+            CollaborationEventOutbox.COLLABORATION_EVENT_OUTBOX,
+            CollaborationGrant.COLLABORATION_GRANT,
             CollaborationMembership.COLLABORATION_MEMBERSHIP,
+            CollaborationMessage.COLLABORATION_MESSAGE,
+            CollaborationOperationReceipt.COLLABORATION_OPERATION_RECEIPT,
             CollaborationOrganization.COLLABORATION_ORGANIZATION,
             CollaborationParticipant.COLLABORATION_PARTICIPANT,
             CollaborationTask.COLLABORATION_TASK,
             CollaborationTaskCommand.COLLABORATION_TASK_COMMAND,
             CollaborationTaskEvent.COLLABORATION_TASK_EVENT,
             CollaborationTaskRelation.COLLABORATION_TASK_RELATION,
-            CollaborationTaskReview.COLLABORATION_TASK_REVIEW,
             CollaborationTaskSession.COLLABORATION_TASK_SESSION,
             IntegrationAccount.INTEGRATION_ACCOUNT,
             KnowledgeBase.KNOWLEDGE_BASE,
@@ -366,11 +377,6 @@ public class Public extends SchemaImpl {
             Resource.RESOURCE,
             ResourceBinding.RESOURCE_BINDING,
             Scenario.SCENARIO,
-            SessionRuntimeEvent.SESSION_RUNTIME_EVENT,
-            SessionRuntimeMessage.SESSION_RUNTIME_MESSAGE,
-            SessionRuntimePlaybookRun.SESSION_RUNTIME_PLAYBOOK_RUN,
-            SessionRuntimeSession.SESSION_RUNTIME_SESSION,
-            SessionRuntimeTurn.SESSION_RUNTIME_TURN,
             SharedStateRevision.SHARED_STATE_REVISION
         );
     }

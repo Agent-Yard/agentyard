@@ -7,6 +7,11 @@ package com.agentyard.persistence.jooq.tables;
 import com.agentyard.persistence.jooq.Indexes;
 import com.agentyard.persistence.jooq.Keys;
 import com.agentyard.persistence.jooq.Public;
+import com.agentyard.persistence.jooq.tables.AgentActivation.AgentActivationPath;
+import com.agentyard.persistence.jooq.tables.AgentSession.AgentSessionPath;
+import com.agentyard.persistence.jooq.tables.CatalogRoleTemplateVersion.CatalogRoleTemplateVersionPath;
+import com.agentyard.persistence.jooq.tables.CollaborationActor.CollaborationActorPath;
+import com.agentyard.persistence.jooq.tables.CollaborationTask.CollaborationTaskPath;
 import com.agentyard.persistence.jooq.tables.records.LlmUsageRecordRecord;
 
 import java.time.OffsetDateTime;
@@ -16,11 +21,15 @@ import java.util.List;
 
 import org.jooq.Condition;
 import org.jooq.Field;
+import org.jooq.ForeignKey;
 import org.jooq.Index;
+import org.jooq.InverseForeignKey;
 import org.jooq.JSONB;
 import org.jooq.Name;
+import org.jooq.Path;
 import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
+import org.jooq.Record;
 import org.jooq.SQL;
 import org.jooq.Schema;
 import org.jooq.Select;
@@ -58,79 +67,58 @@ public class LlmUsageRecord extends TableImpl<LlmUsageRecordRecord> {
     /**
      * The column <code>public.llm_usage_record.id</code>.
      */
-    public final TableField<LlmUsageRecordRecord, String> ID = createField(DSL.name("id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
+    public final TableField<LlmUsageRecordRecord, String> ID = createField(DSL.name("id"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
      * The column <code>public.llm_usage_record.source_type</code>.
      */
-    public final TableField<LlmUsageRecordRecord, String> SOURCE_TYPE = createField(DSL.name("source_type"), SQLDataType.VARCHAR(64).nullable(false), this, "");
+    public final TableField<LlmUsageRecordRecord, String> SOURCE_TYPE = createField(DSL.name("source_type"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
      * The column <code>public.llm_usage_record.session_id</code>.
      */
-    public final TableField<LlmUsageRecordRecord, String> SESSION_ID = createField(DSL.name("session_id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
+    public final TableField<LlmUsageRecordRecord, String> SESSION_ID = createField(DSL.name("session_id"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
-     * The column <code>public.llm_usage_record.trigger_event_id</code>.
+     * The column <code>public.llm_usage_record.participant_id</code>.
      */
-    public final TableField<LlmUsageRecordRecord, String> TRIGGER_EVENT_ID = createField(DSL.name("trigger_event_id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
+    public final TableField<LlmUsageRecordRecord, String> PARTICIPANT_ID = createField(DSL.name("participant_id"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
-     * The column <code>public.llm_usage_record.trigger_type</code>.
+     * The column <code>public.llm_usage_record.activation_id</code>.
      */
-    public final TableField<LlmUsageRecordRecord, String> TRIGGER_TYPE = createField(DSL.name("trigger_type"), SQLDataType.VARCHAR(64).nullable(false), this, "");
+    public final TableField<LlmUsageRecordRecord, String> ACTIVATION_ID = createField(DSL.name("activation_id"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
-     * The column <code>public.llm_usage_record.playbook_run_id</code>.
+     * The column <code>public.llm_usage_record.task_id</code>.
      */
-    public final TableField<LlmUsageRecordRecord, String> PLAYBOOK_RUN_ID = createField(DSL.name("playbook_run_id"), SQLDataType.VARCHAR(64), this, "");
+    public final TableField<LlmUsageRecordRecord, String> TASK_ID = createField(DSL.name("task_id"), SQLDataType.CLOB, this, "");
 
     /**
-     * The column <code>public.llm_usage_record.scenario_id</code>.
+     * The column <code>public.llm_usage_record.template_version_id</code>.
      */
-    public final TableField<LlmUsageRecordRecord, String> SCENARIO_ID = createField(DSL.name("scenario_id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
-
-    /**
-     * The column <code>public.llm_usage_record.customer_id</code>.
-     */
-    public final TableField<LlmUsageRecordRecord, String> CUSTOMER_ID = createField(DSL.name("customer_id"), SQLDataType.VARCHAR(255).nullable(false), this, "");
-
-    /**
-     * The column <code>public.llm_usage_record.assistant_id</code>.
-     */
-    public final TableField<LlmUsageRecordRecord, String> ASSISTANT_ID = createField(DSL.name("assistant_id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
-
-    /**
-     * The column
-     * <code>public.llm_usage_record.assistant_release_version</code>.
-     */
-    public final TableField<LlmUsageRecordRecord, String> ASSISTANT_RELEASE_VERSION = createField(DSL.name("assistant_release_version"), SQLDataType.VARCHAR(64).nullable(false), this, "");
-
-    /**
-     * The column <code>public.llm_usage_record.agent_id</code>.
-     */
-    public final TableField<LlmUsageRecordRecord, String> AGENT_ID = createField(DSL.name("agent_id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
+    public final TableField<LlmUsageRecordRecord, String> TEMPLATE_VERSION_ID = createField(DSL.name("template_version_id"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
      * The column <code>public.llm_usage_record.provider_type</code>.
      */
-    public final TableField<LlmUsageRecordRecord, String> PROVIDER_TYPE = createField(DSL.name("provider_type"), SQLDataType.VARCHAR(64).nullable(false), this, "");
+    public final TableField<LlmUsageRecordRecord, String> PROVIDER_TYPE = createField(DSL.name("provider_type"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
      * The column <code>public.llm_usage_record.model_resource_id</code>.
      */
-    public final TableField<LlmUsageRecordRecord, String> MODEL_RESOURCE_ID = createField(DSL.name("model_resource_id"), SQLDataType.VARCHAR(64), this, "");
+    public final TableField<LlmUsageRecordRecord, String> MODEL_RESOURCE_ID = createField(DSL.name("model_resource_id"), SQLDataType.CLOB, this, "");
 
     /**
      * The column
      * <code>public.llm_usage_record.model_resource_version_id</code>.
      */
-    public final TableField<LlmUsageRecordRecord, String> MODEL_RESOURCE_VERSION_ID = createField(DSL.name("model_resource_version_id"), SQLDataType.VARCHAR(64), this, "");
+    public final TableField<LlmUsageRecordRecord, String> MODEL_RESOURCE_VERSION_ID = createField(DSL.name("model_resource_version_id"), SQLDataType.CLOB, this, "");
 
     /**
      * The column <code>public.llm_usage_record.model_id</code>.
      */
-    public final TableField<LlmUsageRecordRecord, String> MODEL_ID = createField(DSL.name("model_id"), SQLDataType.VARCHAR(255).nullable(false), this, "");
+    public final TableField<LlmUsageRecordRecord, String> MODEL_ID = createField(DSL.name("model_id"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
      * The column <code>public.llm_usage_record.usage_available</code>.
@@ -201,6 +189,39 @@ public class LlmUsageRecord extends TableImpl<LlmUsageRecordRecord> {
         this(DSL.name("llm_usage_record"), null);
     }
 
+    public <O extends Record> LlmUsageRecord(Table<O> path, ForeignKey<O, LlmUsageRecordRecord> childPath, InverseForeignKey<O, LlmUsageRecordRecord> parentPath) {
+        super(path, childPath, parentPath, LLM_USAGE_RECORD);
+    }
+
+    /**
+     * A subtype implementing {@link Path} for simplified path-based joins.
+     */
+    public static class LlmUsageRecordPath extends LlmUsageRecord implements Path<LlmUsageRecordRecord> {
+
+        private static final long serialVersionUID = 1L;
+        public <O extends Record> LlmUsageRecordPath(Table<O> path, ForeignKey<O, LlmUsageRecordRecord> childPath, InverseForeignKey<O, LlmUsageRecordRecord> parentPath) {
+            super(path, childPath, parentPath);
+        }
+        private LlmUsageRecordPath(Name alias, Table<LlmUsageRecordRecord> aliased) {
+            super(alias, aliased);
+        }
+
+        @Override
+        public LlmUsageRecordPath as(String alias) {
+            return new LlmUsageRecordPath(DSL.name(alias), this);
+        }
+
+        @Override
+        public LlmUsageRecordPath as(Name alias) {
+            return new LlmUsageRecordPath(alias, this);
+        }
+
+        @Override
+        public LlmUsageRecordPath as(Table<?> alias) {
+            return new LlmUsageRecordPath(alias.getQualifiedName(), this);
+        }
+    }
+
     @Override
     public Schema getSchema() {
         return aliased() ? null : Public.PUBLIC;
@@ -208,12 +229,82 @@ public class LlmUsageRecord extends TableImpl<LlmUsageRecordRecord> {
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_LLM_USAGE_RECORD_ASSISTANT_OCCURRED, Indexes.IDX_LLM_USAGE_RECORD_CUSTOMER_OCCURRED, Indexes.IDX_LLM_USAGE_RECORD_PLAYBOOK_OCCURRED, Indexes.IDX_LLM_USAGE_RECORD_SCENARIO_OCCURRED, Indexes.IDX_LLM_USAGE_RECORD_SESSION_OCCURRED);
+        return Arrays.asList(Indexes.LLM_USAGE_SESSION, Indexes.LLM_USAGE_TASK);
     }
 
     @Override
     public UniqueKey<LlmUsageRecordRecord> getPrimaryKey() {
         return Keys.LLM_USAGE_RECORD_PKEY;
+    }
+
+    @Override
+    public List<ForeignKey<LlmUsageRecordRecord, ?>> getReferences() {
+        return Arrays.asList(Keys.LLM_USAGE_RECORD__LLM_USAGE_RECORD_ACTIVATION_ID_FKEY, Keys.LLM_USAGE_RECORD__LLM_USAGE_RECORD_PARTICIPANT_ID_FKEY, Keys.LLM_USAGE_RECORD__LLM_USAGE_RECORD_SESSION_ID_FKEY, Keys.LLM_USAGE_RECORD__LLM_USAGE_RECORD_TASK_ID_FKEY, Keys.LLM_USAGE_RECORD__LLM_USAGE_RECORD_TEMPLATE_VERSION_ID_FKEY);
+    }
+
+    private transient AgentActivationPath _agentActivation;
+
+    /**
+     * Get the implicit join path to the <code>public.agent_activation</code>
+     * table.
+     */
+    public AgentActivationPath agentActivation() {
+        if (_agentActivation == null)
+            _agentActivation = new AgentActivationPath(this, Keys.LLM_USAGE_RECORD__LLM_USAGE_RECORD_ACTIVATION_ID_FKEY, null);
+
+        return _agentActivation;
+    }
+
+    private transient CollaborationActorPath _collaborationActor;
+
+    /**
+     * Get the implicit join path to the <code>public.collaboration_actor</code>
+     * table.
+     */
+    public CollaborationActorPath collaborationActor() {
+        if (_collaborationActor == null)
+            _collaborationActor = new CollaborationActorPath(this, Keys.LLM_USAGE_RECORD__LLM_USAGE_RECORD_PARTICIPANT_ID_FKEY, null);
+
+        return _collaborationActor;
+    }
+
+    private transient AgentSessionPath _agentSession;
+
+    /**
+     * Get the implicit join path to the <code>public.agent_session</code>
+     * table.
+     */
+    public AgentSessionPath agentSession() {
+        if (_agentSession == null)
+            _agentSession = new AgentSessionPath(this, Keys.LLM_USAGE_RECORD__LLM_USAGE_RECORD_SESSION_ID_FKEY, null);
+
+        return _agentSession;
+    }
+
+    private transient CollaborationTaskPath _collaborationTask;
+
+    /**
+     * Get the implicit join path to the <code>public.collaboration_task</code>
+     * table.
+     */
+    public CollaborationTaskPath collaborationTask() {
+        if (_collaborationTask == null)
+            _collaborationTask = new CollaborationTaskPath(this, Keys.LLM_USAGE_RECORD__LLM_USAGE_RECORD_TASK_ID_FKEY, null);
+
+        return _collaborationTask;
+    }
+
+    private transient CatalogRoleTemplateVersionPath _catalogRoleTemplateVersion;
+
+    /**
+     * Get the implicit join path to the
+     * <code>public.catalog_role_template_version</code> table.
+     */
+    public CatalogRoleTemplateVersionPath catalogRoleTemplateVersion() {
+        if (_catalogRoleTemplateVersion == null)
+            _catalogRoleTemplateVersion = new CatalogRoleTemplateVersionPath(this, Keys.LLM_USAGE_RECORD__LLM_USAGE_RECORD_TEMPLATE_VERSION_ID_FKEY, null);
+
+        return _catalogRoleTemplateVersion;
     }
 
     @Override

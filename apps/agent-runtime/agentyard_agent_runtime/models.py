@@ -7,8 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .privacy_contracts import PrivacyMappingTelemetry
 
 
-class AgentConfig(BaseModel):
-    agentId: str
+class AgentProfile(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     name: str
     role: str
     responsibility: str
@@ -16,14 +16,9 @@ class AgentConfig(BaseModel):
     effectivePrivacyModelBinding: "LlmModelDescriptor | None" = None
     effectivePrivacyMappingEnabled: bool = False
     systemPrompt: str = ""
-    knowledgeEnabled: bool = False
-    knowledgeBaseId: str | None = None
     knowledgeBinding: "KnowledgeBindingDescriptor | None" = None
     memoryWindowSize: int = 0
-    canOwnSession: bool = True
-    allowedActions: list[str] = Field(default_factory=list)
-    switchableOwnerAgentIds: list[str] = Field(default_factory=list)
-    playbookIds: list[str] = Field(default_factory=list)
+    playbooks: list["PlaybookConfig"] = Field(default_factory=list)
     skills: list["SkillDescriptor"] = Field(default_factory=list)
     tools: list["ToolDescriptor"] = Field(default_factory=list)
 
@@ -136,21 +131,6 @@ class PlaybookConfig(BaseModel):
     resultSchema: str = ""
 
 
-class ActivePlaybookSummary(BaseModel):
-    runId: str
-    playbookId: str
-    playbookName: str
-    status: str
-    waitingReason: str | None = None
-    latestResult: dict[str, Any] = Field(default_factory=dict)
-
-
-class SessionMessageSender(BaseModel):
-    senderType: Literal["CUSTOMER", "AGENT", "HUMAN_OPERATOR", "SYSTEM"]
-    senderId: str | None = None
-    senderName: str
-
-
 class TextMessageBlock(BaseModel):
     type: Literal["TEXT"]
     text: str
@@ -185,54 +165,16 @@ class CardMessageBlock(BaseModel):
     actions: list[CardLinkAction] = Field(default_factory=list)
 
 
-SessionMessageBlock = TextMessageBlock | ImageMessageBlock | RichTextMessageBlock | CardMessageBlock
+MessageBlock = TextMessageBlock | ImageMessageBlock | RichTextMessageBlock | CardMessageBlock
 
 
-class SessionMessageInput(BaseModel):
-    blocks: list[SessionMessageBlock] = Field(default_factory=list)
+class MessageContent(BaseModel):
+    blocks: list[MessageBlock] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class SessionMessage(BaseModel):
-    messageId: str
-    sessionId: str
-    sequence: int
-    turnId: str
-    turnIndex: int
-    producerType: Literal["EXTERNAL", "PLATFORM"]
-    externalMessageId: str | None = None
-    clientMessageId: str | None = None
-    occurredAt: str | None = None
-    role: Literal["USER", "ASSISTANT", "HUMAN_OPERATOR", "SYSTEM"]
-    sender: SessionMessageSender
-    status: Literal["SENT", "STREAMING", "DELIVERED", "FAILED"]
-    blocks: list[SessionMessageBlock] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-    relatedPlaybookRunId: str | None = None
-    relatedOwnerAgentId: str | None = None
-    sourceEventId: str | None = None
-    createdAt: str
-    updatedAt: str
-
-
-class SessionTrigger(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    triggerType: Literal[
-        "USER_MESSAGE",
-        "HUMAN_RESUME",
-        "EXTERNAL_CALLBACK",
-        "HUMAN_OPERATOR_REPLY",
-        "PLAYBOOK_COMPLETED",
-        "SYSTEM_OWNER_WAKEUP",
-    ]
-    turnId: str
-    eventId: str | None = None
-    payload: dict[str, Any] = Field(default_factory=dict)
 
 
 class LlmUsageEntry(BaseModel):
-    sourceType: Literal["SESSION_OWNER_MODEL", "SESSION_PRIVACY_MODEL"]
+    sourceType: Literal["AGENT_MODEL", "PRIVACY_MODEL"]
     callSequence: int
     toolLoopStep: int = 0
     providerType: str
@@ -247,67 +189,6 @@ class LlmUsageEntry(BaseModel):
     occurredAt: str
 
 
-class SessionEvent(BaseModel):
-    eventId: str
-    sessionId: str
-    sequence: int
-    eventType: str
-    actorType: str
-    actorId: str | None = None
-    payload: dict[str, Any] = Field(default_factory=dict)
-    relatedMessageId: str | None = None
-    relatedPlaybookRunId: str | None = None
-    relatedOwnerAgentId: str | None = None
-
-
-class AgentRuntimeContextEntry(BaseModel):
-    entryId: str
-    entryType: Literal[
-        "SESSION_EVENT",
-        "SHARED_STATE_SNAPSHOT",
-        "SHARED_STATE_PATCH",
-        "ACTIVE_PLAYBOOK_SUMMARY",
-    ]
-    revision: int
-    occurredAt: str
-    data: dict[str, Any] = Field(default_factory=dict)
-
-
-class AgentDecision(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    action: Literal[
-        "REPLY",
-        "NO_OP",
-        "SWITCH_OWNER",
-        "RUN_PLAYBOOK",
-        "SESSION_HUMAN_HANDOFF",
-        "SECURITY_BLOCK",
-    ]
-    replyMessage: SessionMessageInput | None = None
-    targetAgentId: str | None = None
-    playbookId: str | None = None
-    playbookInput: dict[str, Any] | None = None
-    operatorReason: str | None = None
-
-    @model_validator(mode="after")
-    def validate_action_payload(self) -> "AgentDecision":
-        if self.operatorReason is not None:
-            operator_reason = self.operatorReason.strip()
-            self.operatorReason = operator_reason or None
-        if self.operatorReason is not None and self.action != "SESSION_HUMAN_HANDOFF":
-            raise ValueError("operatorReason is only supported for SESSION_HUMAN_HANDOFF")
-        if self.action == "REPLY" and not _has_message_content(self.replyMessage):
-            raise ValueError("REPLY requires replyMessage")
-        if self.action == "SWITCH_OWNER" and not (self.targetAgentId or "").strip():
-            raise ValueError("SWITCH_OWNER requires targetAgentId")
-        if self.action == "RUN_PLAYBOOK" and not (self.playbookId or "").strip():
-            raise ValueError("RUN_PLAYBOOK requires playbookId")
-        if self.action == "RUN_PLAYBOOK" and self.playbookInput is None:
-            raise ValueError("RUN_PLAYBOOK requires playbookInput")
-        return self
-
-
 class SecurityAssessment(BaseModel):
     action: Literal["ALLOW", "BLOCK"] = "ALLOW"
     categories: list[str] = Field(default_factory=list)
@@ -315,54 +196,61 @@ class SecurityAssessment(BaseModel):
     confidence: float | None = None
 
 
-class AgentTurnRequest(BaseModel):
+class CollaborationMessage(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    id: str
+    senderId: str
+    recipientId: str
+    taskId: str | None = None
+    replyToMessageId: str | None = None
+    kind: Literal["MESSAGE", "DELEGATION", "RESULT", "QUESTION", "EVENT", "CONTROL"]
+    body: dict[str, Any] = Field(default_factory=dict)
+    createdAt: str
 
+
+class ActivationStart(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    activationId: str
+
+
+class ActivationRuntime(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    activationId: str
     sessionId: str
-    turnId: str
-    turnExecutionId: str
-    replyMessageId: str
-    ownershipEpoch: int = 1
-    assistantId: str
-    assistantReleaseVersion: str
-    currentOwner: AgentConfig
-    availableAgents: list[AgentConfig] = Field(default_factory=list)
-    availablePlaybooks: list[PlaybookConfig] = Field(default_factory=list)
-    activePlaybook: ActivePlaybookSummary | None = None
-    sharedState: dict[str, Any] = Field(default_factory=dict)
-    effectivePrivacyModelBinding: LlmModelDescriptor | None = None
-    effectivePrivacyMappingEnabled: bool = False
-    trigger: SessionTrigger
-    messages: list[SessionMessage] = Field(default_factory=list)
-    contextEntries: list[AgentRuntimeContextEntry] = Field(default_factory=list)
-    transcriptBootstrap: bool = False
-    taskExecutionId: str | None = None
+    participantId: str
+    templateVersionId: str
+    agent: AgentProfile
+    trigger: CollaborationMessage
+    context: dict[str, Any] = Field(default_factory=dict)
+    workMemory: dict[str, Any] = Field(default_factory=dict)
+    maxToolSteps: int = 32
 
 
-class AgentTurnResult(BaseModel):
-    decision: AgentDecision
-    sharedState: dict[str, Any] = Field(default_factory=dict)
-    mappingTelemetry: PrivacyMappingTelemetry | None = None
-    securityAssessment: SecurityAssessment | None = None
-
-
-class AgentTurnExecutionOutcome(BaseModel):
+class ActivationOutcome(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     success: bool
-    result: AgentTurnResult | None = None
+    replyMessage: MessageContent | None = None
+    workMemory: dict[str, Any] = Field(default_factory=dict)
     failureReason: str | None = None
     llmUsage: list[LlmUsageEntry] = Field(default_factory=list)
+    mappingTelemetry: PrivacyMappingTelemetry | None = None
+    securityAssessment: SecurityAssessment | None = None
+    completion: Literal["COMPLETED", "WAITING", "BLOCKED"] | None = None
+    retryable: bool = False
 
     @model_validator(mode="after")
-    def validate_outcome(self) -> "AgentTurnExecutionOutcome":
-        if self.success and self.result is None:
-            raise ValueError("successful outcome requires result")
+    def validate_outcome(self) -> "ActivationOutcome":
         if not self.success and not (self.failureReason or "").strip():
             raise ValueError("failed outcome requires failureReason")
+        if self.success and self.retryable:
+            raise ValueError("a completed activation cannot request a retry")
+        if self.success and self.completion is None:
+            raise ValueError("successful outcome requires an explicit completion disposition")
         return self
 
 
 StreamVisibility = Literal["CUSTOMER", "OPERATOR", "DEVELOPER", "INTERNAL"]
-AgentTurnStreamFrameKind = Literal[
+ActivationStreamFrameKind = Literal[
     "TURN_STARTED",
     "MODEL_STARTED",
     "MODEL_COMPLETED",
@@ -375,68 +263,38 @@ AgentTurnStreamFrameKind = Literal[
 ]
 
 
-class TurnStartedPayload(BaseModel):
-    replyMessageId: str
-    triggerType: str
-    inputMessageCount: int = 0
-
-
-class ReplyBlockDeltaPayload(BaseModel):
-    replyMessageId: str
-    blockId: str
-    blockType: Literal["TEXT"]
-    delta: str
-
-
-class ReplyBlockCompletedPayload(BaseModel):
-    replyMessageId: str
-    blockId: str
-    block: SessionMessageBlock
-
-
-class FinalOutcomePayload(BaseModel):
-    replyMessageId: str
-    outcome: AgentTurnExecutionOutcome
-
-
-class ErrorPayload(BaseModel):
-    code: str
-    replyMessageId: str
-    message: str
-    stage: Literal[
-        "PROVIDER_STREAM",
-        "TOOL_ARGUMENT_PARSE",
-        "TOOL_EXECUTION",
-        "FINAL_OUTCOME_BUILD",
-        "TRANSCRIPT_PERSISTENCE",
-    ]
-    retryable: bool = False
-    details: dict[str, Any] = Field(default_factory=dict)
-
-
-class AgentTurnStreamFrame(BaseModel):
-    protocol: Literal["agentyard.agent-turn-stream.v1"] = "agentyard.agent-turn-stream.v1"
+class ActivationStreamFrame(BaseModel):
+    protocol: Literal["agentyard.activation-stream.v1"] = "agentyard.activation-stream.v1"
     frameId: str
     streamId: str
     sessionId: str
-    turnId: str
-    turnExecutionId: str
-    ownerAgentId: str
-    ownershipEpoch: int
+    activationId: str
+    participantId: str
     seq: int
-    kind: AgentTurnStreamFrameKind
+    kind: ActivationStreamFrameKind
     visibility: StreamVisibility
     occurredAt: str
     payload: dict[str, Any]
 
 
-class PlaybookToolTaskRequest(BaseModel):
+class ToolRunNodeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    toolRunId: str
+    nodeKey: str
+    executionId: str
+    input: dict[str, Any] = Field(default_factory=dict)
+
+
+class ResolvedToolNode(BaseModel):
+    """Trusted API configuration used only inside the runtime."""
     sessionId: str
-    playbookRunId: str
-    playbookId: str
+    participantId: str
+    activationId: str
+    toolRunId: str
     nodeKey: str
     nodeName: str
-    ownerAgent: AgentConfig
+    executionId: str
+    agent: AgentProfile
     toolId: str
     toolOperation: str
     input: dict[str, Any] = Field(default_factory=dict)
@@ -450,10 +308,10 @@ class PlaybookToolTaskResult(BaseModel):
     failureReason: str | None = None
 
 
-AgentConfig.model_rebuild()
+AgentProfile.model_rebuild()
 
 
-def _has_message_content(message: SessionMessageInput | None) -> bool:
+def _has_message_content(message: MessageContent | None) -> bool:
     if message is None:
         return False
     for block in message.blocks:

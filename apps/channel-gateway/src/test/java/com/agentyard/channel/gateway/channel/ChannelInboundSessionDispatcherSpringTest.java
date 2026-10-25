@@ -9,7 +9,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 class ChannelInboundSessionDispatcherSpringTest {
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
         .withBean(ChannelAdminRepository.class, () -> mock(ChannelAdminRepository.class))
-        .withBean(ChannelSessionRuntimeClient.class, () -> mock(ChannelSessionRuntimeClient.class))
+        .withBean(ChannelReceptionClient.class, () -> mock(ChannelReceptionClient.class))
         .withBean(
             ChannelBindingSnapshotRefreshHintClient.class,
             () -> mock(ChannelBindingSnapshotRefreshHintClient.class)

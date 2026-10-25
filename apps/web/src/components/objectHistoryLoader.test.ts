@@ -19,8 +19,8 @@ describe('objectHistoryLoader', () => {
     const fetches = [first, second];
     const loader = createObjectHistoryLoader(state, () => fetches.shift()!.promise as any);
 
-    const firstLoad = loader.load({ aggregateType: 'DOMAIN', objectId: 'domain-1' });
-    const secondLoad = loader.load({ aggregateType: 'DOMAIN', objectId: 'domain-2' });
+    const firstLoad = loader.load({ aggregateType: 'ROLE_TEMPLATE', objectId: 'domain-1' });
+    const secondLoad = loader.load({ aggregateType: 'ROLE_TEMPLATE', objectId: 'domain-2' });
 
     second.resolve({ items: [{ id: 'newer-event' }], nextCursor: 'cursor-2' });
     await secondLoad;
@@ -41,7 +41,7 @@ describe('objectHistoryLoader', () => {
     const pending = deferred<{ items: Array<{ id: string }>; nextCursor: string | null }>();
     const loader = createObjectHistoryLoader(state, () => pending.promise as any);
 
-    const loadPromise = loader.load({ aggregateType: 'DOMAIN', objectId: 'domain-1' });
+    const loadPromise = loader.load({ aggregateType: 'ROLE_TEMPLATE', objectId: 'domain-1' });
 
     expect(state.events).toEqual([]);
     expect(state.nextCursor).toBeNull();

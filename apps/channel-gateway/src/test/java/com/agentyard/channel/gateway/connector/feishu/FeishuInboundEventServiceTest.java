@@ -5,18 +5,17 @@ import static org.mockito.Mockito.mock;
 
 import com.agentyard.channel.gateway.channel.ChannelAdminRepository;
 import com.agentyard.channel.gateway.channel.ChannelInboundSessionDispatcher;
-import com.agentyard.channel.gateway.channel.ChannelSessionRuntimeClient;
+import com.agentyard.channel.gateway.channel.ChannelReceptionClient;
 import com.agentyard.channel.gateway.channel.NormalizedChannelTurnIngestService;
 import com.agentyard.channel.gateway.extension.ExtensionRegistrationProperties;
 import com.agentyard.channel.gateway.extension.ExtensionRegistrationService;
 import com.agentyard.channel.gateway.testing.EmbeddedPostgresTestDatabase;
-import com.agentyard.contracts.channel.ChannelContracts.ChannelAssistantBinding;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelEntryBinding;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelProfileStatus;
-import com.agentyard.contracts.session.SessionContracts.AcceptedSessionMessageAllocation;
-import com.agentyard.contracts.session.SessionContracts.ChannelInboundSessionTurnRequest;
-import com.agentyard.contracts.session.SessionContracts.ChannelInboundSessionTurnResponse;
-import com.agentyard.contracts.session.SessionContracts.SessionMessageDeliveryStatus;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelReceptionAllocation;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelReceptionRequest;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelReceptionResponse;
 import com.agentyard.shared.redis.RedisKeyspace;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -82,8 +81,8 @@ class FeishuInboundEventServiceTest {
         var binding = repository.listBindings("channel-profile-feishu").getFirst();
         assertEquals("oc_123", binding.externalConversationId());
         assertEquals("ou_123", binding.externalUserId());
-        assertEquals("assistant-1", binding.assistantId());
-        assertEquals("user_123", runtimeClient.requests.getFirst().messages().getFirst().sender().senderName());
+        assertEquals("assistant-1", binding.entryId());
+        assertEquals("user_123", runtimeClient.requests.getFirst().messages().getFirst().displayName());
         assertEquals(List.of("om_123:Typing"), reactionClient.added);
     }
 
@@ -106,7 +105,7 @@ class FeishuInboundEventServiceTest {
             ChannelProfileStatus.ACTIVE,
             true,
             Map.of(),
-            new ChannelAssistantBinding("assistant-1", null),
+            new ChannelEntryBinding("assistant-1"),
             "integration-account-1",
             false,
             1,
@@ -180,18 +179,15 @@ class FeishuInboundEventServiceTest {
         }
     }
 
-    private static final class CapturingRuntimeClient implements ChannelSessionRuntimeClient {
-        private final List<ChannelInboundSessionTurnRequest> requests = new ArrayList<>();
+    private static final class CapturingRuntimeClient implements ChannelReceptionClient {
+        private final List<ChannelReceptionRequest> requests = new ArrayList<>();
 
         @Override
-        public ChannelInboundSessionTurnResponse dispatchInboundTurn(ChannelInboundSessionTurnRequest request) {
+        public ChannelReceptionResponse dispatchInboundTurn(ChannelReceptionRequest request) {
             requests.add(request);
-            return new ChannelInboundSessionTurnResponse(
+            return new ChannelReceptionResponse(
                 "session-feishu",
-                "turn-session-feishu",
-                SessionMessageDeliveryStatus.ACCEPTED,
-                List.of("session-message-feishu"),
-                List.of(new AcceptedSessionMessageAllocation(0, null, "session-message-feishu", 0)),
+                List.of(new ChannelReceptionAllocation(0, "session-message-feishu", "session-feishu", "participant-feishu")),
                 List.of(),
                 null
             );

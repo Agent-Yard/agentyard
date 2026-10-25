@@ -117,34 +117,32 @@ public class ChannelSessionBindingSnapshotRecord extends UpdatableRecordImpl<Cha
     }
 
     /**
-     * Setter for
-     * <code>public.channel_session_binding_snapshot.assistant_id</code>.
+     * Setter for <code>public.channel_session_binding_snapshot.entry_id</code>.
      */
-    public void setAssistantId(String value) {
+    public void setEntryId(String value) {
         set(6, value);
     }
 
     /**
-     * Getter for
-     * <code>public.channel_session_binding_snapshot.assistant_id</code>.
+     * Getter for <code>public.channel_session_binding_snapshot.entry_id</code>.
      */
-    public String getAssistantId() {
+    public String getEntryId() {
         return (String) get(6);
     }
 
     /**
      * Setter for
-     * <code>public.channel_session_binding_snapshot.customer_id</code>.
+     * <code>public.channel_session_binding_snapshot.participant_id</code>.
      */
-    public void setCustomerId(String value) {
+    public void setParticipantId(String value) {
         set(7, value);
     }
 
     /**
      * Getter for
-     * <code>public.channel_session_binding_snapshot.customer_id</code>.
+     * <code>public.channel_session_binding_snapshot.participant_id</code>.
      */
-    public String getCustomerId() {
+    public String getParticipantId() {
         return (String) get(7);
     }
 
@@ -267,7 +265,7 @@ public class ChannelSessionBindingSnapshotRecord extends UpdatableRecordImpl<Cha
     /**
      * Create a detached, initialised ChannelSessionBindingSnapshotRecord
      */
-    public ChannelSessionBindingSnapshotRecord(String bindingId, String sessionId, String channelProfileId, String providerType, String externalConversationId, String externalUserId, String assistantId, String customerId, String bindingStatus, String profileStatus, Long profileRevision, OffsetDateTime bindingUpdatedAt, OffsetDateTime profileUpdatedAt, OffsetDateTime updatedAt) {
+    public ChannelSessionBindingSnapshotRecord(String bindingId, String sessionId, String channelProfileId, String providerType, String externalConversationId, String externalUserId, String entryId, String participantId, String bindingStatus, String profileStatus, Long profileRevision, OffsetDateTime bindingUpdatedAt, OffsetDateTime profileUpdatedAt, OffsetDateTime updatedAt) {
         super(ChannelSessionBindingSnapshot.CHANNEL_SESSION_BINDING_SNAPSHOT);
 
         setBindingId(bindingId);
@@ -276,8 +274,8 @@ public class ChannelSessionBindingSnapshotRecord extends UpdatableRecordImpl<Cha
         setProviderType(providerType);
         setExternalConversationId(externalConversationId);
         setExternalUserId(externalUserId);
-        setAssistantId(assistantId);
-        setCustomerId(customerId);
+        setEntryId(entryId);
+        setParticipantId(participantId);
         setBindingStatus(bindingStatus);
         setProfileStatus(profileStatus);
         setProfileRevision(profileRevision);

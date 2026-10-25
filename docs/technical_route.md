@@ -1,6 +1,6 @@
 # 技术路线
 
-更新：2026-10-04。方向是以 Agent 为交互核心的人机协作系统；本轮完成方案记录，代码重构待实施。产品和对象边界见[目标架构](architecture/agent-collaboration.md)。
+更新：2026-10-05。项目采用以 Agent 为交互核心的持续人机协作运行链。产品和对象边界见[目标架构](architecture/agent-collaboration.md)。
 
 ## 1. 保留现有技术基础
 
@@ -21,7 +21,7 @@
 
 本轮架构改造没有要求更换前端框架、引入 LangGraph、引入独立黑板服务或新消息总线。先复用已有能力形成统一运行链。
 
-## 2. 目标运行分工
+## 2. 运行分工
 
 ```text
 人 / 外部事件
@@ -58,12 +58,10 @@ Playbook 继续使用 Temporal 承载明确步骤和等待，但对 Agent 表现
 
 外部文件、知识文档、内部成果、第三方业务对象采用具体工具可解析的引用。按需保存文件或导入知识；不要求所有外部对象先迁入平台，也不新建覆盖所有资源类型的万能表。
 
-Extension 的身份和 ToolRun 关联字段如果需要变化，必须同步协议、fixtures、SDK 与消费者；当前协议不能被视为已经实现目标授权上下文。
+Extension 协议已经使用实例、参与者、Activation / ToolRun 和可信渠道身份关联。变更时同步协议、fixtures、SDK 与消费者，资源执行仍核对当前授权。
 
-## 5. 与当前实现的差异
+## 5. 验证与演进
 
-当前仍有独立 TaskExecution 和 Session Owner 两条链，后台 Task 推理不保存真实 Session transcript，模板依赖 Assistant 发布包，用户入口偏手工 Task 工作台。详细核对见[代码现状](architecture/code-framework.md)。
+统一的 Agent 执行从持久输入开始，以可信主体装配上下文，经过工具边界落到业务服务，并记录可恢复的输出。跨语言验证启用真实 transcript、PostgreSQL、Redis、Temporal 和 HTTP 工具；确定性场景与真实模型抽查分别验收。
 
-改造顺序由[W01—W08](todo/agent-collaboration-refactor.md)约束：统一身份和契约，打通接待到确认的完整链路，再扩展等待、直接协作、调度和资源；同时移除旧主链及其消费者。无需兼容已有数据库，不设置长期双轨。
-
-对象权限、持久记录和可恢复等待是主链基本能力。高阶成本治理、生产部署矩阵、大规模性能调优在真实闭环之后安排，见[项目待办](project_todos.md)。
+对象权限、持久记录和可恢复等待属于主链基本能力。组织产品化、成本治理、生产部署矩阵和大规模性能调优在真实闭环之后安排，见[项目待办](project_todos.md)。实际代码与测试范围见[代码框架](architecture/code-framework.md)和[实施验收](architecture/collaboration-acceptance.md)。

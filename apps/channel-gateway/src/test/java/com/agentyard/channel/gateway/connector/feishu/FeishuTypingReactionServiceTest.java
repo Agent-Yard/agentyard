@@ -5,7 +5,7 @@ import static org.mockito.Mockito.mock;
 
 import com.agentyard.channel.gateway.channel.ChannelAdminRepository;
 import com.agentyard.channel.gateway.testing.EmbeddedPostgresTestDatabase;
-import com.agentyard.contracts.channel.ChannelContracts.ChannelAssistantBinding;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelEntryBinding;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelConversationBindingStatus;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelGatewayProfile;
@@ -113,7 +113,7 @@ class FeishuTypingReactionServiceTest {
             ChannelProfileStatus.ACTIVE,
             true,
             Map.of(),
-            new ChannelAssistantBinding("assistant-1", null),
+            new ChannelEntryBinding("assistant-1"),
             "integration-account-1",
             false,
             1,

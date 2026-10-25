@@ -7,6 +7,8 @@ package com.agentyard.persistence.jooq.tables;
 import com.agentyard.persistence.jooq.Indexes;
 import com.agentyard.persistence.jooq.Keys;
 import com.agentyard.persistence.jooq.Public;
+import com.agentyard.persistence.jooq.tables.ChannelCollaborationOutbox.ChannelCollaborationOutboxPath;
+import com.agentyard.persistence.jooq.tables.CollaborationMessage.CollaborationMessagePath;
 import com.agentyard.persistence.jooq.tables.records.ChannelSessionBindingSnapshotRecord;
 
 import java.time.OffsetDateTime;
@@ -16,10 +18,14 @@ import java.util.List;
 
 import org.jooq.Condition;
 import org.jooq.Field;
+import org.jooq.ForeignKey;
 import org.jooq.Index;
+import org.jooq.InverseForeignKey;
 import org.jooq.Name;
+import org.jooq.Path;
 import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
+import org.jooq.Record;
 import org.jooq.SQL;
 import org.jooq.Schema;
 import org.jooq.Select;
@@ -92,16 +98,15 @@ public class ChannelSessionBindingSnapshot extends TableImpl<ChannelSessionBindi
     public final TableField<ChannelSessionBindingSnapshotRecord, String> EXTERNAL_USER_ID = createField(DSL.name("external_user_id"), SQLDataType.VARCHAR(255), this, "");
 
     /**
-     * The column
-     * <code>public.channel_session_binding_snapshot.assistant_id</code>.
+     * The column <code>public.channel_session_binding_snapshot.entry_id</code>.
      */
-    public final TableField<ChannelSessionBindingSnapshotRecord, String> ASSISTANT_ID = createField(DSL.name("assistant_id"), SQLDataType.VARCHAR(64), this, "");
+    public final TableField<ChannelSessionBindingSnapshotRecord, String> ENTRY_ID = createField(DSL.name("entry_id"), SQLDataType.VARCHAR(64), this, "");
 
     /**
      * The column
-     * <code>public.channel_session_binding_snapshot.customer_id</code>.
+     * <code>public.channel_session_binding_snapshot.participant_id</code>.
      */
-    public final TableField<ChannelSessionBindingSnapshotRecord, String> CUSTOMER_ID = createField(DSL.name("customer_id"), SQLDataType.VARCHAR(255), this, "");
+    public final TableField<ChannelSessionBindingSnapshotRecord, String> PARTICIPANT_ID = createField(DSL.name("participant_id"), SQLDataType.VARCHAR(255), this, "");
 
     /**
      * The column
@@ -171,6 +176,39 @@ public class ChannelSessionBindingSnapshot extends TableImpl<ChannelSessionBindi
         this(DSL.name("channel_session_binding_snapshot"), null);
     }
 
+    public <O extends Record> ChannelSessionBindingSnapshot(Table<O> path, ForeignKey<O, ChannelSessionBindingSnapshotRecord> childPath, InverseForeignKey<O, ChannelSessionBindingSnapshotRecord> parentPath) {
+        super(path, childPath, parentPath, CHANNEL_SESSION_BINDING_SNAPSHOT);
+    }
+
+    /**
+     * A subtype implementing {@link Path} for simplified path-based joins.
+     */
+    public static class ChannelSessionBindingSnapshotPath extends ChannelSessionBindingSnapshot implements Path<ChannelSessionBindingSnapshotRecord> {
+
+        private static final long serialVersionUID = 1L;
+        public <O extends Record> ChannelSessionBindingSnapshotPath(Table<O> path, ForeignKey<O, ChannelSessionBindingSnapshotRecord> childPath, InverseForeignKey<O, ChannelSessionBindingSnapshotRecord> parentPath) {
+            super(path, childPath, parentPath);
+        }
+        private ChannelSessionBindingSnapshotPath(Name alias, Table<ChannelSessionBindingSnapshotRecord> aliased) {
+            super(alias, aliased);
+        }
+
+        @Override
+        public ChannelSessionBindingSnapshotPath as(String alias) {
+            return new ChannelSessionBindingSnapshotPath(DSL.name(alias), this);
+        }
+
+        @Override
+        public ChannelSessionBindingSnapshotPath as(Name alias) {
+            return new ChannelSessionBindingSnapshotPath(alias, this);
+        }
+
+        @Override
+        public ChannelSessionBindingSnapshotPath as(Table<?> alias) {
+            return new ChannelSessionBindingSnapshotPath(alias.getQualifiedName(), this);
+        }
+    }
+
     @Override
     public Schema getSchema() {
         return aliased() ? null : Public.PUBLIC;
@@ -178,12 +216,33 @@ public class ChannelSessionBindingSnapshot extends TableImpl<ChannelSessionBindi
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_CHANNEL_SESSION_BINDING_SNAPSHOT_PROFILE_CONVERSATION, Indexes.IDX_CHANNEL_SESSION_BINDING_SNAPSHOT_PROFILE_SESSION, Indexes.IDX_CHANNEL_SESSION_BINDING_SNAPSHOT_SESSION, Indexes.IDX_CHANNEL_SESSION_BINDING_SNAPSHOT_UPDATED, Indexes.UK_CHANNEL_SESSION_BINDING_SNAPSHOT_ACTIVE_PROFILE_CONVERSATION, Indexes.UK_CHANNEL_SESSION_BINDING_SNAPSHOT_ACTIVE_SESSION);
+        return Arrays.asList(Indexes.IDX_CHANNEL_SESSION_BINDING_SNAPSHOT_PROFILE_CONVERSATION, Indexes.IDX_CHANNEL_SESSION_BINDING_SNAPSHOT_PROFILE_SESSION, Indexes.IDX_CHANNEL_SESSION_BINDING_SNAPSHOT_SESSION, Indexes.IDX_CHANNEL_SESSION_BINDING_SNAPSHOT_UPDATED, Indexes.UK_CHANNEL_BINDING_ACTIVE_CONVERSATION_PARTICIPANT, Indexes.UK_CHANNEL_SESSION_BINDING_SNAPSHOT_ACTIVE_SESSION);
     }
 
     @Override
     public UniqueKey<ChannelSessionBindingSnapshotRecord> getPrimaryKey() {
         return Keys.CHANNEL_SESSION_BINDING_SNAPSHOT_PKEY;
+    }
+
+    private transient ChannelCollaborationOutboxPath _channelCollaborationOutbox;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.channel_collaboration_outbox</code> table
+     */
+    public ChannelCollaborationOutboxPath channelCollaborationOutbox() {
+        if (_channelCollaborationOutbox == null)
+            _channelCollaborationOutbox = new ChannelCollaborationOutboxPath(this, null, Keys.CHANNEL_COLLABORATION_OUTBOX__CHANNEL_COLLABORATION_OUTBOX_BINDING_ID_FKEY.getInverseKey());
+
+        return _channelCollaborationOutbox;
+    }
+
+    /**
+     * Get the implicit many-to-many join path to the
+     * <code>public.collaboration_message</code> table
+     */
+    public CollaborationMessagePath collaborationMessage() {
+        return channelCollaborationOutbox().collaborationMessage();
     }
 
     @Override

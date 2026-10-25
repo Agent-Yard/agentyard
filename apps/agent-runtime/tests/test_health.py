@@ -32,8 +32,8 @@ class FakeTranscriptStore:
         (),
         {
             "database_url": "postgresql+psycopg://test",
-            "turn_execution_retention_seconds": 60,
-            "transcript_entry_retention_seconds": 60,
+            "activation_lease_seconds": 60,
+            "context_window_messages": 60,
             "retention_sweep_limit": 50,
             "transcript_cache_ttl_seconds": 60,
         },

@@ -17,10 +17,10 @@ class HttpUrlsTest {
     @Test
     void shouldJoinControlPlaneBaseUrlAndInternalPath() {
         assertEquals(
-            "http://127.0.0.1:8080/api/internal/session-runtime/stream-frame-ingest",
+            "http://127.0.0.1:8080/api/internal/activations/activation-1/stream",
             HttpUrls.joinToString(
                 "http://127.0.0.1:8080/api",
-                "/internal/session-runtime/stream-frame-ingest"
+                "/internal/activations/activation-1/stream"
             )
         );
     }

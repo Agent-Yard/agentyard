@@ -3,6 +3,8 @@ package com.agentyard.platform.knowledge;
 import static com.agentyard.platform.catalog.CatalogDtos.*;
 
 import com.agentyard.platform.auth.RequireGovernanceWrite;
+import com.agentyard.platform.auth.RequireGovernanceAccess;
+import com.agentyard.platform.catalog.CatalogAccess;
 import com.agentyard.platform.catalog.CatalogService;
 import com.agentyard.platform.shared.ApiResponse;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -18,75 +20,90 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
 @RestController
+@RequireGovernanceAccess
 @RequestMapping("/api/knowledge-bases")
 public class KnowledgeController {
     private final KnowledgeService knowledgeService;
     private final CatalogService catalogService;
 
-    public KnowledgeController(KnowledgeService knowledgeService, CatalogService catalogService) {
+    private final CatalogAccess access;
+
+    public KnowledgeController(KnowledgeService knowledgeService, CatalogService catalogService, CatalogAccess access) {
+        this.access = access;
         this.knowledgeService = knowledgeService;
         this.catalogService = catalogService;
     }
 
     @GetMapping
     public ApiResponse<?> knowledgeBases() {
-        return ApiResponse.ok(knowledgeService.listKnowledgeBases());
+        return ApiResponse.ok(access.visible(knowledgeService.listKnowledgeBases()));
     }
 
     @GetMapping("/{knowledgeBaseId}")
     public ApiResponse<?> knowledgeBase(@PathVariable String knowledgeBaseId) {
+        access.read(knowledgeService.getKnowledgeBase(knowledgeBaseId));
         return ApiResponse.ok(knowledgeService.getKnowledgeBase(knowledgeBaseId));
     }
 
     @PostMapping
     @RequireGovernanceWrite
     public ApiResponse<?> createKnowledgeBase(@RequestBody CreateKnowledgeBaseRequest request) {
+        access.write(request);
         return ApiResponse.ok(knowledgeService.createKnowledgeBase(request));
     }
 
     @PutMapping("/{knowledgeBaseId}")
     @RequireGovernanceWrite
     public ApiResponse<?> updateKnowledgeBase(@PathVariable String knowledgeBaseId, @RequestBody UpdateKnowledgeBaseRequest request) {
+        access.write(knowledgeService.getKnowledgeBase(knowledgeBaseId));
+        access.write(request);
         return ApiResponse.ok(knowledgeService.updateKnowledgeBase(knowledgeBaseId, request));
     }
 
     @DeleteMapping("/{knowledgeBaseId}")
     @RequireGovernanceWrite
     public ApiResponse<?> deleteKnowledgeBase(@PathVariable String knowledgeBaseId) {
+        access.write(knowledgeService.getKnowledgeBase(knowledgeBaseId));
         return ApiResponse.ok(catalogService.deleteKnowledgeBase(knowledgeBaseId));
     }
 
     @GetMapping("/{knowledgeBaseId}/releases")
     public ApiResponse<?> knowledgeReleases(@PathVariable String knowledgeBaseId) {
+        access.read(knowledgeService.getKnowledgeBase(knowledgeBaseId));
         return ApiResponse.ok(knowledgeService.listKnowledgeReleases(knowledgeBaseId));
     }
 
     @PostMapping("/{knowledgeBaseId}/releases")
     @RequireGovernanceWrite
     public ApiResponse<?> createKnowledgeRelease(@PathVariable String knowledgeBaseId, @RequestBody CreateKnowledgeReleaseRequest request) {
+        access.write(knowledgeService.getKnowledgeBase(knowledgeBaseId));
         return ApiResponse.ok(knowledgeService.createKnowledgeRelease(knowledgeBaseId, request));
     }
 
     @PatchMapping("/{knowledgeBaseId}/releases/{releaseId}/publish")
     @RequireGovernanceWrite
     public ApiResponse<?> publishKnowledgeRelease(@PathVariable String knowledgeBaseId, @PathVariable String releaseId) {
+        access.write(knowledgeService.getKnowledgeBase(knowledgeBaseId));
         return ApiResponse.ok(knowledgeService.publishKnowledgeRelease(knowledgeBaseId, releaseId));
     }
 
     @DeleteMapping("/{knowledgeBaseId}/releases/{releaseId}")
     @RequireGovernanceWrite
     public ApiResponse<?> deleteKnowledgeRelease(@PathVariable String knowledgeBaseId, @PathVariable String releaseId) {
+        access.write(knowledgeService.getKnowledgeBase(knowledgeBaseId));
         return ApiResponse.ok(knowledgeService.deleteKnowledgeRelease(knowledgeBaseId, releaseId));
     }
 
     @GetMapping("/{knowledgeBaseId}/references")
     public ApiResponse<?> knowledgeReferences(@PathVariable String knowledgeBaseId) {
-        return ApiResponse.ok(catalogService.listKnowledgeReferences(knowledgeBaseId));
+        access.read(knowledgeService.getKnowledgeBase(knowledgeBaseId));
+        return ApiResponse.ok(access.knowledgeReferences(catalogService.listKnowledgeReferences(knowledgeBaseId)));
     }
 
     @PostMapping("/{knowledgeBaseId}/upload-sessions")
     @RequireGovernanceWrite
     public ApiResponse<?> createUploadSession(@PathVariable String knowledgeBaseId) {
+        access.write(knowledgeService.getKnowledgeBase(knowledgeBaseId));
         return ApiResponse.ok(knowledgeService.createUploadSession(knowledgeBaseId));
     }
 
@@ -97,6 +114,7 @@ public class KnowledgeController {
         @PathVariable String uploadSessionId,
         @RequestParam("file") MultipartFile file
     ) throws Exception {
+        access.write(knowledgeService.getKnowledgeBase(knowledgeBaseId));
         return ApiResponse.ok(knowledgeService.completeUpload(
             knowledgeBaseId,
             uploadSessionId,
@@ -109,60 +127,71 @@ public class KnowledgeController {
     @PostMapping("/{knowledgeBaseId}/url-imports")
     @RequireGovernanceWrite
     public ApiResponse<?> importUrl(@PathVariable String knowledgeBaseId, @RequestBody CreateKnowledgeUrlImportRequest request) {
+        access.write(knowledgeService.getKnowledgeBase(knowledgeBaseId));
         return ApiResponse.ok(knowledgeService.importUrl(knowledgeBaseId, request));
     }
 
     @GetMapping("/{knowledgeBaseId}/files")
     public ApiResponse<?> files(@PathVariable String knowledgeBaseId) {
+        access.read(knowledgeService.getKnowledgeBase(knowledgeBaseId));
         return ApiResponse.ok(knowledgeService.listFiles(knowledgeBaseId));
     }
 
     @GetMapping("/{knowledgeBaseId}/import-jobs")
     public ApiResponse<?> importJobs(@PathVariable String knowledgeBaseId) {
+        access.read(knowledgeService.getKnowledgeBase(knowledgeBaseId));
         return ApiResponse.ok(knowledgeService.listImportJobs(knowledgeBaseId));
     }
 
     @PostMapping("/{knowledgeBaseId}/import-jobs/{jobId}/retry")
     @RequireGovernanceWrite
     public ApiResponse<?> retryImportJob(@PathVariable String knowledgeBaseId, @PathVariable String jobId) {
+        access.write(knowledgeService.getKnowledgeBase(knowledgeBaseId));
         return ApiResponse.ok(knowledgeService.retryImportJob(knowledgeBaseId, jobId));
     }
 
     @GetMapping("/{knowledgeBaseId}/documents")
     public ApiResponse<?> documents(@PathVariable String knowledgeBaseId) {
+        access.read(knowledgeService.getKnowledgeBase(knowledgeBaseId));
         return ApiResponse.ok(knowledgeService.listDocuments(knowledgeBaseId));
     }
 
     @GetMapping("/{knowledgeBaseId}/documents/{documentId}/deletion-preview")
     public ApiResponse<?> previewDocumentDeletion(@PathVariable String knowledgeBaseId, @PathVariable String documentId) {
+        access.read(knowledgeService.getKnowledgeBase(knowledgeBaseId));
         return ApiResponse.ok(knowledgeService.previewDocumentDeletion(knowledgeBaseId, documentId));
     }
 
     @DeleteMapping("/{knowledgeBaseId}/documents/{documentId}")
     @RequireGovernanceWrite
     public ApiResponse<?> deleteDocument(@PathVariable String knowledgeBaseId, @PathVariable String documentId) {
+        access.write(knowledgeService.getKnowledgeBase(knowledgeBaseId));
         return ApiResponse.ok(knowledgeService.deleteDocument(knowledgeBaseId, documentId));
     }
 
     @GetMapping("/{knowledgeBaseId}/snapshots")
     public ApiResponse<?> snapshots(@PathVariable String knowledgeBaseId) {
+        access.read(knowledgeService.getKnowledgeBase(knowledgeBaseId));
         return ApiResponse.ok(knowledgeService.listIndexSnapshots(knowledgeBaseId));
     }
 
     @PostMapping("/{knowledgeBaseId}/snapshots")
     @RequireGovernanceWrite
     public ApiResponse<?> createSnapshot(@PathVariable String knowledgeBaseId, @RequestBody CreateKnowledgeIndexSnapshotRequest request) {
+        access.write(knowledgeService.getKnowledgeBase(knowledgeBaseId));
         return ApiResponse.ok(knowledgeService.createIndexSnapshot(knowledgeBaseId, request));
     }
 
     @PostMapping("/{knowledgeBaseId}/snapshots/{snapshotId}/retry")
     @RequireGovernanceWrite
     public ApiResponse<?> retrySnapshot(@PathVariable String knowledgeBaseId, @PathVariable String snapshotId) {
+        access.write(knowledgeService.getKnowledgeBase(knowledgeBaseId));
         return ApiResponse.ok(knowledgeService.retryIndexSnapshot(knowledgeBaseId, snapshotId));
     }
 
     @PostMapping("/{knowledgeBaseId}/retrieval-preview")
     public ApiResponse<?> previewRetrieval(@PathVariable String knowledgeBaseId, @RequestBody KnowledgeRetrievalPreviewRequest request) {
+        access.read(knowledgeService.getKnowledgeBase(knowledgeBaseId));
         return ApiResponse.ok(knowledgeService.previewRetrieval(knowledgeBaseId, request));
     }
 }

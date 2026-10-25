@@ -78,9 +78,10 @@ public class ChannelAdminRepository {
 
     public Optional<ChannelConversationBinding> findBindingByProfileAndExternalConversation(
         String channelProfileId,
-        String externalConversationId
+        String externalConversationId,
+        String externalUserId
     ) {
-        return store.findBindingByProfileAndExternalConversation(channelProfileId, externalConversationId);
+        return store.findBindingByProfileAndExternalConversation(channelProfileId, externalConversationId, externalUserId);
     }
 
     public Optional<ChannelConversationBinding> findBindingBySessionId(String sessionId) {

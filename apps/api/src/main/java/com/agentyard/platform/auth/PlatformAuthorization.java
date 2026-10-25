@@ -10,7 +10,6 @@ import org.springframework.stereotype.Component;
 public class PlatformAuthorization {
     private static final Set<Role> GOVERNANCE_ROLES = EnumSet.of(
         Role.PLATFORM_ADMIN,
-        Role.DOMAIN_ADMIN,
         Role.DEVELOPER
     );
 

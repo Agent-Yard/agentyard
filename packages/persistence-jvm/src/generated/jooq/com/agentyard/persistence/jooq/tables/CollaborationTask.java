@@ -7,17 +7,21 @@ package com.agentyard.persistence.jooq.tables;
 import com.agentyard.persistence.jooq.Indexes;
 import com.agentyard.persistence.jooq.Keys;
 import com.agentyard.persistence.jooq.Public;
+import com.agentyard.persistence.jooq.tables.AgentSchedule.AgentSchedulePath;
+import com.agentyard.persistence.jooq.tables.AgentSession.AgentSessionPath;
+import com.agentyard.persistence.jooq.tables.AgentToolRun.AgentToolRunPath;
 import com.agentyard.persistence.jooq.tables.CollaborationActor.CollaborationActorPath;
 import com.agentyard.persistence.jooq.tables.CollaborationContextEntry.CollaborationContextEntryPath;
 import com.agentyard.persistence.jooq.tables.CollaborationContextVersion.CollaborationContextVersionPath;
-import com.agentyard.persistence.jooq.tables.CollaborationExecution.CollaborationExecutionPath;
+import com.agentyard.persistence.jooq.tables.CollaborationDecision.CollaborationDecisionPath;
+import com.agentyard.persistence.jooq.tables.CollaborationMessage.CollaborationMessagePath;
 import com.agentyard.persistence.jooq.tables.CollaborationOrganization.CollaborationOrganizationPath;
 import com.agentyard.persistence.jooq.tables.CollaborationParticipant.CollaborationParticipantPath;
 import com.agentyard.persistence.jooq.tables.CollaborationTaskCommand.CollaborationTaskCommandPath;
 import com.agentyard.persistence.jooq.tables.CollaborationTaskEvent.CollaborationTaskEventPath;
 import com.agentyard.persistence.jooq.tables.CollaborationTaskRelation.CollaborationTaskRelationPath;
-import com.agentyard.persistence.jooq.tables.CollaborationTaskReview.CollaborationTaskReviewPath;
 import com.agentyard.persistence.jooq.tables.CollaborationTaskSession.CollaborationTaskSessionPath;
+import com.agentyard.persistence.jooq.tables.LlmUsageRecord.LlmUsageRecordPath;
 import com.agentyard.persistence.jooq.tables.records.CollaborationTaskRecord;
 
 import java.time.OffsetDateTime;
@@ -142,6 +146,16 @@ public class CollaborationTask extends TableImpl<CollaborationTaskRecord> {
      */
     public final TableField<CollaborationTaskRecord, OffsetDateTime> UPDATED_AT = createField(DSL.name("updated_at"), SQLDataType.TIMESTAMPWITHTIMEZONE(6).nullable(false), this, "");
 
+    /**
+     * The column <code>public.collaboration_task.initiated_by</code>.
+     */
+    public final TableField<CollaborationTaskRecord, String> INITIATED_BY = createField(DSL.name("initiated_by"), SQLDataType.CLOB.nullable(false), this, "");
+
+    /**
+     * The column <code>public.collaboration_task.confirmer_id</code>.
+     */
+    public final TableField<CollaborationTaskRecord, String> CONFIRMER_ID = createField(DSL.name("confirmer_id"), SQLDataType.CLOB.nullable(false), this, "");
+
     private CollaborationTask(Name alias, Table<CollaborationTaskRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
     }
@@ -221,7 +235,20 @@ public class CollaborationTask extends TableImpl<CollaborationTaskRecord> {
 
     @Override
     public List<ForeignKey<CollaborationTaskRecord, ?>> getReferences() {
-        return Arrays.asList(Keys.COLLABORATION_TASK__COLLABORATION_TASK_CREATED_BY_FKEY, Keys.COLLABORATION_TASK__COLLABORATION_TASK_ORGANIZATION_ID_FKEY, Keys.COLLABORATION_TASK__COLLABORATION_TASK_SUBMITTED_BY_FKEY);
+        return Arrays.asList(Keys.COLLABORATION_TASK__COLLABORATION_TASK_CONFIRMER_ID_FKEY, Keys.COLLABORATION_TASK__COLLABORATION_TASK_CREATED_BY_FKEY, Keys.COLLABORATION_TASK__COLLABORATION_TASK_INITIATED_BY_FKEY, Keys.COLLABORATION_TASK__COLLABORATION_TASK_ORGANIZATION_ID_FKEY, Keys.COLLABORATION_TASK__COLLABORATION_TASK_SUBMITTED_BY_FKEY);
+    }
+
+    private transient CollaborationActorPath _collaborationTaskConfirmerIdFkey;
+
+    /**
+     * Get the implicit join path to the <code>public.collaboration_actor</code>
+     * table, via the <code>collaboration_task_confirmer_id_fkey</code> key.
+     */
+    public CollaborationActorPath collaborationTaskConfirmerIdFkey() {
+        if (_collaborationTaskConfirmerIdFkey == null)
+            _collaborationTaskConfirmerIdFkey = new CollaborationActorPath(this, Keys.COLLABORATION_TASK__COLLABORATION_TASK_CONFIRMER_ID_FKEY, null);
+
+        return _collaborationTaskConfirmerIdFkey;
     }
 
     private transient CollaborationActorPath _collaborationTaskCreatedByFkey;
@@ -235,6 +262,19 @@ public class CollaborationTask extends TableImpl<CollaborationTaskRecord> {
             _collaborationTaskCreatedByFkey = new CollaborationActorPath(this, Keys.COLLABORATION_TASK__COLLABORATION_TASK_CREATED_BY_FKEY, null);
 
         return _collaborationTaskCreatedByFkey;
+    }
+
+    private transient CollaborationActorPath _collaborationTaskInitiatedByFkey;
+
+    /**
+     * Get the implicit join path to the <code>public.collaboration_actor</code>
+     * table, via the <code>collaboration_task_initiated_by_fkey</code> key.
+     */
+    public CollaborationActorPath collaborationTaskInitiatedByFkey() {
+        if (_collaborationTaskInitiatedByFkey == null)
+            _collaborationTaskInitiatedByFkey = new CollaborationActorPath(this, Keys.COLLABORATION_TASK__COLLABORATION_TASK_INITIATED_BY_FKEY, null);
+
+        return _collaborationTaskInitiatedByFkey;
     }
 
     private transient CollaborationOrganizationPath _collaborationOrganization;
@@ -263,6 +303,32 @@ public class CollaborationTask extends TableImpl<CollaborationTaskRecord> {
         return _collaborationTaskSubmittedByFkey;
     }
 
+    private transient AgentSchedulePath _agentSchedule;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.agent_schedule</code> table
+     */
+    public AgentSchedulePath agentSchedule() {
+        if (_agentSchedule == null)
+            _agentSchedule = new AgentSchedulePath(this, null, Keys.AGENT_SCHEDULE__AGENT_SCHEDULE_TASK_ID_FKEY.getInverseKey());
+
+        return _agentSchedule;
+    }
+
+    private transient AgentToolRunPath _agentToolRun;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.agent_tool_run</code> table
+     */
+    public AgentToolRunPath agentToolRun() {
+        if (_agentToolRun == null)
+            _agentToolRun = new AgentToolRunPath(this, null, Keys.AGENT_TOOL_RUN__AGENT_TOOL_RUN_TASK_ID_FKEY.getInverseKey());
+
+        return _agentToolRun;
+    }
+
     private transient CollaborationContextEntryPath _collaborationContextEntry;
 
     /**
@@ -289,17 +355,30 @@ public class CollaborationTask extends TableImpl<CollaborationTaskRecord> {
         return _collaborationContextVersion;
     }
 
-    private transient CollaborationExecutionPath _collaborationExecution;
+    private transient CollaborationDecisionPath _collaborationDecision;
 
     /**
      * Get the implicit to-many join path to the
-     * <code>public.collaboration_execution</code> table
+     * <code>public.collaboration_decision</code> table
      */
-    public CollaborationExecutionPath collaborationExecution() {
-        if (_collaborationExecution == null)
-            _collaborationExecution = new CollaborationExecutionPath(this, null, Keys.COLLABORATION_EXECUTION__COLLABORATION_EXECUTION_TASK_ID_FKEY.getInverseKey());
+    public CollaborationDecisionPath collaborationDecision() {
+        if (_collaborationDecision == null)
+            _collaborationDecision = new CollaborationDecisionPath(this, null, Keys.COLLABORATION_DECISION__COLLABORATION_DECISION_TASK_ID_FKEY.getInverseKey());
 
-        return _collaborationExecution;
+        return _collaborationDecision;
+    }
+
+    private transient CollaborationMessagePath _collaborationMessage;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.collaboration_message</code> table
+     */
+    public CollaborationMessagePath collaborationMessage() {
+        if (_collaborationMessage == null)
+            _collaborationMessage = new CollaborationMessagePath(this, null, Keys.COLLABORATION_MESSAGE__COLLABORATION_MESSAGE_TASK_ID_FKEY.getInverseKey());
+
+        return _collaborationMessage;
     }
 
     private transient CollaborationParticipantPath _collaborationParticipant;
@@ -369,19 +448,6 @@ public class CollaborationTask extends TableImpl<CollaborationTaskRecord> {
         return _collaborationTaskRelationTaskIdFkey;
     }
 
-    private transient CollaborationTaskReviewPath _collaborationTaskReview;
-
-    /**
-     * Get the implicit to-many join path to the
-     * <code>public.collaboration_task_review</code> table
-     */
-    public CollaborationTaskReviewPath collaborationTaskReview() {
-        if (_collaborationTaskReview == null)
-            _collaborationTaskReview = new CollaborationTaskReviewPath(this, null, Keys.COLLABORATION_TASK_REVIEW__COLLABORATION_TASK_REVIEW_TASK_ID_FKEY.getInverseKey());
-
-        return _collaborationTaskReview;
-    }
-
     private transient CollaborationTaskSessionPath _collaborationTaskSession;
 
     /**
@@ -395,6 +461,19 @@ public class CollaborationTask extends TableImpl<CollaborationTaskRecord> {
         return _collaborationTaskSession;
     }
 
+    private transient LlmUsageRecordPath _llmUsageRecord;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.llm_usage_record</code> table
+     */
+    public LlmUsageRecordPath llmUsageRecord() {
+        if (_llmUsageRecord == null)
+            _llmUsageRecord = new LlmUsageRecordPath(this, null, Keys.LLM_USAGE_RECORD__LLM_USAGE_RECORD_TASK_ID_FKEY.getInverseKey());
+
+        return _llmUsageRecord;
+    }
+
     /**
      * Get the implicit many-to-many join path to the
      * <code>public.collaboration_actor</code> table
@@ -403,10 +482,18 @@ public class CollaborationTask extends TableImpl<CollaborationTaskRecord> {
         return collaborationParticipant().collaborationActor();
     }
 
+    /**
+     * Get the implicit many-to-many join path to the
+     * <code>public.agent_session</code> table
+     */
+    public AgentSessionPath agentSession() {
+        return collaborationTaskSession().agentSession();
+    }
+
     @Override
     public List<Check<CollaborationTaskRecord>> getChecks() {
         return Arrays.asList(
-            Internal.createCheck(this, DSL.name("collaboration_task_status_check"), "((status = ANY (ARRAY['OPEN'::text, 'ACTIVE'::text, 'WAITING'::text, 'IN_REVIEW'::text, 'COMPLETED'::text, 'CANCELLED'::text])))", true)
+            Internal.createCheck(this, DSL.name("collaboration_task_status_check"), "((status = ANY (ARRAY['OPEN'::text, 'ACTIVE'::text, 'WAITING'::text, 'PAUSED'::text, 'SUBMITTED'::text, 'COMPLETED'::text, 'CANCELLED'::text])))", true)
         );
     }
 

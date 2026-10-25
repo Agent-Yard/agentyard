@@ -12,31 +12,30 @@ import org.springframework.stereotype.Service;
 public class TaskCommandService {
     private final CollaborationService collaboration;
     public TaskCommandService(CollaborationService collaboration) { this.collaboration = collaboration; }
-    public CommandResult command(String taskId, Command command) { return command(taskId, collaboration.currentActor().id(), command); }
-    CommandResult command(String taskId, String actor, Command command) {
-        return command(taskId,actor,command,null);
+    public CommandResult command(String taskId, Command command) {
+        return command(taskId, CommandAuthority.own(collaboration.currentActor().id()), command);
     }
-    CommandResult command(String taskId, String actor, Command command, String executionId) {
+    public CommandResult command(String taskId, CommandAuthority authority, Command command) {
+        String actor = authority.executedBy();
+        String decider = authority.decidedBy();
         text(command.requestId(), "requestId"); if (command.kind() == null) bad("command kind is required");
         var data = object(command.data());
-        String digest = collaboration.store.serialize(List.of(command.kind(), command.expectedRevision(), canonical(data)));
+        String digest = collaboration.store.serialize(List.of(command.kind(), command.expectedRevision(), canonical(data), authority));
         if (digest.length() > 500000) bad("command exceeds 500 KB");
         return collaboration.store.transaction(s -> {
             // All graph and completion commands share one lock order. Row locks serialize each task's command log.
             if (Set.of(CommandKind.LINK_TASK, CommandKind.UNLINK_TASK, CommandKind.CREATE_CHILD, CommandKind.TRANSITION).contains(command.kind())) s.graphLock();
-            Task task = collaboration.task(s,taskId,actor,true);
-            if(executionId!=null) {
-                var execution=s.execution(executionId).filter(e->e.taskId().equals(taskId)&&e.actorId().equals(actor)).orElseThrow(TaskAccess::missing);
-                if(executionTerminal(execution.status())) conflict("execution capability is closed");
-                require(permissions(task.policy().roles(),roles(s.participants(taskId),actor)),Permission.EXECUTE);
-            }
+            validateAuthority(s, authority);
+            Task task = collaboration.task(s,taskId,decider,true);
+            collaboration.task(s,taskId,actor,false);
             var receipt = s.receipt(taskId,actor,command.requestId());
             if (receipt.isPresent()) {
                 if (!receipt.get().digest().equals(digest)) conflict("requestId was already used for a different command");
-                var result=receipt.get().result(); return new CommandResult(taskId,result.revision(),result.objectId(),true);
+                var result=receipt.get().result(); return new CommandResult(taskId,result.revision(),result.objectId(),true,
+                    result.status(),result.contentRevision(),result.submissionInvalidated());
             }
             revision(task.revision(),command.expectedRevision());
-            var permissions = permissions(task.policy().roles(),roles(s.participants(taskId),actor));
+            var permissions = permissions(task.policy().roles(),roles(s.participants(taskId),decider));
             if (terminal(task.status()) && !Set.of(CommandKind.TRANSITION,CommandKind.LINK_SESSION,CommandKind.UNLINK_SESSION).contains(command.kind())) conflict("reopen a closed task before changing its work or permissions");
             Draft draft = new Draft(task);
             switch (command.kind()) {
@@ -53,7 +52,7 @@ public class TaskCommandService {
                         for(var entry : allContext(s,taskId)) validateAssignments(draft.policy.roles(),entry.visibleToRoles());
                         retainManager(draft.policy.roles(),s.participants(taskId));
                     }
-                    draft.material=true;
+                    draft.material=data.keySet().stream().anyMatch(key -> !key.equals("stage"));
                 }
                 case SET_PARTICIPANT, REMOVE_PARTICIPANT -> {
                     require(permissions,Permission.MANAGE); String target=text(str(data,"actorId"),"actorId"); activeActor(s,target);
@@ -72,7 +71,7 @@ public class TaskCommandService {
                     require(permissions,Permission.CONTRIBUTE);
                     // Explicit participants: creating a child does not copy the parent's private context or memberships.
                     Policy policy=validatePolicy(data.containsKey("policy") ? collaboration.mapper.convertValue(data.get("policy"),Policy.class) : null);
-                    Instant now=Instant.now(); Task child=new Task(id(),task.organizationId(),text(str(data,"title"),"title"),text(str(data,"goal"),"goal"),TaskStatus.OPEN,"",1,1,map(data.get("attributes")),policy,actor,null,now,now);
+                    Instant now=Instant.now(); Task child=new Task(id(),task.organizationId(),text(str(data,"title"),"title"),text(str(data,"goal"),"goal"),TaskStatus.OPEN,"",1,1,map(data.get("attributes")),policy,actor,actor,actor,null,now,now);
                     s.saveTask(child); s.participant(child.id(),actor,List.of(managerRole(policy.roles())));
                     // Delegation is explicit. This also lets an Agent hand a child back to people
                     // without making every parent participant a member of every child.
@@ -81,14 +80,11 @@ public class TaskCommandService {
                         activeActor(s,participant.actorId());
                         collaboration.task(s,taskId,participant.actorId(),false);
                         validateAssignments(policy.roles(),participant.roles());
-                        if(executionId!=null) {
-                            var execution=s.execution(executionId).orElseThrow(TaskAccess::missing);
-                            for(String sourceId:stringList(execution.input().get("contextEntryIds"))) entry(s,task,participant.actorId(),sourceId);
-                        }
                         s.participant(child.id(),participant.actorId(),participant.roles());
                     }
                     retainManager(policy.roles(),s.participants(child.id()));
                     s.event(new Event(child.id(),1,actor,"CREATED",Map.of("parentTaskId",taskId),Set.of(),now));
+                    s.publish(child.id(),"CREATED",actor,Map.of("revision",1));
                     s.relation(new Relation(taskId,child.id(),RelationKind.CHILD),false); draft.objectId=child.id(); draft.material=true;
                 }
                 case LINK_TASK, UNLINK_TASK -> {
@@ -100,38 +96,28 @@ public class TaskCommandService {
                 }
                 case LINK_SESSION, UNLINK_SESSION -> {
                     require(permissions,Permission.VIEW); String session=text(str(data,"sessionId"),"sessionId"); var who=activeActor(s,actor);
-                    if(who.kind()!=ActorKind.HUMAN || !s.sessionCustomer(session).filter(who.subjectId()::equals).isPresent()) throw missing();
-                    s.session(new SessionLink(taskId,session,actor,Instant.now()),command.kind()==CommandKind.UNLINK_SESSION);
+                    String participant=s.sessionParticipant(session).orElseThrow(TaskAccess::missing);
+                    if(!participant.equals(actor)) require(permissions,Permission.MANAGE);
+                    collaboration.task(s,taskId,participant,false);
+                    s.session(new SessionLink(taskId,session,participant,Instant.now()),command.kind()==CommandKind.UNLINK_SESSION);
                 }
-                case TRANSITION -> transition(s,task,actor,permissions,data,draft);
-                case REVIEW -> {
-                    require(permissions,Permission.REVIEW);
-                    if(task.status()!=TaskStatus.IN_REVIEW) conflict("task must be submitted for review");
-                    revision(task.contentRevision(),number(data,"contentRevision"));
-                    if(!task.policy().allowSelfReview() && actor.equals(task.submittedBy())) conflict("submitter cannot approve their own submission");
-                    if(!(data.get("approved") instanceof Boolean)) bad("approved must be a boolean");
-                    s.review(new Review(taskId,task.contentRevision(),actor,(Boolean)data.get("approved"),Objects.toString(data.get("comment"),""),Instant.now()));
-                }
-                case START_EXECUTION -> startExecution(s,task,actor,permissions,data,draft);
-                case CANCEL_EXECUTION, RESUME_EXECUTION -> {
-                    require(permissions,command.kind()==CommandKind.CANCEL_EXECUTION ? Permission.EXECUTE : Permission.DECIDE);
-                    var execution=s.execution(text(str(data,"executionId"),"executionId")).filter(e -> e.taskId().equals(taskId)).orElseThrow(TaskAccess::missing);
-                    if(command.kind()==CommandKind.CANCEL_EXECUTION) {
-                        if(!executionTerminal(execution.status())) s.progress(execution.id(),new ExecutionProgress(ExecutionStatus.CANCELLED,execution.result(),Map.of(),null));
-                    } else {
-                        if(!collaboration.executionVisible(s,task,actor,execution)) throw missing();
-                        String waitingId=text(str(data,"waitingId"),"waitingId");
-                        if(execution.status()!=ExecutionStatus.WAITING || !waitingId.equals(execution.waiting().get("id"))) conflict("execution is not waiting for this response");
-                        if(s.hasSignal(execution.id(),waitingId)) conflict("this waiting point already has an accepted response");
-                        s.signal(execution.id(),new ResumeSignal(id(),waitingId,actor,map(data.get("payload"))));
-                    }
-                    draft.objectId=execution.id();
-                }
+                case TRANSITION -> transition(s,task,authority,permissions,data,draft);
+                case SUBMIT, CONFIRM, REQUEST_CHANGES, CONFIRM_STAGE, TRANSFER_CONFIRMATION ->
+                    decide(s,task,authority,permissions,command.kind(),data,draft);
+
             }
             Task updated=draft.build(); s.saveTask(updated);
             // Events carry references, never a second uncontrolled copy of private context or execution input.
             s.event(new Event(taskId,updated.revision(),actor,command.kind().name(),draft.objectId==null ? Map.of() : Map.of("objectId",draft.objectId),draft.audience,Instant.now()));
-            var result=new CommandResult(taskId,updated.revision(),draft.objectId,false); s.receipt(taskId,actor,command.requestId(),digest,result); return result;
+            Map<String,Object> notification=new LinkedHashMap<>(Map.of("revision",updated.revision(),"status",updated.status().name(),"previousStatus",task.status().name()));
+            if(command.kind()==CommandKind.REQUEST_CHANGES) {
+                notification.put("notifyParticipantId",Objects.requireNonNullElse(task.submittedBy(),task.createdBy()));
+                notification.put("decisionId",draft.objectId);
+            }
+            s.publish(taskId,command.kind().name(),actor,notification);
+            var result=new CommandResult(taskId,updated.revision(),draft.objectId,false,updated.status(),updated.contentRevision(),
+                task.status()==TaskStatus.SUBMITTED && draft.material);
+            s.receipt(taskId,actor,command.requestId(),digest,result); return result;
         });
     }
     private void putContext(TaskStore s,Task task,String actor,Set<Permission> permissions,Map<String,Object> data,Draft draft) {
@@ -154,58 +140,57 @@ public class TaskCommandService {
             if(!origin.visibleToRoles().isEmpty() && (audience.isEmpty() || !origin.visibleToRoles().containsAll(audience))) bad("derived context must not broaden its source audience");
         }
         if(!sourceRevisions.isEmpty()) source.put("entryRevisions",sourceRevisions);
-        // Execution-derived content must use the same restricted audience as every input it may have consumed.
-        if(source.get("executionId")!=null) {
-            var execution=s.execution(source.get("executionId").toString()).filter(e->e.taskId().equals(task.id())).orElseThrow(TaskAccess::missing);
-            if(!collaboration.executionVisible(s,task,actor,execution)) throw missing();
-            for(String sourceId:stringList(execution.input().get("contextEntryIds"))) {
-                var origin=s.entry(sourceId).orElseThrow(TaskAccess::missing);
-                if(!origin.visibleToRoles().isEmpty() && (audience.isEmpty() || !origin.visibleToRoles().containsAll(audience))) bad("execution output cannot broaden its input audience");
-            }
-            for(Object value:(List<?>)execution.input().getOrDefault("contextEntries",List.of())) {
-                var snapshot=collaboration.mapper.convertValue(value,ContextEntry.class);
-                sourceRevisions.put(snapshot.id(),snapshot.revision());
-            }
-            source.put("entryRevisions",sourceRevisions);
-            source.put("contextRevision",execution.input().get("contextRevision"));
-        }
         ContextState state=data.containsKey("state") ? enumValue(ContextState.class,str(data,"state")) : ContextState.PROPOSED;
         if(state!=ContextState.PROPOSED || kind==ContextKind.DECISION) require(permissions,Permission.DECIDE);
         Instant now=Instant.now(); var updated=new ContextEntry(previous==null ? id() : previous.id(),task.id(),kind,text(str(data,"title"),"title"),map(data.get("body")),state,audience,source,previous==null?actor:previous.authorId(),previous==null?1:previous.revision()+1,previous==null?now:previous.createdAt(),now);
         s.saveEntry(updated,actor); draft.objectId=updated.id(); draft.audience=audience; draft.material=true;
     }
-    private void transition(TaskStore s,Task task,String actor,Set<Permission> permissions,Map<String,Object> data,Draft draft) {
-        require(permissions,Permission.MANAGE); TaskStatus target=enumValue(TaskStatus.class,str(data,"status"));
+    private void transition(TaskStore s,Task task,CommandAuthority authority,Set<Permission> permissions,
+        Map<String,Object> data,Draft draft) {
+        require(permissions,Permission.MANAGE);
+        TaskStatus target=enumValue(TaskStatus.class,str(data,"status"));
+        if(target==TaskStatus.COMPLETED || target==TaskStatus.SUBMITTED) bad("use SUBMIT or CONFIRM for a delivery");
         if(task.status()==target) conflict("task already has this status");
+        if(task.status()==TaskStatus.SUBMITTED && target==TaskStatus.WAITING)
+            conflict("submitted work already awaits confirmation; keep SUBMITTED, or explicitly resume ACTIVE work before requesting new information");
         if(terminal(task.status()) && target!=TaskStatus.ACTIVE) conflict("closed tasks can only be reopened as ACTIVE");
-        if(target==TaskStatus.COMPLETED || target==TaskStatus.IN_REVIEW) {
-            if(s.executions(task.id()).stream().anyMatch(e->!executionTerminal(e.status()))) conflict("unfinished executions remain");
-            if(s.relations(task.id()).stream().filter(r->r.kind()!=RelationKind.RELATED).anyMatch(r->s.task(r.relatedTaskId(),false).orElseThrow().status()!=TaskStatus.COMPLETED)) conflict("child tasks and dependencies must be completed first");
+        if(terminal(task.status()) && !task.confirmerId().equals(authority.decidedBy()))
+            bad("only the confirmer can reopen completed work");
+        draft.status=target;
+        if(target==TaskStatus.CANCELLED || target==TaskStatus.PAUSED || task.status()==TaskStatus.PAUSED) {
+            DecisionKind kind=target==TaskStatus.CANCELLED ? DecisionKind.CANCEL :
+                target==TaskStatus.PAUSED ? DecisionKind.PAUSE : DecisionKind.RESUME;
+            recordDecision(s,task,authority,kind,data);
         }
-        if(target==TaskStatus.COMPLETED && task.policy().requiredApprovals()>0) {
-            if(task.status()!=TaskStatus.IN_REVIEW) conflict("task requires review before completion");
-            var reviews=s.reviews(task.id()).stream().filter(r->r.contentRevision()==task.contentRevision())
-                .filter(r->permissions(task.policy().roles(),roles(s.participants(task.id()),r.actorId())).contains(Permission.REVIEW)).toList();
-            if(reviews.stream().anyMatch(r->!r.approved()) || reviews.stream().filter(Review::approved).count()<task.policy().requiredApprovals()) conflict("current submission has not passed its review policy");
-        }
-        if(target==TaskStatus.CANCELLED) s.executions(task.id()).stream().filter(e->!executionTerminal(e.status())).forEach(e->s.progress(e.id(),new ExecutionProgress(ExecutionStatus.CANCELLED,e.result(),Map.of(),null)));
-        draft.status=target; draft.submittedBy=target==TaskStatus.IN_REVIEW?actor:null;
         if(terminal(task.status())) draft.material=true;
     }
-    private void startExecution(TaskStore s,Task task,String actor,Set<Permission> permissions,Map<String,Object> data,Draft draft) {
-        require(permissions,Permission.EXECUTE); String executor=text(str(data,"actorId"),"actorId"); var who=activeActor(s,executor);
-        if(who.kind()!=ActorKind.AGENT) bad("execution requires an Agent actor; humans contribute directly to tasks");
-        require(permissions(task.policy().roles(),roles(s.participants(task.id()),executor)),Permission.EXECUTE);
-        String playbookId=str(data,"playbookId"); var snapshot=collaboration.runtime.resolve(text(str(data,"releaseId"),"releaseId"),who.subjectId(),playbookId);
-        var input=new LinkedHashMap<>(map(data.get("input")));
-        // Selection is explicit and bounded. An omitted selection means visible entries, never another actor's hidden context.
-        List<String> selected=data.containsKey("contextEntryIds") ? stringList(data.get("contextEntryIds")) : s.context(task.id(),executor,roles(s.participants(task.id()),executor),null,200).stream().map(ContextEntry::id).toList();
-        for(String sourceId:selected) { entry(s,task,actor,sourceId); entry(s,task,executor,sourceId); }
-        input.put("contextEntryIds",selected); input.put("contextRevision",task.contentRevision());
-        input.put("contextEntries",selected.stream().map(sourceId -> s.entry(sourceId).orElseThrow()).toList());
-        Instant now=Instant.now(); var execution=new Execution(id(),task.id(),executor,actor,playbookId==null?ExecutionKind.AGENT:ExecutionKind.PLAYBOOK,ExecutionStatus.QUEUED,text(str(data,"instruction"),"instruction"),input,Map.of(),Map.of(),null,now,now);
-        s.createExecution(execution,snapshot); draft.objectId=execution.id(); draft.material=true;
-        if(task.status()==TaskStatus.OPEN || task.status()==TaskStatus.WAITING) draft.status=TaskStatus.ACTIVE;
+    private void decide(TaskStore s,Task task,CommandAuthority authority,Set<Permission> permissions,
+        CommandKind command,Map<String,Object> data,Draft draft) {
+        if(command==CommandKind.SUBMIT) {
+            require(permissions,Permission.CONTRIBUTE);
+            if(task.status()==TaskStatus.PAUSED) conflict("resume work before submitting");
+            draft.status=TaskStatus.SUBMITTED; draft.submittedBy=authority.executedBy();
+        } else {
+            if(!task.confirmerId().equals(authority.decidedBy())) bad("the designated business confirmer must make this decision");
+            if(command==CommandKind.TRANSFER_CONFIRMATION) {
+                String participant=text(str(data,"participantId"),"participantId");
+                collaboration.task(s,task.id(),participant,false);
+                draft.confirmerId=participant;
+            } else {
+                revision(task.contentRevision(),number(data,"contentRevision"));
+                if(command!=CommandKind.CONFIRM_STAGE && task.status()!=TaskStatus.SUBMITTED)
+                    conflict("the work must be submitted before a final decision");
+                if(command==CommandKind.CONFIRM) draft.status=TaskStatus.COMPLETED;
+                if(command==CommandKind.REQUEST_CHANGES) { draft.status=TaskStatus.ACTIVE;draft.submittedBy=null; }
+            }
+        }
+        draft.objectId=recordDecision(s,task,authority,DecisionKind.valueOf(command.name()),data);
+    }
+    private String recordDecision(TaskStore s,Task task,CommandAuthority authority,DecisionKind kind,Map<String,Object> data) {
+        String id=id();
+        s.decision(new Decision(id,task.id(),task.contentRevision(),kind,authority.decidedBy(),
+            authority.executedBy(),authority.sourceMessageId(),Objects.toString(data.get("comment"),""),Instant.now()));
+        return id;
     }
     ContextEntry entry(TaskStore s,Task task,String actor,String entryId) {
         return s.entry(entryId).filter(e->e.taskId().equals(task.id()) && visible(e,actor,roles(s.participants(task.id()),actor))).orElseThrow(TaskAccess::missing);
@@ -218,7 +203,6 @@ public class TaskCommandService {
         return result;
     }
     static boolean terminal(TaskStatus status) { return status==TaskStatus.COMPLETED || status==TaskStatus.CANCELLED; }
-    static boolean executionTerminal(ExecutionStatus status) { return Set.of(ExecutionStatus.SUCCEEDED,ExecutionStatus.FAILED,ExecutionStatus.CANCELLED).contains(status); }
     static long number(Map<String,Object> data,String key) { if(!(data.get(key) instanceof Number)) bad(key+" is required"); return ((Number)data.get(key)).longValue(); }
     static <E extends Enum<E>> E enumValue(Class<E> type,String value) { try { return Enum.valueOf(type,value); } catch(RuntimeException e) { bad("invalid "+type.getSimpleName()+": "+value); return null; } }
     private static Object canonical(Object value) {
@@ -226,11 +210,11 @@ public class TaskCommandService {
         if(value instanceof List<?> list) return list.stream().map(TaskCommandService::canonical).toList(); return value;
     }
     static final class Draft {
-        final Task task; String title,goal,stage,submittedBy,objectId; TaskStatus status; Map<String,Object> attributes; Policy policy; boolean material; Set<String> audience=Set.of();
-        Draft(Task t) { task=t;title=t.title();goal=t.goal();stage=t.stage();submittedBy=t.submittedBy();status=t.status();attributes=t.attributes();policy=t.policy(); }
+        final Task task; String title,goal,stage,submittedBy,confirmerId,objectId; TaskStatus status; Map<String,Object> attributes; Policy policy; boolean material; Set<String> audience=Set.of();
+        Draft(Task t) { task=t;title=t.title();goal=t.goal();stage=t.stage();submittedBy=t.submittedBy();confirmerId=t.confirmerId();status=t.status();attributes=t.attributes();policy=t.policy(); }
         Task build() {
-            if(material && status==TaskStatus.IN_REVIEW) { status=TaskStatus.ACTIVE;submittedBy=null; }
-            return new Task(task.id(),task.organizationId(),title,goal,status,stage,task.revision()+1,task.contentRevision()+(material?1:0),attributes,policy,task.createdBy(),submittedBy,task.createdAt(),Instant.now());
+            if(material && status==TaskStatus.SUBMITTED) { status=TaskStatus.ACTIVE;submittedBy=null; }
+            return new Task(task.id(),task.organizationId(),title,goal,status,stage,task.revision()+1,task.contentRevision()+(material?1:0),attributes,policy,task.initiatedBy(),task.createdBy(),confirmerId,submittedBy,task.createdAt(),Instant.now());
         }
     }
 }

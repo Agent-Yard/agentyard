@@ -4,18 +4,14 @@
 package com.agentyard.persistence.jooq.tables;
 
 
-import com.agentyard.persistence.jooq.Indexes;
 import com.agentyard.persistence.jooq.Keys;
 import com.agentyard.persistence.jooq.Public;
 import com.agentyard.persistence.jooq.tables.records.KnowledgeBaseRecord;
 
-import java.util.Arrays;
 import java.util.Collection;
-import java.util.List;
 
 import org.jooq.Condition;
 import org.jooq.Field;
-import org.jooq.Index;
 import org.jooq.JSONB;
 import org.jooq.Name;
 import org.jooq.PlainSQL;
@@ -58,11 +54,6 @@ public class KnowledgeBase extends TableImpl<KnowledgeBaseRecord> {
      * The column <code>public.knowledge_base.id</code>.
      */
     public final TableField<KnowledgeBaseRecord, String> ID = createField(DSL.name("id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
-
-    /**
-     * The column <code>public.knowledge_base.domain_id</code>.
-     */
-    public final TableField<KnowledgeBaseRecord, String> DOMAIN_ID = createField(DSL.name("domain_id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
 
     /**
      * The column <code>public.knowledge_base.name</code>.
@@ -131,11 +122,6 @@ public class KnowledgeBase extends TableImpl<KnowledgeBaseRecord> {
     @Override
     public Schema getSchema() {
         return aliased() ? null : Public.PUBLIC;
-    }
-
-    @Override
-    public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_KNOWLEDGE_BASE_DOMAIN);
     }
 
     @Override

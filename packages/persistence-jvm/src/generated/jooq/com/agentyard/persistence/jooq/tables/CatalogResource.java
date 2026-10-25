@@ -4,18 +4,14 @@
 package com.agentyard.persistence.jooq.tables;
 
 
-import com.agentyard.persistence.jooq.Indexes;
 import com.agentyard.persistence.jooq.Keys;
 import com.agentyard.persistence.jooq.Public;
 import com.agentyard.persistence.jooq.tables.records.CatalogResourceRecord;
 
-import java.util.Arrays;
 import java.util.Collection;
-import java.util.List;
 
 import org.jooq.Condition;
 import org.jooq.Field;
-import org.jooq.Index;
 import org.jooq.JSONB;
 import org.jooq.Name;
 import org.jooq.PlainSQL;
@@ -58,11 +54,6 @@ public class CatalogResource extends TableImpl<CatalogResourceRecord> {
      * The column <code>public.catalog_resource.id</code>.
      */
     public final TableField<CatalogResourceRecord, String> ID = createField(DSL.name("id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
-
-    /**
-     * The column <code>public.catalog_resource.domain_id</code>.
-     */
-    public final TableField<CatalogResourceRecord, String> DOMAIN_ID = createField(DSL.name("domain_id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
 
     /**
      * The column <code>public.catalog_resource.name</code>.
@@ -136,11 +127,6 @@ public class CatalogResource extends TableImpl<CatalogResourceRecord> {
     @Override
     public Schema getSchema() {
         return aliased() ? null : Public.PUBLIC;
-    }
-
-    @Override
-    public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_CATALOG_RESOURCE_DOMAIN);
     }
 
     @Override

@@ -112,7 +112,7 @@ class PrivateLlmRewriter:
             payload,
             timeout_seconds=10.0,
             usage_tracker=self._usage_tracker,
-            source_type="SESSION_PRIVACY_MODEL",
+            source_type="PRIVACY_MODEL",
             tool_loop_step=_current_tool_loop_step(self._usage_tracker),
         )
         content = response_json["choices"][0]["message"]["content"]

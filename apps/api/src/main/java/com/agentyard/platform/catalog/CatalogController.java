@@ -1,197 +1,86 @@
 package com.agentyard.platform.catalog;
 
 import static com.agentyard.platform.catalog.CatalogDtos.*;
-
 import com.agentyard.platform.auth.RequireGovernanceWrite;
+import com.agentyard.platform.auth.RequireGovernanceAccess;
+import org.springframework.security.access.prepost.PreAuthorize;
 import com.agentyard.platform.shared.ApiResponse;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PatchMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
+@RequireGovernanceAccess
 @RequestMapping("/api")
 public class CatalogController {
     private final CatalogService catalogService;
-
-    public CatalogController(CatalogService catalogService) {
-        this.catalogService = catalogService;
-    }
-
+    private final CatalogAccess access;
+    public CatalogController(CatalogService catalogService, CatalogAccess access) { this.catalogService = catalogService; this.access = access; }
     @GetMapping("/catalog/summary")
-    public ApiResponse<?> summary() {
-        return ApiResponse.ok(catalogService.summary());
-    }
-
-    @GetMapping("/catalog/references/{objectType}/{objectId}")
-    public ApiResponse<?> objectReferences(@PathVariable String objectType, @PathVariable String objectId) {
-        return ApiResponse.ok(catalogService.objectReferences(objectType, objectId));
-    }
-
-    @GetMapping("/catalog/deletion-preview/{objectType}/{objectId}")
-    public ApiResponse<?> deletionPreview(@PathVariable String objectType, @PathVariable String objectId) {
-        return ApiResponse.ok(catalogService.deletionPreview(objectType, objectId));
-    }
-
-    @GetMapping("/domains")
-    public ApiResponse<?> domains() {
-        return ApiResponse.ok(catalogService.listDomains());
-    }
-
-    @GetMapping("/domains/{domainId}")
-    public ApiResponse<?> domain(@PathVariable String domainId) {
-        return ApiResponse.ok(catalogService.getDomain(domainId));
-    }
-
-    @PostMapping("/domains")
-    @RequireGovernanceWrite
-    public ApiResponse<?> createDomain(@RequestBody CreateDomainRequest request) {
-        return ApiResponse.ok(catalogService.createDomain(request));
-    }
-
-    @PutMapping("/domains/{domainId}")
-    @RequireGovernanceWrite
-    public ApiResponse<?> updateDomain(@PathVariable String domainId, @RequestBody UpdateDomainRequest request) {
-        return ApiResponse.ok(catalogService.updateDomain(domainId, request));
-    }
-
-    @DeleteMapping("/domains/{domainId}")
-    @RequireGovernanceWrite
-    public ApiResponse<?> deleteDomain(@PathVariable String domainId) {
-        return ApiResponse.ok(catalogService.deleteDomain(domainId));
-    }
-
-    @GetMapping("/scenarios")
-    public ApiResponse<?> scenarios() {
-        return ApiResponse.ok(catalogService.listScenarios());
-    }
-
-    @GetMapping("/scenarios/{scenarioId}")
-    public ApiResponse<?> scenario(@PathVariable String scenarioId) {
-        return ApiResponse.ok(catalogService.getScenario(scenarioId));
-    }
-
-    @PostMapping("/scenarios")
-    @RequireGovernanceWrite
-    public ApiResponse<?> createScenario(@RequestBody CreateScenarioRequest request) {
-        return ApiResponse.ok(catalogService.createScenario(request));
-    }
-
-    @PutMapping("/scenarios/{scenarioId}")
-    @RequireGovernanceWrite
-    public ApiResponse<?> updateScenario(@PathVariable String scenarioId, @RequestBody UpdateScenarioRequest request) {
-        return ApiResponse.ok(catalogService.updateScenario(scenarioId, request));
-    }
-
-    @DeleteMapping("/scenarios/{scenarioId}")
-    @RequireGovernanceWrite
-    public ApiResponse<?> deleteScenario(@PathVariable String scenarioId) {
-        return ApiResponse.ok(catalogService.deleteScenario(scenarioId));
-    }
-
-    @GetMapping("/assistants")
-    public ApiResponse<?> assistants() {
-        return ApiResponse.ok(catalogService.listAssistants());
-    }
-
-    @PostMapping("/assistants")
-    @RequireGovernanceWrite
-    public ApiResponse<?> createAssistant(@RequestBody CreateAssistantRequest request) {
-        return ApiResponse.ok(catalogService.createAssistant(request));
-    }
-
-    @PutMapping("/assistants/{assistantId}")
-    @RequireGovernanceWrite
-    public ApiResponse<?> updateAssistant(@PathVariable String assistantId, @RequestBody UpdateAssistantRequest request) {
-        return ApiResponse.ok(catalogService.updateAssistant(assistantId, request));
-    }
-
-    @DeleteMapping("/assistants/{assistantId}")
-    @RequireGovernanceWrite
-    public ApiResponse<?> deleteAssistant(@PathVariable String assistantId) {
-        return ApiResponse.ok(catalogService.deleteAssistant(assistantId));
-    }
-
-    @GetMapping("/agents")
-    public ApiResponse<?> agents() {
-        return ApiResponse.ok(catalogService.listAgents());
-    }
-
-    @GetMapping("/agents/{agentId}")
-    public ApiResponse<?> agent(@PathVariable String agentId) {
-        return ApiResponse.ok(catalogService.getAgent(agentId));
-    }
-
-    @PostMapping("/agents")
-    @RequireGovernanceWrite
-    public ApiResponse<?> createAgent(@RequestBody CreateAgentRequest request) {
-        return ApiResponse.ok(catalogService.createAgent(request));
-    }
-
-    @PutMapping("/agents/{agentId}")
-    @RequireGovernanceWrite
-    public ApiResponse<?> updateAgent(@PathVariable String agentId, @RequestBody UpdateAgentRequest request) {
-        return ApiResponse.ok(catalogService.updateAgent(agentId, request));
-    }
-
-    @DeleteMapping("/agents/{agentId}")
-    @RequireGovernanceWrite
-    public ApiResponse<?> deleteAgent(@PathVariable String agentId) {
-        return ApiResponse.ok(catalogService.deleteAgent(agentId));
-    }
-
+    public ApiResponse<?> summary() { return ApiResponse.ok(access.summary()); }
+    @GetMapping("/catalog/references/{type}/{id}")
+    public ApiResponse<?> references(@PathVariable String type, @PathVariable String id) { return ApiResponse.ok(access.references(type, id)); }
+    @GetMapping("/catalog/deletion-preview/{type}/{id}")
+    public ApiResponse<?> deletionPreview(@PathVariable String type, @PathVariable String id) { return ApiResponse.ok(access.deletionPreview(type, id)); }
+    @GetMapping("/role-templates")
+    public ApiResponse<?> listRoleTemplates() { return ApiResponse.ok(access.visible(catalogService.listRoleTemplates())); }
+    @GetMapping("/role-templates/{id}")
+    public ApiResponse<?> getRoleTemplate(@PathVariable String id) { return ApiResponse.ok(access.read(catalogService.getRoleTemplate(id))); }
+    @PostMapping("/role-templates") @RequireGovernanceWrite
+    public ApiResponse<?> createRoleTemplate(@RequestBody CreateRoleTemplateRequest request) { access.write(request); if (request.initialVersion() != null) access.roleReferences(request.initialVersion().configuration()); return ApiResponse.ok(catalogService.createRoleTemplate(request)); }
+    @PutMapping("/role-templates/{id}") @RequireGovernanceWrite
+    public ApiResponse<?> updateRoleTemplate(@PathVariable String id, @RequestBody UpdateRoleTemplateRequest request) { access.write(catalogService.getRoleTemplate(id)); access.write(request); return ApiResponse.ok(catalogService.updateRoleTemplate(id, request)); }
+    @DeleteMapping("/role-templates/{id}") @RequireGovernanceWrite
+    public ApiResponse<?> deleteRoleTemplate(@PathVariable String id) { access.write(catalogService.getRoleTemplate(id)); return ApiResponse.ok(catalogService.deleteRoleTemplate(id)); }
+    @PostMapping("/role-templates/{id}/versions") @RequireGovernanceWrite
+    public ApiResponse<?> createRoleTemplateVersion(@PathVariable String id, @RequestBody CreateRoleTemplateVersionRequest request) { access.write(catalogService.getRoleTemplate(id)); access.roleReferences(request.configuration()); return ApiResponse.ok(catalogService.createRoleTemplateVersion(id, request)); }
+    @PostMapping("/role-templates/{id}/versions/{versionId}/publish") @RequireGovernanceWrite
+    public ApiResponse<?> publishRoleTemplateVersion(@PathVariable String id, @PathVariable String versionId) { access.write(catalogService.getRoleTemplate(id)); access.roleReferences(catalogService.getRoleTemplateVersion(versionId).configuration()); return ApiResponse.ok(catalogService.publishRoleTemplateVersion(id, versionId)); }
+    @GetMapping("/entries")
+    public ApiResponse<?> listEntries() { return ApiResponse.ok(access.visible(catalogService.listEntries())); }
+    @GetMapping("/entries/{id}")
+    public ApiResponse<?> getEntry(@PathVariable String id) { return ApiResponse.ok(access.read(catalogService.getEntry(id))); }
+    @PostMapping("/entries") @PreAuthorize("@catalogAccess.isPlatformAdmin()")
+    public ApiResponse<?> createEntry(@RequestBody EntryRequest request) { access.write(request); return ApiResponse.ok(catalogService.createEntry(request)); }
+    @PutMapping("/entries/{id}") @PreAuthorize("@catalogAccess.isPlatformAdmin()")
+    public ApiResponse<?> updateEntry(@PathVariable String id, @RequestBody EntryRequest request) { access.write(catalogService.getEntry(id)); access.write(request); return ApiResponse.ok(catalogService.updateEntry(id, request)); }
+    @DeleteMapping("/entries/{id}") @PreAuthorize("@catalogAccess.isPlatformAdmin()")
+    public ApiResponse<?> deleteEntry(@PathVariable String id) { access.write(catalogService.getEntry(id)); return ApiResponse.ok(catalogService.deleteEntry(id)); }
     @GetMapping("/playbooks")
-    public ApiResponse<?> playbooks() {
-        return ApiResponse.ok(catalogService.listPlaybooks());
-    }
-
-    @GetMapping("/playbooks/{playbookId}")
-    public ApiResponse<?> playbook(@PathVariable String playbookId) {
-        return ApiResponse.ok(catalogService.getPlaybook(playbookId));
-    }
-
-    @PostMapping("/playbooks")
-    @RequireGovernanceWrite
-    public ApiResponse<?> createPlaybook(@RequestBody CreatePlaybookRequest request) {
-        return ApiResponse.ok(catalogService.createPlaybook(request));
-    }
-
-    @PutMapping("/playbooks/{playbookId}")
-    @RequireGovernanceWrite
-    public ApiResponse<?> updatePlaybook(@PathVariable String playbookId, @RequestBody UpdatePlaybookRequest request) {
-        return ApiResponse.ok(catalogService.updatePlaybook(playbookId, request));
-    }
-
-    @DeleteMapping("/playbooks/{playbookId}")
-    @RequireGovernanceWrite
-    public ApiResponse<?> deletePlaybook(@PathVariable String playbookId) {
-        return ApiResponse.ok(catalogService.deletePlaybook(playbookId));
-    }
-
+    public ApiResponse<?> listPlaybooks() { return ApiResponse.ok(access.visible(catalogService.listPlaybooks())); }
+    @GetMapping("/playbooks/{id}")
+    public ApiResponse<?> getPlaybook(@PathVariable String id) { return ApiResponse.ok(access.read(catalogService.getPlaybook(id))); }
+    @PostMapping("/playbooks") @RequireGovernanceWrite
+    public ApiResponse<?> createPlaybook(@RequestBody CreatePlaybookRequest request) { access.write(request); if (request.initialVersion() != null) access.playbookReferences(request.initialVersion().definition()); return ApiResponse.ok(catalogService.createPlaybook(request)); }
+    @PutMapping("/playbooks/{id}") @RequireGovernanceWrite
+    public ApiResponse<?> updatePlaybook(@PathVariable String id, @RequestBody UpdatePlaybookRequest request) { access.write(catalogService.getPlaybook(id)); access.write(request); return ApiResponse.ok(catalogService.updatePlaybook(id, request)); }
+    @DeleteMapping("/playbooks/{id}") @RequireGovernanceWrite
+    public ApiResponse<?> deletePlaybook(@PathVariable String id) { access.write(catalogService.getPlaybook(id)); return ApiResponse.ok(catalogService.deletePlaybook(id)); }
+    @PostMapping("/playbooks/{id}/versions") @RequireGovernanceWrite
+    public ApiResponse<?> createPlaybookVersion(@PathVariable String id, @RequestBody CreatePlaybookVersionRequest request) { access.write(catalogService.getPlaybook(id)); access.playbookReferences(request.definition()); return ApiResponse.ok(catalogService.createPlaybookVersion(id, request)); }
+    @PostMapping("/playbooks/{id}/versions/{versionId}/publish") @RequireGovernanceWrite
+    public ApiResponse<?> publishPlaybookVersion(@PathVariable String id, @PathVariable String versionId) { access.write(catalogService.getPlaybook(id)); access.playbookReferences(catalogService.getPlaybookVersion(versionId).definition()); return ApiResponse.ok(catalogService.publishPlaybookVersion(id, versionId)); }
     @GetMapping("/resources")
     public ApiResponse<?> resources() {
-        return ApiResponse.ok(catalogService.listResources());
+        return ApiResponse.ok(access.visible(catalogService.listResources()));
     }
 
     @GetMapping("/resources/{resourceId}/versions")
     public ApiResponse<?> resourceVersions(@PathVariable String resourceId) {
+        access.read(catalogService.getResource(resourceId));
         return ApiResponse.ok(catalogService.listResourceVersions(resourceId));
     }
 
     @PutMapping("/resources/{resourceId}")
     @RequireGovernanceWrite
     public ApiResponse<?> updateResource(@PathVariable String resourceId, @RequestBody UpdateResourceRequest request) {
+        access.write(catalogService.getResource(resourceId));
+        access.write(request);
         return ApiResponse.ok(catalogService.updateResource(resourceId, request));
     }
 
     @PostMapping("/resources/{resourceId}/versions")
     @RequireGovernanceWrite
     public ApiResponse<?> createResourceVersion(@PathVariable String resourceId, @RequestBody CreateResourceVersionRequest request) {
+        access.write(catalogService.getResource(resourceId));
         return ApiResponse.ok(catalogService.createResourceVersion(resourceId, request));
     }
 
@@ -202,24 +91,27 @@ public class CatalogController {
         @PathVariable String versionId,
         @RequestBody UpdateResourceVersionRequest request
     ) {
+        access.write(catalogService.getResource(resourceId));
         return ApiResponse.ok(catalogService.updateResourceVersion(resourceId, versionId, request));
     }
 
     @PatchMapping("/resources/{resourceId}/versions/{versionId}/publish")
     @RequireGovernanceWrite
     public ApiResponse<?> publishResourceVersion(@PathVariable String resourceId, @PathVariable String versionId) {
+        access.write(catalogService.getResource(resourceId));
         return ApiResponse.ok(catalogService.publishResourceVersion(resourceId, versionId));
     }
 
     @DeleteMapping("/resources/{resourceId}/versions/{versionId}")
     @RequireGovernanceWrite
     public ApiResponse<?> deleteResourceVersion(@PathVariable String resourceId, @PathVariable String versionId) {
+        access.write(catalogService.getResource(resourceId));
         return ApiResponse.ok(catalogService.deleteResourceVersion(resourceId, versionId));
     }
 
     @GetMapping("/resource-center")
     public ApiResponse<?> resourceCenter() {
-        return ApiResponse.ok(catalogService.resourceCenter());
+        return ApiResponse.ok(access.summary().resourceCenter());
     }
 
     @GetMapping("/resource-blueprints")
@@ -230,12 +122,14 @@ public class CatalogController {
     @PostMapping("/resources")
     @RequireGovernanceWrite
     public ApiResponse<?> createResource(@RequestBody CreateResourceRequest request) {
+        access.write(request);
         return ApiResponse.ok(catalogService.createResource(request));
     }
 
     @DeleteMapping("/resources/{resourceId}")
     @RequireGovernanceWrite
     public ApiResponse<?> deleteResource(@PathVariable String resourceId) {
+        access.write(catalogService.getResource(resourceId));
         return ApiResponse.ok(catalogService.deleteResource(resourceId));
     }
 

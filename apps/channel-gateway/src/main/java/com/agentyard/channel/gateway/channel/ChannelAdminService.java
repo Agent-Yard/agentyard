@@ -69,7 +69,7 @@ public class ChannelAdminService {
             request.status() == null ? ChannelProfileStatus.ACTIVE : request.status(),
             request.inboundEnabled() == null || request.inboundEnabled(),
             config,
-            request.assistantBinding(),
+            request.entryBinding(),
             accountSnapshot == null ? null : normalizeOptionalText(accountSnapshot.accountId()),
             accountSnapshot != null && hasText(accountSnapshot.externalSecretRef()),
             1,
@@ -101,7 +101,7 @@ public class ChannelAdminService {
             request.status() == null ? existing.status() : request.status(),
             request.inboundEnabled() == null ? existing.inboundEnabled() : request.inboundEnabled(),
             config,
-            request.assistantBinding() == null ? existing.assistantBinding() : request.assistantBinding(),
+            request.entryBinding() == null ? existing.entryBinding() : request.entryBinding(),
             accountSnapshot == null ? null : normalizeOptionalText(accountSnapshot.accountId()),
             accountSnapshot != null && hasText(accountSnapshot.externalSecretRef()),
             existing.revision() + 1,
@@ -129,7 +129,7 @@ public class ChannelAdminService {
             ChannelProfileStatus.INACTIVE,
             existing.inboundEnabled(),
             existing.config(),
-            existing.assistantBinding(),
+            existing.entryBinding(),
             existing.accountId(),
             existing.hasExternalSecretRef(),
             existing.revision() + 1,
@@ -196,7 +196,7 @@ public class ChannelAdminService {
 
     public ChannelTemplateBinding upsertTemplateBinding(
         String channelProfileId,
-        String assistantId,
+        String entryId,
         String messageType,
         String messageSubtype,
         String messageVersion,
@@ -206,7 +206,7 @@ public class ChannelAdminService {
             throw new IllegalArgumentException("templateBinding is required");
         }
         getProfile(channelProfileId);
-        ChannelTemplateBindingKey key = templateBindingKey(channelProfileId, assistantId, messageType, messageSubtype, messageVersion);
+        ChannelTemplateBindingKey key = templateBindingKey(channelProfileId, entryId, messageType, messageSubtype, messageVersion);
         ChannelTemplateBinding existing = repository.findTemplateBinding(key).orElse(null);
         Instant now = Instant.now();
         String externalTemplateId = requireText(request.externalTemplateId(), "templateBinding.externalTemplateId");
@@ -221,7 +221,7 @@ public class ChannelAdminService {
             ChannelTemplateBinding created = new ChannelTemplateBinding(
                 nextId("channel-template-binding"),
                 key.channelProfileId(),
-                key.assistantId(),
+                key.entryId(),
                 key.messageType(),
                 key.messageSubtype(),
                 key.messageVersion(),
@@ -243,7 +243,7 @@ public class ChannelAdminService {
         ChannelTemplateBinding updated = new ChannelTemplateBinding(
             existing.id(),
             existing.channelProfileId(),
-            existing.assistantId(),
+            existing.entryId(),
             existing.messageType(),
             existing.messageSubtype(),
             existing.messageVersion(),
@@ -265,14 +265,14 @@ public class ChannelAdminService {
 
     public ChannelTemplateBinding deleteTemplateBinding(
         String channelProfileId,
-        String assistantId,
+        String entryId,
         String messageType,
         String messageSubtype,
         String messageVersion,
         Long expectedRevisionValue
     ) {
         getProfile(channelProfileId);
-        ChannelTemplateBindingKey key = templateBindingKey(channelProfileId, assistantId, messageType, messageSubtype, messageVersion);
+        ChannelTemplateBindingKey key = templateBindingKey(channelProfileId, entryId, messageType, messageSubtype, messageVersion);
         ChannelTemplateBinding existing = repository.findTemplateBinding(key)
             .orElseThrow(() -> new NoSuchElementException("channel template binding not found: " + templateBindingLabel(key)));
         long expectedRevision = requireExpectedRevision(expectedRevisionValue, "templateBinding.expectedRevision");
@@ -283,7 +283,7 @@ public class ChannelAdminService {
         return new ChannelTemplateBinding(
             existing.id(),
             existing.channelProfileId(),
-            existing.assistantId(),
+            existing.entryId(),
             existing.messageType(),
             existing.messageSubtype(),
             existing.messageVersion(),
@@ -459,14 +459,14 @@ public class ChannelAdminService {
 
     private static ChannelTemplateBindingKey templateBindingKey(
         String channelProfileId,
-        String assistantId,
+        String entryId,
         String messageType,
         String messageSubtype,
         String messageVersion
     ) {
         return new ChannelTemplateBindingKey(
             requireText(channelProfileId, "templateBinding.channelProfileId"),
-            requireText(assistantId, "templateBinding.assistantId"),
+            requireText(entryId, "templateBinding.entryId"),
             requireText(messageType, "templateBinding.messageType"),
             requireText(messageSubtype, "templateBinding.messageSubtype"),
             requireText(messageVersion, "templateBinding.messageVersion")
@@ -474,7 +474,7 @@ public class ChannelAdminService {
     }
 
     private static String templateBindingLabel(ChannelTemplateBindingKey key) {
-        return key.channelProfileId() + "/" + key.assistantId() + "/" + key.messageType() + "/" + key.messageSubtype() + "/" + key.messageVersion();
+        return key.channelProfileId() + "/" + key.entryId() + "/" + key.messageType() + "/" + key.messageSubtype() + "/" + key.messageVersion();
     }
 
     private ChannelProviderJobScheduleConfig normalizeScheduleConfig(

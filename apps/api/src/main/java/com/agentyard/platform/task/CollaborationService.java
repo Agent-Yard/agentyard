@@ -16,9 +16,8 @@ public class CollaborationService {
     final TaskStore store;
     final ObjectMapper mapper;
     private final CurrentUserResolver users;
-    final TaskRuntimeResolver runtime;
-    public CollaborationService(DSLContext db, ObjectMapper mapper, CurrentUserResolver users, TaskRuntimeResolver runtime) {
-        this.store = new TaskStore(db, new JooqJsonbSupport(mapper)); this.mapper = mapper; this.users = users; this.runtime = runtime;
+    public CollaborationService(DSLContext db, ObjectMapper mapper, CurrentUserResolver users) {
+        this.store = new TaskStore(db, new JooqJsonbSupport(mapper)); this.mapper = mapper; this.users = users;
     }
     public Actor currentActor() {
         var user = users.resolveCurrentUser();
@@ -26,10 +25,6 @@ public class CollaborationService {
         return store.ensureActor(new Actor(id(), ActorKind.HUMAN, user.id(), user.displayName(), true, Instant.now()));
     }
     public List<Actor> actors(String query) { currentActor(); return store.actors(query); }
-    public Actor registerAgent(CreateAgentActor request) {
-        currentActor();
-        return store.ensureActor(new Actor(id(), ActorKind.AGENT, request.agentId(), runtime.agentName(request.agentId()), true, Instant.now()));
-    }
     public List<Organization> organizations() { return store.organizations(currentActor().id()); }
     public OrganizationDetail organization(String id) {
         String actor = currentActor().id();
@@ -73,40 +68,48 @@ public class CollaborationService {
             return new OrganizationDetail(updated, s.members(id), permissions(org.roles(), roles(s.members(id), actor)));
         });
     }
-    public Task createTask(CreateTask request) { return createTask(currentActor().id(), request); }
-    Task createTask(String actor, CreateTask request) {
+    public Task createTask(CreateTask request) { return createTask(CommandAuthority.own(currentActor().id()), request); }
+    public Task createTask(CommandAuthority authority, CreateTask request) {
+        String actor = authority.executedBy();
+        String initiator = authority.decidedBy();
         return store.transaction(s -> {
-            activeActor(s, actor);
-            if (request.organizationId() != null) require(organization(s, request.organizationId(), actor, true).permissions(), Permission.CONTRIBUTE);
+            activeActor(s, actor); activeActor(s, initiator);
+            validateAuthority(s, authority);
+            if (request.organizationId() != null) require(organization(s, request.organizationId(), initiator, true).permissions(), Permission.CONTRIBUTE);
             Policy policy = validatePolicy(request.policy()); Instant now = Instant.now();
             Task task = new Task(id(), request.organizationId(), text(request.title(), "title"), text(request.goal(), "goal"), TaskStatus.OPEN,
-                "", 1, 1, object(request.attributes()), policy, actor, null, now, now);
-            s.saveTask(task); s.participant(task.id(), actor, List.of(managerRole(policy.roles())));
-            s.event(new Event(task.id(), 1, actor, "CREATED", Map.of(), Set.of(), now));
+                "", 1, 1, object(request.attributes()), policy, initiator, actor, initiator, null, now, now);
+            s.saveTask(task); s.participant(task.id(), initiator, List.of(managerRole(policy.roles())));
+            if (!actor.equals(initiator)) s.participant(task.id(), actor, List.of(managerRole(policy.roles())));
+            s.event(new Event(task.id(), 1, actor, "CREATED", Map.of("initiatedBy", initiator), Set.of(), now));
+            s.publish(task.id(), "CREATED", actor, Map.of("revision", 1));
             return task;
         });
     }
     public Page<Task> tasks(String cursor, TaskStatus status, String organizationId, int limit) {
         String actor = currentActor().id(); int size = limit(limit);
-        var items = store.tasks(actor, cursor, status, organizationId, size+1);
+        var items = store.tasks(actor, cursor, status, organizationId, null, size+1);
         return new Page<>(items.stream().limit(size).toList(), items.size()>size ? items.get(size-1).id() : null);
     }
     public TaskDetail detail(String id) { return detail(id, currentActor().id()); }
-    TaskDetail detail(String id, String actor) { return store.transaction(s -> detail(s, task(s, id, actor, false), actor)); }
+    public TaskDetail detail(String id, String actor) { return store.transaction(s -> detail(s, task(s, id, actor, false), actor)); }
+    public TaskDetail summary(String id, String actor) {
+        return store.transaction(s -> detail(s, task(s, id, actor, false), actor, false));
+    }
     TaskDetail detail(TaskStore s, Task task, String actor) {
+        return detail(s, task, actor, true);
+    }
+    private TaskDetail detail(TaskStore s, Task task, String actor, boolean includeContext) {
         var participants = s.participants(task.id()); var roles = roles(participants, actor);
-        var context = s.context(task.id(), actor, roles, null, 201);
+        var context = includeContext ? s.context(task.id(), actor, roles, null, 201) : List.<ContextEntry>of();
         // The detail's context is a preview; /context is the complete paginated read API.
         return new TaskDetail(task, participants, context.stream().limit(200).toList(), s.relations(task.id()).stream()
-            .filter(r -> canView(s, r.relatedTaskId(), actor)).toList(), s.sessions(task.id()).stream().filter(l -> l.actorId().equals(actor)).toList(),
-            s.executions(task.id()).stream().limit(200).map(e -> executionVisible(s, task, actor, e) ? e :
-                new Execution(e.id(),e.taskId(),e.actorId(),e.requestedBy(),e.kind(),e.status(),"",Map.of(),Map.of(),Map.of(),null,e.createdAt(),e.updatedAt())).toList(),
-            s.reviews(task.id()), permissions(task.policy().roles(), roles));
+            .filter(r -> canView(s, r.relatedTaskId(), actor)).toList(), s.sessions(task.id()), s.decisions(task.id()), permissions(task.policy().roles(), roles));
     }
     public Page<ContextEntry> context(String id, String cursor, int limit) {
         String actor = currentActor().id(); return context(id, actor, cursor, limit);
     }
-    Page<ContextEntry> context(String id, String actor, String cursor, int limit) {
+    public Page<ContextEntry> context(String id, String actor, String cursor, int limit) {
         return store.transaction(s -> {
             Task task = task(s, id, actor, false); int size = limit(limit);
             var entries = s.context(id, actor, roles(s.participants(id), actor), cursor, size+1);
@@ -121,13 +124,45 @@ public class CollaborationService {
             return s.versions(entryId, 100).stream().filter(e -> visible(e, actor, roles)).toList();
         });
     }
+    public Page<Decision> decisions(String id,String cursor,int limit) {
+        return decisions(id,currentActor().id(),cursor,limit);
+    }
+    public Page<Decision> decisions(String id,String actor,String cursor,int limit) {
+        return store.transaction(s->{
+            task(s,id,actor,false);int size=limit(limit);
+            var items=s.decisions(id,cursor,size+1);
+            return new Page<>(items.stream().limit(size).toList(),items.size()>size?items.get(size-1).id():null);
+        });
+    }
     public List<Event> events(String id, long after, int limit) {
         String actor = currentActor().id(); return store.transaction(s -> {
             task(s, id, actor, false); return s.events(id, actor, roles(s.participants(id), actor), after, limit(limit));
         });
     }
     public List<Task> sessionTasks(String sessionId) {
-        String actor = currentActor().id(); return store.sessionTasks(sessionId, actor).stream().filter(id -> canView(store,id,actor)).map(id -> store.task(id,false).orElseThrow()).toList();
+        String actor = currentActor().id();
+        return store.sessionsForParticipant(sessionId).stream().filter(id -> canView(store,id,actor))
+            .map(id -> store.task(id,false).orElseThrow()).toList();
+    }
+    public Page<Task> tasks(String actor, String cursor, TaskStatus status, String organizationId, int limit) {
+        return tasks(actor,cursor,status,organizationId,null,limit);
+    }
+    public Page<Task> tasks(String actor, String cursor, TaskStatus status, String organizationId, String query, int limit) {
+        activeActor(store, actor); int size = limit(limit);
+        var items = store.tasks(actor,cursor,status,organizationId,query,size+1);
+        return new Page<>(items.stream().limit(size).toList(),items.size()>size ? items.get(size-1).id() : null);
+    }
+    static void validateAuthority(TaskStore store, CommandAuthority authority) {
+        if (authority.executedBy().equals(authority.decidedBy())) {
+            if (authority.sourceMessageId()!=null) bad("an own decision must not fabricate a proxy source");
+            return;
+        }
+        if (authority.sourceMessageId()==null) bad("a proxy decision requires its original message");
+        var m = com.agentyard.persistence.jooq.Tables.COLLABORATION_MESSAGE;
+        var source = store.database().selectFrom(m).where(m.ID.eq(authority.sourceMessageId())).fetchOne();
+        if (source==null || !source.getSenderId().equals(authority.decidedBy())
+            || !source.getRecipientId().equals(authority.executedBy())) bad("decision source does not match its principals");
+        activeActor(store, authority.decidedBy());
     }
     Task task(TaskStore s, String id, String actor, boolean lock) {
         activeActor(s, actor); Task task = s.task(id, lock).orElseThrow(TaskAccess::missing);
@@ -136,15 +171,9 @@ public class CollaborationService {
     boolean canView(TaskStore s, String id, String actor) {
         return s.task(id,false).map(t -> permissions(t.policy().roles(), roles(s.participants(id),actor)).contains(Permission.VIEW)).orElse(false);
     }
-    boolean executionVisible(TaskStore s, Task task, String actor, Execution e) {
-        if (!e.actorId().equals(actor) && !e.requestedBy().equals(actor)) return false;
-        var roles = roles(s.participants(task.id()), actor);
-        return stringList(e.input().get("contextEntryIds")).stream().allMatch(id -> s.entry(id).map(entry -> visible(entry, actor, roles)).orElse(false));
-    }
     static Actor activeActor(TaskStore s, String id) { return s.actor(id).filter(Actor::active).orElseThrow(TaskAccess::missing); }
     static Policy validatePolicy(Policy policy) {
         if (policy == null) policy = Policy.defaults(); validateRoles(policy.roles());
-        if (policy.requiredApprovals()<0 || policy.requiredApprovals()>100) bad("required approvals must be between 0 and 100");
         return policy;
     }
     static void revision(long current, long expected) { if (current != expected) conflict("revision changed; refresh and reconcile before retrying"); }

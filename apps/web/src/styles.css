@@ -949,17 +949,6 @@ pre,
   gap: 16px;
 }
 
-.assistant-view__stack,
-.assistant-view__stack .ant-space-item {
-  width: 100%;
-}
-
-.assistant-view__filter-select {
-  width: 100%;
-  min-width: 240px;
-  max-width: 100%;
-}
-
 .selectable-card {
   border-color: var(--line);
   background: rgba(255, 255, 255, 0.7);
@@ -1588,7 +1577,7 @@ body .ant-alert-error .ant-alert-message {
   }
 
   .console-topbar {
-    grid-template-columns: 228px minmax(0, 1fr) auto;
+    grid-template-columns: 228px minmax(0, 1fr) auto auto;
   }
 
   .console-topbar__account {
@@ -1707,4 +1696,64 @@ body .ant-alert-error .ant-alert-message {
     padding: 24px;
     border-radius: var(--r-lg);
   }
+}
+
+/* Shared reading surface for messages and persisted work contributions. */
+.formatted-content { min-width: 0; max-width: 100%; line-height: 1.8; overflow-wrap: anywhere; }
+.formatted-content > :first-child { margin-top: 0; }
+.formatted-content > :last-child { margin-bottom: 0; }
+.formatted-content h1 { font-size: 22px; line-height: 1.45; }
+.formatted-content h2 { font-size: 19px; line-height: 1.5; }
+.formatted-content h3 { font-size: 16px; }
+.formatted-content ul, .formatted-content ol { padding-left: 24px; }
+.formatted-content li + li { margin-top: 4px; }
+.formatted-content blockquote { margin-inline: 0; padding-left: 14px; border-left: 3px solid var(--line-strong); color: var(--ink-soft); }
+.formatted-content a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; }
+.formatted-content img { max-width: 100%; height: auto; }
+.formatted-content pre { overflow-x: auto; padding: 14px; border-radius: 8px; background: var(--bg-sunk); white-space: pre; font-size: 12px; }
+.markdown-table-scroll { max-width: 100%; overflow-x: auto; margin: 14px 0; overscroll-behavior-x: contain; border: 1px solid var(--line); border-radius: 8px; }
+.markdown-table-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.formatted-content table { border-collapse: collapse; width: 100%; min-width: 420px; font-size: 13px; }
+.formatted-content th, .formatted-content td { padding: 9px 12px; border-bottom: 1px solid var(--line-faint); border-right: 1px solid var(--line-faint); text-align: left; vertical-align: top; min-width: 80px; }
+.formatted-content th { background: var(--bg-sunk); font-weight: 600; }
+.formatted-content tr:last-child td { border-bottom: 0; }
+.formatted-content th:last-child, .formatted-content td:last-child { border-right: 0; }
+
+/* Preserve Ant's button variants instead of painting every link as a solid button. */
+body .ant-btn-link, body .ant-btn-text { border-color: transparent; background: transparent; box-shadow: none; }
+body .ant-btn-link:hover, body .ant-btn-text:hover { border-color: transparent; background: var(--accent-tint); }
+body .ant-btn-sm { min-height: 28px; padding: 2px 8px; }
+body .ant-btn:disabled, body .ant-btn:disabled:hover { color: var(--ink-ghost); background: var(--bg-sunk); border-color: var(--line-faint); box-shadow: none; cursor: not-allowed; }
+.console-page-body .ant-card-head-title { white-space: normal; overflow-wrap: anywhere; }
+.console-shell { height: 100dvh; min-height: 0; overflow: hidden; }
+.console-main { min-height: 0; }
+.console-menu-toggle { display: none; }
+.console-main:has(.reception-grid, .task-workspace) { display: flex; flex-direction: column; }
+.console-main:has(.reception-grid, .task-workspace) .console-page-head { flex-shrink: 0; }
+.console-main:has(.reception-grid, .task-workspace) .console-page-body { flex: 1; min-height: 0; padding-bottom: 16px; }
+/* Work columns own their scrolling; the page heading never overlays their content. */
+.console-main:has(.task-workspace) { overflow: hidden; }
+.console-main:has(.task-workspace) .console-page-head { position: static; }
+.console-main:has(.task-workspace) .console-page-body { overflow: hidden; }
+@media (max-width: 1100px) {
+  .console-main:has(.task-workspace) .console-page-body { overflow: auto; }
+}
+@media (max-width: 960px) {
+  .console-topbar { grid-template-columns: minmax(0,1fr) auto; }
+  .console-topbar__brand { min-width: 0; }
+  .console-topbar__crumbs, .console-topbar__tools { display: none; }
+  .console-topbar__account { grid-column: 2; grid-row: 1; }
+  .console-menu-toggle { display: block; margin-left: auto; border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; background: transparent; color: var(--ink); cursor: pointer; }
+  .console-sidebar { display: none; grid-row: 2; max-height: 40dvh; }
+  .console-sidebar--open { display: block; }
+  .console-main { grid-row: 3; }
+  .console-sidebar__foot { display: none; }
+  .console-page-head { padding: 14px 16px 10px; }
+  .console-page-head__kicker { display: none; }
+  .console-page-body { padding: 12px 16px 16px; }
+}
+@media (max-width: 640px) {
+  .console-main:has(.reception-grid) .console-page-head__copy p { display: none; }
+  .console-page-body { padding-inline: 10px; }
+  .console-page-body .ant-card-body { padding: 14px; }
 }

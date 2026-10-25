@@ -29,6 +29,7 @@ describe('renderMarkdown', () => {
     expect(html).toContain('<ul>');
     expect(html).toContain('<pre><code class="language-ts">');
     expect(html).toContain('<table>');
+    expect(html).toContain('class="markdown-table-scroll" tabindex="0" role="region"');
   });
 
   it('sanitizes unsafe html and links', () => {

@@ -27,5 +27,14 @@ export function renderMarkdown(source: string): string {
     link.setAttribute('target', '_blank');
     link.setAttribute('rel', 'noopener noreferrer');
   }
+  for (const table of template.content.querySelectorAll('table')) {
+    const scroll = window.document.createElement('div');
+    scroll.className = 'markdown-table-scroll';
+    scroll.tabIndex = 0;
+    scroll.setAttribute('role', 'region');
+    scroll.setAttribute('aria-label', '表格，可横向滚动');
+    table.replaceWith(scroll);
+    scroll.append(table);
+  }
   return template.innerHTML;
 }

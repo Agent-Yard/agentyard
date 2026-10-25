@@ -71,7 +71,6 @@ public class JooqKnowledgeRepository implements KnowledgeRepository {
             .orderBy(KNOWLEDGE_BASE.ID.asc())
             .fetch(record -> new KnowledgeBaseDto(
                 record.getId(),
-                record.getDomainId(),
                 record.getName(),
                 ShareScope.valueOf(record.getShareScope()),
                 record.getOwnerType(),
@@ -91,7 +90,6 @@ public class JooqKnowledgeRepository implements KnowledgeRepository {
             .where(KNOWLEDGE_BASE.ID.eq(knowledgeBaseId))
             .fetchOptional(record -> new KnowledgeBaseDto(
                 record.getId(),
-                record.getDomainId(),
                 record.getName(),
                 ShareScope.valueOf(record.getShareScope()),
                 record.getOwnerType(),
@@ -127,7 +125,6 @@ public class JooqKnowledgeRepository implements KnowledgeRepository {
     public void upsertKnowledgeBase(KnowledgeBaseDto knowledgeBase) {
         dsl.insertInto(KNOWLEDGE_BASE)
             .set(KNOWLEDGE_BASE.ID, knowledgeBase.id())
-            .set(KNOWLEDGE_BASE.DOMAIN_ID, knowledgeBase.domainId())
             .set(KNOWLEDGE_BASE.NAME, knowledgeBase.name())
             .set(KNOWLEDGE_BASE.SHARE_SCOPE, knowledgeBase.shareScope().name())
             .set(KNOWLEDGE_BASE.OWNER_TYPE, knowledgeBase.ownerType())
@@ -137,7 +134,6 @@ public class JooqKnowledgeRepository implements KnowledgeRepository {
             .set(KNOWLEDGE_BASE.TAGS, jsonbSupport.toJsonb(knowledgeBase.tags() == null ? List.of() : knowledgeBase.tags()))
             .onConflict(KNOWLEDGE_BASE.ID)
             .doUpdate()
-            .set(KNOWLEDGE_BASE.DOMAIN_ID, knowledgeBase.domainId())
             .set(KNOWLEDGE_BASE.NAME, knowledgeBase.name())
             .set(KNOWLEDGE_BASE.SHARE_SCOPE, knowledgeBase.shareScope().name())
             .set(KNOWLEDGE_BASE.OWNER_TYPE, knowledgeBase.ownerType())

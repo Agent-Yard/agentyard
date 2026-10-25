@@ -7,8 +7,8 @@ plugins {
 val temporalVersion: String by rootProject.extra
 
 val taskE2e by sourceSets.creating {
-    compileClasspath += sourceSets.main.get().output + sourceSets.test.get().output
-    runtimeClasspath += sourceSets.main.get().output + sourceSets.test.get().output
+    compileClasspath += sourceSets.main.get().output
+    runtimeClasspath += sourceSets.main.get().output
 }
 configurations[taskE2e.implementationConfigurationName].extendsFrom(configurations.testImplementation.get())
 configurations[taskE2e.runtimeOnlyConfigurationName].extendsFrom(configurations.testRuntimeOnly.get())
@@ -52,12 +52,13 @@ dependencies {
 }
 
 tasks.register<Test>("taskE2eTest") {
-    description = "Runs Task collaboration over real HTTP, PostgreSQL, Temporal and the Python runtime with a deterministic model."
+    description = "Runs persistent Agent collaboration over real HTTP, PostgreSQL, Redis, Temporal and Python; optionally verifies DeepSeek."
     group = "verification"
     testClassesDirs = taskE2e.output.classesDirs
     classpath = taskE2e.runtimeClasspath
     useJUnitPlatform { includeTags("task-e2e") }
     systemProperty("agentyard.repository", rootProject.projectDir.absolutePath)
+    systemProperty("agentyard.e2e.deepseek", providers.gradleProperty("deepseek").getOrElse("false"))
     inputs.files(rootProject.fileTree("apps/agent-runtime/agentyard_agent_runtime") { include("**/*.py") })
     inputs.files(rootProject.fileTree("packages/python-common") { include("**/*.py") })
     inputs.files(rootProject.files("uv.lock", "pyproject.toml", "apps/agent-runtime/pyproject.toml"))

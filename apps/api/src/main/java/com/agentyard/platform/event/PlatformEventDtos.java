@@ -17,18 +17,7 @@ public final class PlatformEventDtos {
         return Collections.unmodifiableMap(new LinkedHashMap<>(source));
     }
 
-    public enum PlatformAggregateType {
-        DOMAIN,
-        SCENARIO,
-        ASSISTANT,
-        AGENT,
-        PLAYBOOK,
-        RESOURCE,
-        KNOWLEDGE_BASE,
-        SESSION,
-        PLAYBOOK_RUN,
-        SESSION_PRIVACY_MAPPING
-    }
+    public enum PlatformAggregateType { ROLE_TEMPLATE, ENTRY, PLAYBOOK, RESOURCE, KNOWLEDGE_BASE }
 
     public record PlatformEventDto(
         String id,

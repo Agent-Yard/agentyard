@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import {
   accountOptionsForConnector,
   createEmptyToolConnector,
@@ -43,7 +43,8 @@ const llmModel = computed(() => props.configuration.llmModel!);
 const skill = computed(() => props.configuration.skill!);
 const isOpenAiCompatible = computed(() => llmModel.value?.providerType === 'OPENAI_COMPATIBLE');
 const integrationAccounts = ref<IntegrationAccount[]>([]);
-const definitionsLoading = ref(true);
+const definitionsLoading = ref(false);
+const definitionsLoaded = ref(false);
 const definitionLoadFailed = ref(false);
 const accountOptions = computed(() => accountOptionsForConnector(integrationAccounts.value, connector.value?.connectorType));
 const thinkingModeOptions = [
@@ -76,8 +77,8 @@ function ensureConfigurationState(configuration: ResourceVersionConfiguration, r
   if (resourceType === 'LLM_MODEL') {
     configuration.llmModel ??= {
       providerType: 'OPENAI_COMPATIBLE',
-      modelId: 'custom-compatible-model',
-      baseUrl: 'http://localhost:11434/v1',
+      modelId: '',
+      baseUrl: '',
       apiKeyEnvVar: 'OPENAI_COMPATIBLE_API_KEY',
       temperature: 0.2,
       maxTokens: 1200,
@@ -101,14 +102,17 @@ watch(
   { immediate: true, deep: true },
 );
 
-onMounted(async () => {
+watch(() => props.resourceType, async (resourceType) => {
+  if (resourceType !== 'TOOL' || definitionsLoaded.value || definitionsLoading.value) return;
   definitionsLoading.value = true;
+  definitionLoadFailed.value = false;
   try {
     const [definitions, accounts] = await Promise.all([
       api.listToolConnectorDefinitions(),
       api.listIntegrationAccounts(),
     ]);
     toolConnectorDefinitions.value = definitions;
+    definitionsLoaded.value = true;
     integrationAccounts.value = accounts;
     if (props.resourceType === 'TOOL' && connector.value && !connector.value.connectorType && definitions[0]) {
       resetConnectorForDefinition(connector.value, definitions[0].connectorType, toolOperations.value.map((operation) => operation.name ?? ''));
@@ -120,7 +124,7 @@ onMounted(async () => {
   } finally {
     definitionsLoading.value = false;
   }
-});
+}, { immediate: true });
 
 function addToolOperation() {
   toolOperations.value.push({
@@ -224,7 +228,7 @@ function setOperationMapping(operationName: string, value: JsonObject) {
             <a-col :span="12">
               <a-form-item
                 label="操作名"
-                extra="会直接作为 LLM function name；使用小写 snake_case，并在当前助手可用工具范围内保持唯一，建议带领域前缀。"
+                extra="会直接作为 LLM function name；使用小写 snake_case，并在角色模板的工具范围内保持唯一，建议带领域前缀。"
               >
                 <a-input v-model:value="operation.name" placeholder="例如：ticket_create / refund_evaluate" />
               </a-form-item>

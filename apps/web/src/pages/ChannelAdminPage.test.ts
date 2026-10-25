@@ -90,7 +90,7 @@ function profile(overrides: Partial<ChannelProfile>): ChannelProfile {
     status: 'ACTIVE',
     inboundEnabled: true,
     config: {},
-    assistantBinding: null,
+    entryBinding: null,
     accountId: 'account-1',
     hasExternalSecretRef: false,
     revision: 3,

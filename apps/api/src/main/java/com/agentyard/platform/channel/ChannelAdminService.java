@@ -16,8 +16,10 @@ import com.agentyard.contracts.channel.ChannelContracts.CreateChannelProfileInte
 import com.agentyard.contracts.channel.ChannelContracts.CreateChannelProfileRequest;
 import com.agentyard.contracts.channel.ChannelContracts.UpdateChannelProfileInternalRequest;
 import com.agentyard.contracts.channel.ChannelContracts.UpdateChannelProfileRequest;
-import com.agentyard.contracts.session.SessionContracts.SessionMessageBlockType;
+import com.agentyard.contracts.runtime.RuntimeContracts.MessageBlockType;
 import com.agentyard.platform.extension.ExtensionDefinitionService;
+import com.agentyard.platform.catalog.CatalogService;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelEntryBinding;
 import com.agentyard.platform.extension.ExtensionDefinitionDtos.ChannelProviderDefinition;
 import com.agentyard.platform.integration.IntegrationAccountService;
 import com.agentyard.platform.integration.IntegrationDtos.IntegrationAccountAvailabilityDecision;
@@ -35,22 +37,25 @@ public class ChannelAdminService {
     private final IntegrationAccountService integrationAccountService;
     private final ExtensionDefinitionService extensionDefinitionService;
     private final ChannelBindingSnapshotRefreshCoordinator bindingSnapshotRefreshCoordinator;
+    private final CatalogService catalog;
 
     @Autowired
     public ChannelAdminService(
         ChannelGatewayClient channelGatewayClient,
         IntegrationAccountService integrationAccountService,
         ExtensionDefinitionService extensionDefinitionService,
-        ChannelBindingSnapshotRefreshCoordinator bindingSnapshotRefreshCoordinator
+        ChannelBindingSnapshotRefreshCoordinator bindingSnapshotRefreshCoordinator,
+        CatalogService catalog
     ) {
         this.channelGatewayClient = channelGatewayClient;
         this.integrationAccountService = integrationAccountService;
         this.extensionDefinitionService = extensionDefinitionService;
         this.bindingSnapshotRefreshCoordinator = bindingSnapshotRefreshCoordinator;
+        this.catalog=catalog;
     }
 
     ChannelAdminService(ChannelGatewayClient channelGatewayClient, IntegrationAccountService integrationAccountService) {
-        this(channelGatewayClient, integrationAccountService, null, null);
+        this(channelGatewayClient, integrationAccountService, null, null, null);
     }
 
     public List<ChannelProfile> listProfiles() {
@@ -58,13 +63,14 @@ public class ChannelAdminService {
     }
 
     public ChannelProfile createProfile(CreateChannelProfileRequest request) {
+        validateEntry(request.entryBinding(),request.inboundEnabled());
         CreateChannelProfileInternalRequest internalRequest = new CreateChannelProfileInternalRequest(
             request.providerType(),
             request.displayName(),
             request.status(),
             request.inboundEnabled(),
             request.config(),
-            request.assistantBinding(),
+            request.entryBinding(),
             materializeAccountSnapshot(request.integrationAccountId(), request.providerType())
         );
         ChannelProfile profile = toWebProfile(channelGatewayClient.createProfile(internalRequest));
@@ -77,13 +83,16 @@ public class ChannelAdminService {
     }
 
     public ChannelProfile updateProfile(String channelProfileId, UpdateChannelProfileRequest request) {
+        var existing=channelGatewayClient.getProfile(channelProfileId);
+        validateEntry(request.entryBinding()==null?existing.entryBinding():request.entryBinding(),
+            request.inboundEnabled()==null?existing.inboundEnabled():request.inboundEnabled());
         UpdateChannelProfileInternalRequest internalRequest = new UpdateChannelProfileInternalRequest(
             request.providerType(),
             request.displayName(),
             request.status(),
             request.inboundEnabled(),
             request.config(),
-            request.assistantBinding(),
+            request.entryBinding(),
             materializeAccountSnapshot(request.integrationAccountId(), request.providerType()),
             request.expectedRevision()
         );
@@ -96,6 +105,15 @@ public class ChannelAdminService {
         ChannelProfile profile = toWebProfile(channelGatewayClient.deleteProfile(channelProfileId, expectedRevision));
         requestBindingSnapshotRefresh(profile.id(), "PROFILE_DELETED");
         return profile;
+    }
+
+    private void validateEntry(ChannelEntryBinding binding,boolean inboundEnabled) {
+        if(binding==null||binding.entryId()==null||binding.entryId().isBlank()) {
+            if(inboundEnabled) throw new IllegalArgumentException("inbound channel requires a reception entry");
+            return;
+        }
+        if(catalog!=null&&!catalog.getEntry(binding.entryId()).enabled()&&inboundEnabled)
+            throw new IllegalArgumentException("inbound channel entry is disabled");
     }
 
     public List<ChannelConversationBinding> listBindings(String channelProfileId) {
@@ -116,16 +134,16 @@ public class ChannelAdminService {
 
     public ChannelTemplateBinding upsertTemplateBinding(
         String channelProfileId,
-        String assistantId,
+        String entryId,
         String messageType,
         String messageSubtype,
         String messageVersion,
         ChannelTemplateBindingWriteRequest request
     ) {
-        validateTemplateBindingTuple(assistantId, messageType, messageSubtype, messageVersion);
+        validateTemplateBindingTuple(entryId, messageType, messageSubtype, messageVersion);
         return channelGatewayClient.upsertTemplateBinding(
             channelProfileId,
-            assistantId,
+            entryId,
             messageType,
             messageSubtype,
             messageVersion,
@@ -135,16 +153,16 @@ public class ChannelAdminService {
 
     public ChannelTemplateBinding deleteTemplateBinding(
         String channelProfileId,
-        String assistantId,
+        String entryId,
         String messageType,
         String messageSubtype,
         String messageVersion,
         long expectedRevision
     ) {
-        validateTemplateBindingTuple(assistantId, messageType, messageSubtype, messageVersion);
+        validateTemplateBindingTuple(entryId, messageType, messageSubtype, messageVersion);
         return channelGatewayClient.deleteTemplateBinding(
             channelProfileId,
-            assistantId,
+            entryId,
             messageType,
             messageSubtype,
             messageVersion,
@@ -200,7 +218,7 @@ public class ChannelAdminService {
             profile.status(),
             profile.inboundEnabled(),
             profile.config(),
-            profile.assistantBinding(),
+            profile.entryBinding(),
             profile.accountId(),
             profile.hasExternalSecretRef(),
             profile.revision(),
@@ -258,17 +276,17 @@ public class ChannelAdminService {
     }
 
     private static void validateTemplateBindingTuple(
-        String assistantId,
+        String entryId,
         String messageType,
         String messageSubtype,
         String messageVersion
     ) {
-        requireText(assistantId, "templateBinding.assistantId");
+        requireText(entryId, "templateBinding.entryId");
         requireText(messageSubtype, "templateBinding.messageSubtype");
         requireText(messageVersion, "templateBinding.messageVersion");
         String normalizedMessageType = requireText(messageType, "templateBinding.messageType");
         try {
-            SessionMessageBlockType.valueOf(normalizedMessageType);
+            MessageBlockType.valueOf(normalizedMessageType);
         } catch (IllegalArgumentException error) {
             throw new IllegalArgumentException("unknown session message block type: " + messageType);
         }

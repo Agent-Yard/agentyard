@@ -3,8 +3,7 @@ package com.agentyard.platform.catalog;
 import com.agentyard.contracts.runtime.WorkflowContracts.ResourceType;
 import com.agentyard.contracts.runtime.WorkflowContracts.ShareScope;
 import com.agentyard.contracts.runtime.WorkflowContracts.VersionStatus;
-import com.agentyard.contracts.session.SessionContracts.AgentDecisionAction;
-import com.agentyard.contracts.session.SessionContracts.PlaybookNodeType;
+import com.agentyard.contracts.runtime.RuntimeContracts.PlaybookNodeType;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
 import java.util.List;
@@ -14,243 +13,56 @@ public final class CatalogDtos {
     private CatalogDtos() {
     }
 
-    public record BusinessDomainDto(
-        String id,
-        String name,
-        String description,
-        List<ScenarioDto> scenarios,
-        List<ResourceDto> resources,
-        List<KnowledgeBaseDto> knowledgeBases
-    ) {
-    }
+    public record RoleTemplateDto(
+        String id, String name, String description, String ownerType, String ownerId,
+        RoleTemplateVersionDto latestVersion, RoleTemplateVersionDto effectiveVersion,
+        List<RoleTemplateVersionDto> versions
+    ) {}
 
-    public record ScenarioDto(
-        String id,
-        String domainId,
-        String name,
-        String goal,
-        VersionDto version,
-        List<AssistantDto> assistants
-    ) {
-    }
+    public record RoleConfigurationDto(
+        String role, String responsibility, String systemPrompt, String modelVersionId,
+        String privacyModelVersionId, boolean privacyMappingEnabled, String knowledgeReleaseId,
+        int memoryWindowSize, List<String> skillVersionIds, List<String> toolVersionIds,
+        List<String> playbookVersionIds
+    ) {}
 
-    public record AssistantDto(
-        String id,
-        String scenarioId,
-        String name,
-        String description,
-        VersionDto version,
-        List<AgentDto> agents,
-        List<PlaybookDto> playbooks,
-        AssistantReleaseDto currentRelease,
-        List<AssistantReleaseDto> releases,
-        String primaryAgentId,
-        AssistantOwnerPolicyDto ownerPolicy,
-        AssistantSessionPolicyDto sessionPolicy,
-        AssistantReplyPolicyDto replyPolicy,
-        AssistantPlaybookPolicyDto playbookPolicy,
-        AssistantModelPolicyDto modelPolicy,
-        String privacyModelResourceId,
-        boolean privacyMappingEnabled,
-        KnowledgeAccessPolicyDto knowledgeAccessPolicy,
-        MemoryPolicyDto memoryPolicy
-    ) {
-        public AssistantDto(
-            String id,
-            String scenarioId,
-            String name,
-            String description,
-            VersionDto version,
-            List<AgentDto> agents,
-            List<PlaybookDto> playbooks,
-            AssistantReleaseDto currentRelease,
-            List<AssistantReleaseDto> releases,
-            String primaryAgentId,
-            AssistantOwnerPolicyDto ownerPolicy,
-            AssistantSessionPolicyDto sessionPolicy,
-            AssistantReplyPolicyDto replyPolicy,
-            AssistantPlaybookPolicyDto playbookPolicy,
-            AssistantModelPolicyDto modelPolicy,
-            KnowledgeAccessPolicyDto knowledgeAccessPolicy,
-            MemoryPolicyDto memoryPolicy
-        ) {
-            this(
-                id,
-                scenarioId,
-                name,
-                description,
-                version,
-                agents,
-                playbooks,
-                currentRelease,
-                releases,
-                primaryAgentId,
-                ownerPolicy,
-                sessionPolicy,
-                replyPolicy,
-                playbookPolicy,
-                modelPolicy,
-                null,
-                false,
-                knowledgeAccessPolicy,
-                memoryPolicy
-            );
-        }
-    }
+    public record RoleTemplateVersionDto(
+        String id, String templateId, String version, VersionStatus status,
+        Instant createdAt, Instant publishedAt, RoleConfigurationDto configuration
+    ) {}
 
-    public record AssistantReleaseDto(
-        String id,
-        String assistantId,
-        String releaseVersion,
-        VersionStatus status,
-        Instant createdAt,
-        Instant publishedAt,
-        KnowledgeBindingSnapshotDto assistantKnowledgeBinding,
-        DefaultModelBindingDto defaultModelBinding,
-        DefaultModelBindingDto privacyModelBinding,
-        boolean privacyMappingEnabled,
-        List<AssistantReleaseResourceDto> resources,
-        List<AssistantReleaseAgentDto> agents,
-        List<PlaybookDto> playbooks,
-        String primaryAgentId,
-        AssistantOwnerPolicyDto ownerPolicy,
-        AssistantSessionPolicyDto sessionPolicy,
-        AssistantReplyPolicyDto replyPolicy,
-        AssistantPlaybookPolicyDto playbookPolicy,
-        AssistantModelPolicyDto modelPolicy,
-        KnowledgeAccessPolicyDto knowledgeAccessPolicy,
-        MemoryPolicyDto memoryPolicy
-    ) {
-        public AssistantReleaseDto(
-            String id,
-            String assistantId,
-            String releaseVersion,
-            VersionStatus status,
-            Instant createdAt,
-            Instant publishedAt,
-            KnowledgeBindingSnapshotDto assistantKnowledgeBinding,
-            DefaultModelBindingDto defaultModelBinding,
-            List<AssistantReleaseResourceDto> resources,
-            List<AssistantReleaseAgentDto> agents,
-            List<PlaybookDto> playbooks,
-            String primaryAgentId,
-            AssistantOwnerPolicyDto ownerPolicy,
-            AssistantSessionPolicyDto sessionPolicy,
-            AssistantReplyPolicyDto replyPolicy,
-            AssistantPlaybookPolicyDto playbookPolicy,
-            AssistantModelPolicyDto modelPolicy,
-            KnowledgeAccessPolicyDto knowledgeAccessPolicy,
-            MemoryPolicyDto memoryPolicy
-        ) {
-            this(
-                id,
-                assistantId,
-                releaseVersion,
-                status,
-                createdAt,
-                publishedAt,
-                assistantKnowledgeBinding,
-                defaultModelBinding,
-                null,
-                false,
-                resources,
-                agents,
-                playbooks,
-                primaryAgentId,
-                ownerPolicy,
-                sessionPolicy,
-                replyPolicy,
-                playbookPolicy,
-                modelPolicy,
-                knowledgeAccessPolicy,
-                memoryPolicy
-            );
-        }
-    }
+    public record CreateRoleTemplateRequest(
+        String name, String description, String ownerType, String ownerId,
+        CreateRoleTemplateVersionRequest initialVersion
+    ) {}
 
-    public record AssistantReleaseResourceDto(
-        String resourceId,
-        String resourceName,
-        ResourceType resourceType,
-        String resourceVersionId,
-        String resourceVersion,
-        List<String> boundAgents,
-        ResourceVersionConfigurationDto configuration
-    ) {
-    }
+    public record UpdateRoleTemplateRequest(String name, String description, String ownerType, String ownerId) {}
+    public record CreateRoleTemplateVersionRequest(VersionStatus status, RoleConfigurationDto configuration) {}
 
-    public record DefaultModelBindingDto(
-        String resourceId,
-        String resourceName,
-        String resourceVersionId,
-        String resourceVersion,
-        String providerType,
-        String modelId
-    ) {
-    }
+    /** A reception entry routes people to a template; it is never a deployment bundle. */
+    public record EntryDto(String id, String name, String description, String ownerType, String ownerId,
+        ShareScope shareScope, String receptionTemplateVersionId, boolean enabled,
+        List<String> allowedTemplateIds, List<com.agentyard.contracts.agent.AgentContracts.GrantRequest> capabilityGrants) {}
+    public record EntryRequest(String name, String description, String ownerType, String ownerId,
+        ShareScope shareScope, String receptionTemplateVersionId, boolean enabled,
+        List<String> allowedTemplateIds, List<com.agentyard.contracts.agent.AgentContracts.GrantRequest> capabilityGrants) {}
 
-    public record AssistantReleaseAgentDto(
-        String agentId,
-        String name,
-        String role,
-        String responsibility,
-        AgentExecutionPolicyDto executionPolicy,
-        KnowledgeBindingSnapshotDto knowledgeBinding,
-        DefaultModelBindingDto effectivePrivacyModelBinding,
-        boolean effectivePrivacyMappingEnabled,
-        boolean canOwnSession,
-        List<AgentDecisionAction> allowedActions,
-        List<String> switchableOwnerAgentIds,
-        List<String> playbookIds,
-        List<String> skillResourceVersionIds,
-        List<String> toolResourceVersionIds
-    ) {
-        public AssistantReleaseAgentDto(
-            String agentId,
-            String name,
-            String role,
-            String responsibility,
-            AgentExecutionPolicyDto executionPolicy,
-            KnowledgeBindingSnapshotDto knowledgeBinding,
-            boolean canOwnSession,
-            List<AgentDecisionAction> allowedActions,
-            List<String> switchableOwnerAgentIds,
-            List<String> playbookIds,
-            List<String> skillResourceVersionIds,
-            List<String> toolResourceVersionIds
-        ) {
-            this(
-                agentId,
-                name,
-                role,
-                responsibility,
-                executionPolicy,
-                knowledgeBinding,
-                null,
-                false,
-                canOwnSession,
-                allowedActions,
-                switchableOwnerAgentIds,
-                playbookIds,
-                skillResourceVersionIds,
-                toolResourceVersionIds
-            );
-        }
-    }
+    public record PlaybookDto(
+        String id, String name, String description, String ownerType, String ownerId,
+        PlaybookVersionDto latestVersion, PlaybookVersionDto effectiveVersion, List<PlaybookVersionDto> versions
+    ) {}
 
-    public record AgentDto(
-        String id,
-        String assistantId,
-        String name,
-        String role,
-        String responsibility,
-        AgentExecutionPolicyDto executionPolicy,
-        boolean canOwnSession,
-        List<AgentDecisionAction> allowedActions,
-        List<String> switchableOwnerAgentIds,
-        List<String> playbookIds
-    ) {
-    }
+    public record PlaybookVersionDto(
+        String id, String playbookId, String version, VersionStatus status,
+        Instant createdAt, Instant publishedAt, PlaybookDefinitionDto definition
+    ) {}
+
+    public record CreatePlaybookRequest(
+        String name, String description, String ownerType, String ownerId,
+        CreatePlaybookVersionRequest initialVersion
+    ) {}
+    public record UpdatePlaybookRequest(String name, String description, String ownerType, String ownerId) {}
+    public record CreatePlaybookVersionRequest(VersionStatus status, PlaybookDefinitionDto definition) {}
 
     public record PlaybookExecutionPolicyDto(
         String timeoutPolicy,
@@ -288,10 +100,7 @@ public final class CatalogDtos {
     ) {
     }
 
-    public record PlaybookDto(
-        String id,
-        String assistantId,
-        String name,
+    public record PlaybookDefinitionDto(
         String description,
         String inputSchema,
         String resultSchema,
@@ -306,7 +115,6 @@ public final class CatalogDtos {
 
     public record ResourceDto(
         String id,
-        String domainId,
         String name,
         ResourceType type,
         ShareScope shareScope,
@@ -375,7 +183,6 @@ public final class CatalogDtos {
 
     public record KnowledgeBaseDto(
         String id,
-        String domainId,
         String name,
         ShareScope shareScope,
         String ownerType,
@@ -638,91 +445,6 @@ public final class CatalogDtos {
     ) {
     }
 
-    public record AssistantModelPolicyDto(
-        String defaultModelResourceId,
-        Boolean enableThinking,
-        String reasoningEffort
-    ) {
-        public AssistantModelPolicyDto(String defaultModelResourceId) {
-            this(defaultModelResourceId, null, null);
-        }
-    }
-
-    public record AssistantOwnerPolicyDto(
-        int maxOwnerSwitchesPerTurn
-    ) {
-    }
-
-    public record AssistantSessionPolicyDto(
-        String idleTimeout,
-        String maxWorkflowAge,
-        int maxWorkflowHistoryEvents
-    ) {
-    }
-
-    public record AssistantReplyPolicyDto(
-        boolean ownerOnly
-    ) {
-    }
-
-    public record AssistantPlaybookPolicyDto(
-        String timeoutPolicy,
-        String retryPolicy
-    ) {
-    }
-
-    public record KnowledgeAccessPolicyDto(
-        boolean enabled,
-        String knowledgeBaseId
-    ) {
-    }
-
-    public record MemoryPolicyDto(
-        boolean enabled,
-        int windowSize
-    ) {
-    }
-
-    public record AgentExecutionPolicyDto(
-        boolean inheritAssistantDefaults,
-        String modelResourceId,
-        String privacyModelResourceId,
-        Boolean privacyMappingEnabled,
-        String systemPrompt,
-        boolean knowledgeEnabled,
-        boolean inheritAssistantKnowledge,
-        String knowledgeBaseId,
-        int memoryWindowSize,
-        List<String> skillResourceIds,
-        List<String> toolResourceIds
-    ) {
-        public AgentExecutionPolicyDto(
-            boolean inheritAssistantDefaults,
-            String modelResourceId,
-            String systemPrompt,
-            boolean knowledgeEnabled,
-            boolean inheritAssistantKnowledge,
-            String knowledgeBaseId,
-            int memoryWindowSize,
-            List<String> skillResourceIds,
-            List<String> toolResourceIds
-        ) {
-            this(
-                inheritAssistantDefaults,
-                modelResourceId,
-                null,
-                null,
-                systemPrompt,
-                knowledgeEnabled,
-                inheritAssistantKnowledge,
-                knowledgeBaseId,
-                memoryWindowSize,
-                skillResourceIds,
-                toolResourceIds
-            );
-        }
-    }
-
     public record ResourceBlueprintDto(
         ResourceType type,
         String label,
@@ -808,7 +530,7 @@ public final class CatalogDtos {
 
     public record ResourceCenterDto(
         int totalResources,
-        int domainSharedResources,
+        int sharedResources,
         int privateResources,
         List<ResourceReferenceDto> references
     ) {
@@ -826,290 +548,7 @@ public final class CatalogDtos {
     ) {
     }
 
-    public record CreateDomainRequest(String name, String description) {
-    }
-
-    public record UpdateDomainRequest(String name, String description) {
-    }
-
-    public record CreateScenarioRequest(String domainId, String name, String goal) {
-    }
-
-    public record UpdateScenarioRequest(String name, String goal) {
-    }
-
-    public record CreateAssistantRequest(
-        String scenarioId,
-        String name,
-        String description,
-        String primaryAgentId,
-        AssistantOwnerPolicyDto ownerPolicy,
-        AssistantSessionPolicyDto sessionPolicy,
-        AssistantReplyPolicyDto replyPolicy,
-        AssistantPlaybookPolicyDto playbookPolicy,
-        AssistantModelPolicyDto modelPolicy,
-        String privacyModelResourceId,
-        boolean privacyMappingEnabled,
-        KnowledgeAccessPolicyDto knowledgeAccessPolicy,
-        MemoryPolicyDto memoryPolicy
-    ) {
-        public CreateAssistantRequest(
-            String scenarioId,
-            String name,
-            String description,
-            String primaryAgentId,
-            AssistantOwnerPolicyDto ownerPolicy,
-            AssistantSessionPolicyDto sessionPolicy,
-            AssistantReplyPolicyDto replyPolicy,
-            AssistantPlaybookPolicyDto playbookPolicy,
-            AssistantModelPolicyDto modelPolicy,
-            KnowledgeAccessPolicyDto knowledgeAccessPolicy,
-            MemoryPolicyDto memoryPolicy
-        ) {
-            this(
-                scenarioId,
-                name,
-                description,
-                primaryAgentId,
-                ownerPolicy,
-                sessionPolicy,
-                replyPolicy,
-                playbookPolicy,
-                modelPolicy,
-                null,
-                false,
-                knowledgeAccessPolicy,
-                memoryPolicy
-            );
-        }
-
-        public CreateAssistantRequest(
-            String scenarioId,
-            String name,
-            String description,
-            AssistantModelPolicyDto modelPolicy,
-            KnowledgeAccessPolicyDto knowledgeAccessPolicy,
-            MemoryPolicyDto memoryPolicy
-        ) {
-            this(scenarioId, name, description, modelPolicy, null, false, knowledgeAccessPolicy, memoryPolicy);
-        }
-
-        public CreateAssistantRequest(
-            String scenarioId,
-            String name,
-            String description,
-            AssistantModelPolicyDto modelPolicy,
-            String privacyModelResourceId,
-            boolean privacyMappingEnabled,
-            KnowledgeAccessPolicyDto knowledgeAccessPolicy,
-            MemoryPolicyDto memoryPolicy
-        ) {
-            this(
-                scenarioId,
-                name,
-                description,
-                null,
-                null,
-                null,
-                null,
-                null,
-                modelPolicy,
-                privacyModelResourceId,
-                privacyMappingEnabled,
-                knowledgeAccessPolicy,
-                memoryPolicy
-            );
-        }
-    }
-
-    public record UpdateAssistantRequest(
-        String name,
-        String description,
-        VersionStatus status,
-        String primaryAgentId,
-        AssistantOwnerPolicyDto ownerPolicy,
-        AssistantSessionPolicyDto sessionPolicy,
-        AssistantReplyPolicyDto replyPolicy,
-        AssistantPlaybookPolicyDto playbookPolicy,
-        AssistantModelPolicyDto modelPolicy,
-        String privacyModelResourceId,
-        boolean privacyMappingEnabled,
-        KnowledgeAccessPolicyDto knowledgeAccessPolicy,
-        MemoryPolicyDto memoryPolicy
-    ) {
-        public UpdateAssistantRequest(
-            String name,
-            String description,
-            VersionStatus status,
-            String primaryAgentId,
-            AssistantOwnerPolicyDto ownerPolicy,
-            AssistantSessionPolicyDto sessionPolicy,
-            AssistantReplyPolicyDto replyPolicy,
-            AssistantPlaybookPolicyDto playbookPolicy,
-            AssistantModelPolicyDto modelPolicy,
-            KnowledgeAccessPolicyDto knowledgeAccessPolicy,
-            MemoryPolicyDto memoryPolicy
-        ) {
-            this(
-                name,
-                description,
-                status,
-                primaryAgentId,
-                ownerPolicy,
-                sessionPolicy,
-                replyPolicy,
-                playbookPolicy,
-                modelPolicy,
-                null,
-                false,
-                knowledgeAccessPolicy,
-                memoryPolicy
-            );
-        }
-
-        public UpdateAssistantRequest(
-            String name,
-            String description,
-            VersionStatus status,
-            AssistantModelPolicyDto modelPolicy,
-            KnowledgeAccessPolicyDto knowledgeAccessPolicy,
-            MemoryPolicyDto memoryPolicy
-        ) {
-            this(name, description, status, modelPolicy, null, false, knowledgeAccessPolicy, memoryPolicy);
-        }
-
-        public UpdateAssistantRequest(
-            String name,
-            String description,
-            VersionStatus status,
-            AssistantModelPolicyDto modelPolicy,
-            String privacyModelResourceId,
-            boolean privacyMappingEnabled,
-            KnowledgeAccessPolicyDto knowledgeAccessPolicy,
-            MemoryPolicyDto memoryPolicy
-        ) {
-            this(
-                name,
-                description,
-                status,
-                null,
-                null,
-                null,
-                null,
-                null,
-                modelPolicy,
-                privacyModelResourceId,
-                privacyMappingEnabled,
-                knowledgeAccessPolicy,
-                memoryPolicy
-            );
-        }
-    }
-
-    public record CreateAgentRequest(
-        String assistantId,
-        String name,
-        String role,
-        String responsibility,
-        AgentExecutionPolicyDto executionPolicy,
-        boolean canOwnSession,
-        List<AgentDecisionAction> allowedActions,
-        List<String> switchableOwnerAgentIds,
-        List<String> playbookIds
-    ) {
-        public CreateAgentRequest(
-            String assistantId,
-            String name,
-            String role,
-            String responsibility,
-            AgentExecutionPolicyDto executionPolicy
-        ) {
-            this(
-                assistantId,
-                name,
-                role,
-                responsibility,
-                executionPolicy,
-                true,
-                List.of(
-                    AgentDecisionAction.REPLY,
-                    AgentDecisionAction.NO_OP,
-                    AgentDecisionAction.SWITCH_OWNER,
-                    AgentDecisionAction.RUN_PLAYBOOK,
-                    AgentDecisionAction.SESSION_HUMAN_HANDOFF
-                ),
-                List.of(),
-                List.of()
-            );
-        }
-    }
-
-    public record UpdateAgentRequest(
-        String name,
-        String role,
-        String responsibility,
-        AgentExecutionPolicyDto executionPolicy,
-        boolean canOwnSession,
-        List<AgentDecisionAction> allowedActions,
-        List<String> switchableOwnerAgentIds,
-        List<String> playbookIds
-    ) {
-        public UpdateAgentRequest(
-            String name,
-            String role,
-            String responsibility,
-            AgentExecutionPolicyDto executionPolicy
-        ) {
-            this(
-                name,
-                role,
-                responsibility,
-                executionPolicy,
-                true,
-                List.of(
-                    AgentDecisionAction.REPLY,
-                    AgentDecisionAction.NO_OP,
-                    AgentDecisionAction.SWITCH_OWNER,
-                    AgentDecisionAction.RUN_PLAYBOOK,
-                    AgentDecisionAction.SESSION_HUMAN_HANDOFF
-                ),
-                List.of(),
-                List.of()
-            );
-        }
-    }
-
-    public record CreatePlaybookRequest(
-        String assistantId,
-        String name,
-        String description,
-        String inputSchema,
-        String resultSchema,
-        PlaybookExecutionPolicyDto executionPolicy,
-        boolean allowHumanTask,
-        boolean allowExternalInteraction,
-        String entryNodeKey,
-        List<PlaybookNodeDto> nodes,
-        List<PlaybookEdgeDto> edges
-    ) {
-    }
-
-    public record UpdatePlaybookRequest(
-        String name,
-        String description,
-        String inputSchema,
-        String resultSchema,
-        PlaybookExecutionPolicyDto executionPolicy,
-        boolean allowHumanTask,
-        boolean allowExternalInteraction,
-        String entryNodeKey,
-        List<PlaybookNodeDto> nodes,
-        List<PlaybookEdgeDto> edges
-    ) {
-    }
-
     public record CreateResourceRequest(
-        String domainId,
         String name,
         ResourceType type,
         ShareScope shareScope,
@@ -1148,7 +587,6 @@ public final class CatalogDtos {
     }
 
     public record CreateKnowledgeBaseRequest(
-        String domainId,
         String name,
         ShareScope shareScope,
         String ownerType,
@@ -1179,14 +617,8 @@ public final class CatalogDtos {
     }
 
     public record CatalogSummaryDto(
-        List<BusinessDomainDto> domains,
-        List<ScenarioDto> scenarios,
-        List<AssistantDto> assistants,
-        List<AgentDto> agents,
-        List<ResourceDto> resources,
-        List<KnowledgeBaseDto> knowledgeBases,
-        ResourceCenterDto resourceCenter,
-        List<ResourceBlueprintDto> resourceBlueprints
-    ) {
-    }
+        List<RoleTemplateDto> roleTemplates, List<EntryDto> entries, List<PlaybookDto> playbooks,
+        List<ResourceDto> resources, List<KnowledgeBaseDto> knowledgeBases,
+        ResourceCenterDto resourceCenter, List<ResourceBlueprintDto> resourceBlueprints
+    ) {}
 }

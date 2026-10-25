@@ -15,7 +15,7 @@ Tool operation 定义业务输入输出，Tool Connector 处理调用协议，In
 | 控制面聚合定义 | [ExtensionDefinitionService.java](../../apps/api/src/main/java/com/agentyard/platform/extension/ExtensionDefinitionService.java) |
 | 资源配置校验 | [CatalogService.java](../../apps/api/src/main/java/com/agentyard/platform/catalog/CatalogService.java) |
 | Web 通用表单 | [toolConnectorDefinitionForms.ts](../../apps/web/src/components/toolConnectorDefinitionForms.ts)、[integrationAccountDefinition.ts](../../apps/web/src/pages/integrationAccountDefinition.ts) |
-| 运行描述符 | [models.py](../../apps/agent-runtime/agentyard_agent_runtime/models.py)、JVM SessionContracts |
+| 运行描述符 | [models.py](../../apps/agent-runtime/agentyard_agent_runtime/models.py)、[JVM RuntimeContracts](../../packages/contracts-jvm/src/main/java/com/agentyard/contracts/runtime/RuntimeContracts.java) |
 
 `call_connector_tool` 首先验证 registry 中存在该 connectorType。内置实现从 CONNECTOR_REGISTRY 选取，其余由 RemoteToolConnectorAdapter 根据 manifest 调用远端服务。控制面和前端消费 descriptor/schema，不需要为每个远端厂商增加一套静态表单分支。
 
@@ -48,7 +48,7 @@ retryPolicy 是结构化对象，mode 为 NONE / FIXED / EXPONENTIAL，包含 ma
 
 只有改变内置能力时才修改 Runtime 内置 adapter/registry 及对应 descriptor。先使用现有通用 schema 表单；只有能力本身无法表达时才扩充共享 UI/协议，不为厂商重复维护近似实现。
 
-当前配置还由 Assistant Release 转成运行 descriptor，这是待重构的配置来源。连接器的业务调用能力保留，未来改由 Session 实例解析的工具版本提供。角色模板引用工具不等于授予账号或对象访问权限。
+角色模板固定引用已发布的工具版本，Session 按该版本解析运行描述符。调用前，工具执行边界会重新校验实例的有效授权、工具操作与接入账号状态。角色模板引用工具不等于授予账号或对象访问权限。
 
 Agent 工具授权需要在执行时绑定真实实例、操作和目标对象。Tool Connector 的协议认证与应用内对象授权各有作用；连接器能连通不表示 Agent 有权调用任意操作。流程子工具、自动资源读取和后台调用同样遵循这个边界。
 

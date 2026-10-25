@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, provide, shallowRef } from 'vue';
+import { computed, provide, shallowRef, ref } from 'vue';
 import { pageHeadActionsKey, type PageHeadActionsRegistration } from '../composables/pageHeadActions';
 import type { UserSession } from '../types';
 import { menuItems } from '../config/navigation';
@@ -20,11 +20,12 @@ const emit = defineEmits<{
   openChange: [keys: string[]];
   logout: [];
 }>();
+const navigationOpen = ref(false);
 
 const filteredSections = computed(() => (
   props.governanceWritable
     ? menuItems
-    : menuItems
+    : menuItems.filter(section => section.key === 'work')
 ));
 
 const navigationSections = computed(() =>
@@ -67,6 +68,7 @@ provide(pageHeadActionsKey, pageHeadActions);
         <div class="console-topbar__brand-copy">
           <span class="console-topbar__brand-en">AGENTYARD</span>
         </div>
+        <button class="console-menu-toggle" type="button" :aria-expanded="navigationOpen" aria-controls="console-navigation" @click="navigationOpen=!navigationOpen">{{ navigationOpen ? '收起导航' : '导航' }}</button>
       </div>
 
       <div class="console-topbar__crumbs">
@@ -80,13 +82,9 @@ provide(pageHeadActionsKey, pageHeadActions);
       <div class="console-topbar__tools">
         <div class="console-envtag">
           <span class="console-envtag__dot"></span>
-          {{ environmentLabel }} · {{ governanceWritable ? '配置可管理' : '配置只读' }}
+          {{ environmentLabel }} · {{ governanceWritable ? '管理权限' : '协作空间' }}
         </div>
-        <button type="button" class="console-command-button">
-          <span class="console-command-button__icon" aria-hidden="true"></span>
-          <span>搜索 / 指令</span>
-          <span class="console-command-button__kbd">/</span>
-        </button>
+
       </div>
 
       <div class="console-topbar__account">
@@ -117,12 +115,7 @@ provide(pageHeadActionsKey, pageHeadActions);
       </div>
     </header>
 
-    <aside class="console-sidebar">
-      <div class="console-sidebar__search">
-        <button type="button" class="console-sidebar__search-button">
-          搜索对象、ID 或操作…
-        </button>
-      </div>
+    <aside id="console-navigation" class="console-sidebar" :class="{'console-sidebar--open':navigationOpen}">
 
       <nav v-for="section in navigationSections" :key="section.key" class="console-sidebar__section">
         <div class="console-sidebar__section-head">
@@ -137,7 +130,7 @@ provide(pageHeadActionsKey, pageHeadActions);
           type="button"
           class="console-sidebar__item"
           :class="{ 'console-sidebar__item--active': activePageKey === item.key }"
-          @click="emit('menuClick', { key: item.key })"
+          @click="emit('menuClick', { key: item.key });navigationOpen=false"
         >
           <span>{{ item.label }}</span>
           <span v-if="activePageKey === item.key" class="console-sidebar__item-chip">当前</span>

@@ -34,8 +34,11 @@
       "type": "string",
       "minLength": 1
     },
-    "assistantId": {
-      "type": ["string", "null"]
+    "entryId": {
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "externalConversationId": {
       "type": "string",
@@ -45,11 +48,11 @@
       "type": "string",
       "minLength": 1
     },
-    "turnId": {
+    "sourceMessageId": {
       "type": "string",
       "minLength": 1
     },
-    "turnExecutionId": {
+    "activationId": {
       "type": "string",
       "minLength": 1
     },
@@ -79,7 +82,10 @@
       "type": "object"
     },
     "traceContext": {
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "additionalProperties": true
     }
   },
@@ -88,15 +94,26 @@
       "if": {
         "properties": {
           "kind": {
-            "enum": ["TYPING_START", "TYPING_STOP"]
+            "enum": [
+              "TYPING_START",
+              "TYPING_STOP"
+            ]
           }
         },
-        "required": ["kind"]
+        "required": [
+          "kind"
+        ]
       },
       "then": {
-        "required": ["turnId", "turnExecutionId", "sourceSeq"],
+        "required": [
+          "sourceMessageId",
+          "activationId",
+          "sourceSeq"
+        ],
         "not": {
-          "required": ["finalSequence"]
+          "required": [
+            "finalSequence"
+          ]
         },
         "properties": {
           "payload": {
@@ -112,12 +129,20 @@
             "const": "DRAFT_UPDATE"
           }
         },
-        "required": ["kind"]
+        "required": [
+          "kind"
+        ]
       },
       "then": {
-        "required": ["turnId", "turnExecutionId", "sourceSeq"],
+        "required": [
+          "sourceMessageId",
+          "activationId",
+          "sourceSeq"
+        ],
         "not": {
-          "required": ["finalSequence"]
+          "required": [
+            "finalSequence"
+          ]
         },
         "properties": {
           "payload": {
@@ -133,13 +158,21 @@
             "const": "DRAFT_COMPLETE"
           }
         },
-        "required": ["kind"]
+        "required": [
+          "kind"
+        ]
       },
       "then": {
         "description": "DRAFT_COMPLETE completes the referenced transient draft block without stopping typing/streaming. It never represents formal external message delivery.",
-        "required": ["turnId", "turnExecutionId", "sourceSeq"],
+        "required": [
+          "sourceMessageId",
+          "activationId",
+          "sourceSeq"
+        ],
         "not": {
-          "required": ["finalSequence"]
+          "required": [
+            "finalSequence"
+          ]
         },
         "properties": {
           "payload": {
@@ -155,12 +188,20 @@
             "const": "DRAFT_DISCARD"
           }
         },
-        "required": ["kind"]
+        "required": [
+          "kind"
+        ]
       },
       "then": {
-        "required": ["turnId", "turnExecutionId", "sourceSeq"],
+        "required": [
+          "sourceMessageId",
+          "activationId",
+          "sourceSeq"
+        ],
         "not": {
-          "required": ["finalSequence"]
+          "required": [
+            "finalSequence"
+          ]
         },
         "properties": {
           "payload": {
@@ -176,21 +217,31 @@
             "const": "FINAL_DELIVERY"
           }
         },
-        "required": ["kind"]
+        "required": [
+          "kind"
+        ]
       },
       "then": {
         "description": "FINAL_DELIVERY is the only frame kind that causes a formal external message send. It must be processed idempotently by frameId.",
-        "required": ["finalSequence"],
+        "required": [
+          "finalSequence"
+        ],
         "not": {
           "anyOf": [
             {
-              "required": ["turnId"]
+              "required": [
+                "sourceMessageId"
+              ]
             },
             {
-              "required": ["turnExecutionId"]
+              "required": [
+                "activationId"
+              ]
             },
             {
-              "required": ["sourceSeq"]
+              "required": [
+                "sourceSeq"
+              ]
             }
           ]
         },
@@ -221,7 +272,9 @@
     "typingPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["messageId"],
+      "required": [
+        "messageId"
+      ],
       "properties": {
         "messageId": {
           "type": "string",
@@ -232,7 +285,11 @@
     "draftUpdatePayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["messageId", "blockId", "blockType"],
+      "required": [
+        "messageId",
+        "blockId",
+        "blockType"
+      ],
       "properties": {
         "messageId": {
           "type": "string",
@@ -258,10 +315,14 @@
                 "const": "TEXT"
               }
             },
-            "required": ["blockType"]
+            "required": [
+              "blockType"
+            ]
           },
           "then": {
-            "required": ["delta"]
+            "required": [
+              "delta"
+            ]
           }
         }
       ]
@@ -269,7 +330,12 @@
     "draftCompletePayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["messageId", "blockId", "blockType", "block"],
+      "required": [
+        "messageId",
+        "blockId",
+        "blockType",
+        "block"
+      ],
       "properties": {
         "messageId": {
           "type": "string",
@@ -291,7 +357,9 @@
     "draftDiscardPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["messageId"],
+      "required": [
+        "messageId"
+      ],
       "properties": {
         "messageId": {
           "type": "string",
@@ -305,7 +373,11 @@
     "finalDeliveryPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sessionMessageId", "messageSequence", "messageBlocks"],
+      "required": [
+        "sessionMessageId",
+        "messageSequence",
+        "messageBlocks"
+      ],
       "properties": {
         "sessionMessageId": {
           "type": "string",
@@ -323,8 +395,20 @@
           }
         },
         "resolvedTemplate": {
-          "type": ["object", "null"],
+          "type": [
+            "object",
+            "null"
+          ],
           "additionalProperties": true
+        },
+        "senderParticipantId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "draftMessageId": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Trusted correlation to the public draft completed by this durable message."
         }
       }
     }

@@ -84,30 +84,32 @@ public class ChannelConversationBindingRecord extends UpdatableRecordImpl<Channe
     }
 
     /**
-     * Setter for <code>public.channel_conversation_binding.assistant_id</code>.
+     * Setter for <code>public.channel_conversation_binding.entry_id</code>.
      */
-    public void setAssistantId(String value) {
+    public void setEntryId(String value) {
         set(4, value);
     }
 
     /**
-     * Getter for <code>public.channel_conversation_binding.assistant_id</code>.
+     * Getter for <code>public.channel_conversation_binding.entry_id</code>.
      */
-    public String getAssistantId() {
+    public String getEntryId() {
         return (String) get(4);
     }
 
     /**
-     * Setter for <code>public.channel_conversation_binding.customer_id</code>.
+     * Setter for
+     * <code>public.channel_conversation_binding.participant_id</code>.
      */
-    public void setCustomerId(String value) {
+    public void setParticipantId(String value) {
         set(5, value);
     }
 
     /**
-     * Getter for <code>public.channel_conversation_binding.customer_id</code>.
+     * Getter for
+     * <code>public.channel_conversation_binding.participant_id</code>.
      */
-    public String getCustomerId() {
+    public String getParticipantId() {
         return (String) get(5);
     }
 
@@ -204,15 +206,15 @@ public class ChannelConversationBindingRecord extends UpdatableRecordImpl<Channe
     /**
      * Create a detached, initialised ChannelConversationBindingRecord
      */
-    public ChannelConversationBindingRecord(String id, String channelProfileId, String externalConversationId, String externalUserId, String assistantId, String customerId, String sessionId, String status, JSONB metadata, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+    public ChannelConversationBindingRecord(String id, String channelProfileId, String externalConversationId, String externalUserId, String entryId, String participantId, String sessionId, String status, JSONB metadata, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
         super(ChannelConversationBinding.CHANNEL_CONVERSATION_BINDING);
 
         setId(id);
         setChannelProfileId(channelProfileId);
         setExternalConversationId(externalConversationId);
         setExternalUserId(externalUserId);
-        setAssistantId(assistantId);
-        setCustomerId(customerId);
+        setEntryId(entryId);
+        setParticipantId(participantId);
         setSessionId(sessionId);
         setStatus(status);
         setMetadata(metadata);

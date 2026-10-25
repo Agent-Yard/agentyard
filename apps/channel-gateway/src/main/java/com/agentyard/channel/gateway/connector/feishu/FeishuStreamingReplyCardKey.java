@@ -11,12 +11,15 @@ record FeishuStreamingReplyCardKey(
     FeishuStreamingReplyCardKey {
         channelProfileId = requireText(channelProfileId, "channelProfileId");
         sessionId = requireText(sessionId, "sessionId");
-        replyMessageId = requireText(replyMessageId, "replyMessageId");
+        replyMessageId = requireText(replyMessageId, "messageId");
     }
 
     static FeishuStreamingReplyCardKey fromFrame(ChannelOutboundFrame frame) {
         Objects.requireNonNull(frame, "frame");
-        Object rawReplyMessageId = frame.payload().get("replyMessageId");
+        Object rawReplyMessageId = frame.payload().get("draftMessageId");
+        if (rawReplyMessageId == null) {
+            rawReplyMessageId = frame.payload().get("messageId");
+        }
         if (rawReplyMessageId == null) {
             rawReplyMessageId = frame.payload().get("sessionMessageId");
         }

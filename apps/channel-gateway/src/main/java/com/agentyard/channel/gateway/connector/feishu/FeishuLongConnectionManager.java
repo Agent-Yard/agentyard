@@ -1,7 +1,7 @@
 package com.agentyard.channel.gateway.connector.feishu;
 
 import com.agentyard.channel.gateway.channel.ChannelAdminRepository;
-import com.agentyard.contracts.channel.ChannelContracts.ChannelAssistantBinding;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelEntryBinding;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelProfileStatus;
 import java.net.ConnectException;
@@ -143,13 +143,13 @@ final class FeishuLongConnectionManager {
         if (profile == null) {
             return false;
         }
-        ChannelAssistantBinding binding = profile.assistantBinding();
+        ChannelEntryBinding binding = profile.entryBinding();
         return FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE.equals(profile.providerType())
             && profile.status() == ChannelProfileStatus.ACTIVE
             && profile.inboundEnabled()
             && hasText(profile.accountId())
             && binding != null
-            && hasText(binding.assistantId());
+            && hasText(binding.entryId());
     }
 
     private static FeishuLongConnectionProfile profile(ChannelGatewayProfile profile) {

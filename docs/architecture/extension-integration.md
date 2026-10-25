@@ -1,6 +1,6 @@
 # AgentYard Extension 接入开发指导
 
-核对日期：2026-10-04。本文描述当前 Extension 协议。人机协作的目标语义见[目标架构](agent-collaboration.md)；Session 实例、参与者和工具调用授权上下文尚待统一，后续协议变化须同步 schema、fixtures、SDK 与消费者。
+核对日期：2026-10-05。本文描述当前 Extension 协议。持续实例与人机协作语义见[架构决策](agent-collaboration.md)；参与者、Activation、ToolRun 与授权范围通过可信调用边界关联，协议变化须同步 schema、fixtures、SDK 与消费者。
 
 本文件面向需要基于 AgentYard 平台开发独立 extension service 的开发者，给出接入边界、协议契约、运行链路与开发约束。读者不需要熟悉 AgentYard 内部代码；只需要构建一个独立部署的 HTTP 服务，按本文档实现 manifest 与若干 endpoint，再请部署方把服务注册到 AgentYard。
 

@@ -8,7 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.agentyard.channel.gateway.channel.ChannelAdminRepository;
 import com.agentyard.channel.gateway.channel.ChannelAdminService;
 import com.agentyard.channel.gateway.channel.ChannelInboundSessionDispatcher;
-import com.agentyard.channel.gateway.channel.ChannelSessionRuntimeClient;
+import com.agentyard.channel.gateway.channel.ChannelReceptionClient;
 import com.agentyard.channel.gateway.channel.NormalizedChannelTurnIngestService;
 import com.agentyard.channel.gateway.extension.ChannelGatewayDescriptorProvider;
 import com.agentyard.channel.gateway.extension.ChannelProviderRegistryLoader;
@@ -19,12 +19,11 @@ import com.agentyard.channel.gateway.extension.RuntimeChannelProviderRegistry;
 import com.agentyard.channel.gateway.shared.ApiExceptionHandler;
 import com.agentyard.channel.gateway.testing.EmbeddedPostgresTestDatabase;
 import com.agentyard.contracts.channel.ChannelContracts.CreateChannelProfileInternalRequest;
-import com.agentyard.contracts.channel.ChannelContracts.ChannelAssistantBinding;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelEntryBinding;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelProfileAccountSnapshot;
-import com.agentyard.contracts.session.SessionContracts.AcceptedSessionMessageAllocation;
-import com.agentyard.contracts.session.SessionContracts.ChannelInboundSessionTurnRequest;
-import com.agentyard.contracts.session.SessionContracts.ChannelInboundSessionTurnResponse;
-import com.agentyard.contracts.session.SessionContracts.SessionMessageDeliveryStatus;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelReceptionAllocation;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelReceptionRequest;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelReceptionResponse;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.AfterAll;
@@ -92,7 +91,7 @@ class FeishuWebhookControllerTest {
             null,
             true,
             Map.of(),
-            new ChannelAssistantBinding("assistant-1", null),
+            new ChannelEntryBinding("assistant-1"),
             new ChannelProfileAccountSnapshot("integration-account-1", null)
         ));
     }
@@ -218,7 +217,7 @@ class FeishuWebhookControllerTest {
         String channelProfileId = repository.listProfiles().getFirst().id();
         assertEquals(0, repository.listInboundEvents(channelProfileId).size());
         assertEquals(1, database.dsl().fetchCount(CHANNEL_INBOUND_TURN));
-        assertEquals("user_123", runtimeClient.requests.getFirst().messages().getFirst().sender().senderName());
+        assertEquals("user_123", runtimeClient.requests.getFirst().messages().getFirst().displayName());
     }
 
     private static ExtensionRegistrationService registrationService() {
@@ -229,18 +228,15 @@ class FeishuWebhookControllerTest {
         );
     }
 
-    private static final class CapturingRuntimeClient implements ChannelSessionRuntimeClient {
-        private final List<ChannelInboundSessionTurnRequest> requests = new java.util.ArrayList<>();
+    private static final class CapturingRuntimeClient implements ChannelReceptionClient {
+        private final List<ChannelReceptionRequest> requests = new java.util.ArrayList<>();
 
         @Override
-        public ChannelInboundSessionTurnResponse dispatchInboundTurn(ChannelInboundSessionTurnRequest request) {
+        public ChannelReceptionResponse dispatchInboundTurn(ChannelReceptionRequest request) {
             requests.add(request);
-            return new ChannelInboundSessionTurnResponse(
+            return new ChannelReceptionResponse(
                 "session-feishu",
-                "turn-session-feishu",
-                SessionMessageDeliveryStatus.ACCEPTED,
-                List.of("session-message-feishu"),
-                List.of(new AcceptedSessionMessageAllocation(0, null, "session-message-feishu", 0)),
+                List.of(new ChannelReceptionAllocation(0, "session-message-feishu", "session-feishu", "participant-feishu")),
                 List.of(),
                 null
             );

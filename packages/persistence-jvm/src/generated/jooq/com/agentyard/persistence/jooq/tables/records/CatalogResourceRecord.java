@@ -34,129 +34,115 @@ public class CatalogResourceRecord extends UpdatableRecordImpl<CatalogResourceRe
     }
 
     /**
-     * Setter for <code>public.catalog_resource.domain_id</code>.
-     */
-    public void setDomainId(String value) {
-        set(1, value);
-    }
-
-    /**
-     * Getter for <code>public.catalog_resource.domain_id</code>.
-     */
-    public String getDomainId() {
-        return (String) get(1);
-    }
-
-    /**
      * Setter for <code>public.catalog_resource.name</code>.
      */
     public void setName(String value) {
-        set(2, value);
+        set(1, value);
     }
 
     /**
      * Getter for <code>public.catalog_resource.name</code>.
      */
     public String getName() {
-        return (String) get(2);
+        return (String) get(1);
     }
 
     /**
      * Setter for <code>public.catalog_resource.type</code>.
      */
     public void setType(String value) {
-        set(3, value);
+        set(2, value);
     }
 
     /**
      * Getter for <code>public.catalog_resource.type</code>.
      */
     public String getType() {
-        return (String) get(3);
+        return (String) get(2);
     }
 
     /**
      * Setter for <code>public.catalog_resource.share_scope</code>.
      */
     public void setShareScope(String value) {
-        set(4, value);
+        set(3, value);
     }
 
     /**
      * Getter for <code>public.catalog_resource.share_scope</code>.
      */
     public String getShareScope() {
-        return (String) get(4);
+        return (String) get(3);
     }
 
     /**
      * Setter for <code>public.catalog_resource.owner_type</code>.
      */
     public void setOwnerType(String value) {
-        set(5, value);
+        set(4, value);
     }
 
     /**
      * Getter for <code>public.catalog_resource.owner_type</code>.
      */
     public String getOwnerType() {
-        return (String) get(5);
+        return (String) get(4);
     }
 
     /**
      * Setter for <code>public.catalog_resource.owner_id</code>.
      */
     public void setOwnerId(String value) {
-        set(6, value);
+        set(5, value);
     }
 
     /**
      * Getter for <code>public.catalog_resource.owner_id</code>.
      */
     public String getOwnerId() {
-        return (String) get(6);
+        return (String) get(5);
     }
 
     /**
      * Setter for <code>public.catalog_resource.summary</code>.
      */
     public void setSummary(String value) {
-        set(7, value);
+        set(6, value);
     }
 
     /**
      * Getter for <code>public.catalog_resource.summary</code>.
      */
     public String getSummary() {
-        return (String) get(7);
+        return (String) get(6);
     }
 
     /**
      * Setter for <code>public.catalog_resource.steward</code>.
      */
     public void setSteward(String value) {
-        set(8, value);
+        set(7, value);
     }
 
     /**
      * Getter for <code>public.catalog_resource.steward</code>.
      */
     public String getSteward() {
-        return (String) get(8);
+        return (String) get(7);
     }
 
     /**
      * Setter for <code>public.catalog_resource.tags</code>.
      */
     public void setTags(JSONB value) {
-        set(9, value);
+        set(8, value);
     }
 
     /**
      * Getter for <code>public.catalog_resource.tags</code>.
      */
     public JSONB getTags() {
-        return (JSONB) get(9);
+        return (JSONB) get(8);
     }
 
     // -------------------------------------------------------------------------
@@ -182,11 +168,10 @@ public class CatalogResourceRecord extends UpdatableRecordImpl<CatalogResourceRe
     /**
      * Create a detached, initialised CatalogResourceRecord
      */
-    public CatalogResourceRecord(String id, String domainId, String name, String type, String shareScope, String ownerType, String ownerId, String summary, String steward, JSONB tags) {
+    public CatalogResourceRecord(String id, String name, String type, String shareScope, String ownerType, String ownerId, String summary, String steward, JSONB tags) {
         super(CatalogResource.CATALOG_RESOURCE);
 
         setId(id);
-        setDomainId(domainId);
         setName(name);
         setType(type);
         setShareScope(shareScope);

@@ -42,7 +42,7 @@ public final class ManifestValidator {
     private static final Set<String> OPTION_COMPONENTS = Set.of("select", "multiSelect", "radio", "checkboxGroup");
     private static final Set<String> VISIBILITY_OPERATORS = Set.of("equals", "notEquals", "in", "notIn", "exists", "notExists");
     private static final List<String> PROTOCOL_SCHEMA_FILES = List.of(
-        "assistant-binding.schema.json",
+        "entry-binding.schema.json",
         "channel-outbound-frame.schema.json",
         "channel-outbound-frame-ack.schema.json",
         "channel-outbound-frame-subscription.schema.json",

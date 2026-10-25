@@ -6,7 +6,6 @@ package com.agentyard.persistence.jooq.tables.records;
 
 import com.agentyard.persistence.jooq.tables.CatalogPlaybook;
 
-import org.jooq.JSONB;
 import org.jooq.Record1;
 import org.jooq.impl.UpdatableRecordImpl;
 
@@ -34,159 +33,59 @@ public class CatalogPlaybookRecord extends UpdatableRecordImpl<CatalogPlaybookRe
     }
 
     /**
-     * Setter for <code>public.catalog_playbook.assistant_id</code>.
-     */
-    public void setAssistantId(String value) {
-        set(1, value);
-    }
-
-    /**
-     * Getter for <code>public.catalog_playbook.assistant_id</code>.
-     */
-    public String getAssistantId() {
-        return (String) get(1);
-    }
-
-    /**
      * Setter for <code>public.catalog_playbook.name</code>.
      */
     public void setName(String value) {
-        set(2, value);
+        set(1, value);
     }
 
     /**
      * Getter for <code>public.catalog_playbook.name</code>.
      */
     public String getName() {
-        return (String) get(2);
+        return (String) get(1);
     }
 
     /**
      * Setter for <code>public.catalog_playbook.description</code>.
      */
     public void setDescription(String value) {
-        set(3, value);
+        set(2, value);
     }
 
     /**
      * Getter for <code>public.catalog_playbook.description</code>.
      */
     public String getDescription() {
+        return (String) get(2);
+    }
+
+    /**
+     * Setter for <code>public.catalog_playbook.owner_type</code>.
+     */
+    public void setOwnerType(String value) {
+        set(3, value);
+    }
+
+    /**
+     * Getter for <code>public.catalog_playbook.owner_type</code>.
+     */
+    public String getOwnerType() {
         return (String) get(3);
     }
 
     /**
-     * Setter for <code>public.catalog_playbook.input_schema</code>.
+     * Setter for <code>public.catalog_playbook.owner_id</code>.
      */
-    public void setInputSchema(String value) {
+    public void setOwnerId(String value) {
         set(4, value);
     }
 
     /**
-     * Getter for <code>public.catalog_playbook.input_schema</code>.
+     * Getter for <code>public.catalog_playbook.owner_id</code>.
      */
-    public String getInputSchema() {
+    public String getOwnerId() {
         return (String) get(4);
-    }
-
-    /**
-     * Setter for <code>public.catalog_playbook.result_schema</code>.
-     */
-    public void setResultSchema(String value) {
-        set(5, value);
-    }
-
-    /**
-     * Getter for <code>public.catalog_playbook.result_schema</code>.
-     */
-    public String getResultSchema() {
-        return (String) get(5);
-    }
-
-    /**
-     * Setter for <code>public.catalog_playbook.execution_policy</code>.
-     */
-    public void setExecutionPolicy(JSONB value) {
-        set(6, value);
-    }
-
-    /**
-     * Getter for <code>public.catalog_playbook.execution_policy</code>.
-     */
-    public JSONB getExecutionPolicy() {
-        return (JSONB) get(6);
-    }
-
-    /**
-     * Setter for <code>public.catalog_playbook.allow_human_task</code>.
-     */
-    public void setAllowHumanTask(Boolean value) {
-        set(7, value);
-    }
-
-    /**
-     * Getter for <code>public.catalog_playbook.allow_human_task</code>.
-     */
-    public Boolean getAllowHumanTask() {
-        return (Boolean) get(7);
-    }
-
-    /**
-     * Setter for
-     * <code>public.catalog_playbook.allow_external_interaction</code>.
-     */
-    public void setAllowExternalInteraction(Boolean value) {
-        set(8, value);
-    }
-
-    /**
-     * Getter for
-     * <code>public.catalog_playbook.allow_external_interaction</code>.
-     */
-    public Boolean getAllowExternalInteraction() {
-        return (Boolean) get(8);
-    }
-
-    /**
-     * Setter for <code>public.catalog_playbook.entry_node_key</code>.
-     */
-    public void setEntryNodeKey(String value) {
-        set(9, value);
-    }
-
-    /**
-     * Getter for <code>public.catalog_playbook.entry_node_key</code>.
-     */
-    public String getEntryNodeKey() {
-        return (String) get(9);
-    }
-
-    /**
-     * Setter for <code>public.catalog_playbook.nodes</code>.
-     */
-    public void setNodes(JSONB value) {
-        set(10, value);
-    }
-
-    /**
-     * Getter for <code>public.catalog_playbook.nodes</code>.
-     */
-    public JSONB getNodes() {
-        return (JSONB) get(10);
-    }
-
-    /**
-     * Setter for <code>public.catalog_playbook.edges</code>.
-     */
-    public void setEdges(JSONB value) {
-        set(11, value);
-    }
-
-    /**
-     * Getter for <code>public.catalog_playbook.edges</code>.
-     */
-    public JSONB getEdges() {
-        return (JSONB) get(11);
     }
 
     // -------------------------------------------------------------------------
@@ -212,21 +111,14 @@ public class CatalogPlaybookRecord extends UpdatableRecordImpl<CatalogPlaybookRe
     /**
      * Create a detached, initialised CatalogPlaybookRecord
      */
-    public CatalogPlaybookRecord(String id, String assistantId, String name, String description, String inputSchema, String resultSchema, JSONB executionPolicy, Boolean allowHumanTask, Boolean allowExternalInteraction, String entryNodeKey, JSONB nodes, JSONB edges) {
+    public CatalogPlaybookRecord(String id, String name, String description, String ownerType, String ownerId) {
         super(CatalogPlaybook.CATALOG_PLAYBOOK);
 
         setId(id);
-        setAssistantId(assistantId);
         setName(name);
         setDescription(description);
-        setInputSchema(inputSchema);
-        setResultSchema(resultSchema);
-        setExecutionPolicy(executionPolicy);
-        setAllowHumanTask(allowHumanTask);
-        setAllowExternalInteraction(allowExternalInteraction);
-        setEntryNodeKey(entryNodeKey);
-        setNodes(nodes);
-        setEdges(edges);
+        setOwnerType(ownerType);
+        setOwnerId(ownerId);
         resetChangedOnNotNull();
     }
 }

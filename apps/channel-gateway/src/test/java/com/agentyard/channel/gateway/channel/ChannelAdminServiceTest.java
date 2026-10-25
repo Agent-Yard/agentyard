@@ -13,7 +13,7 @@ import com.agentyard.channel.gateway.extension.ExtensionRegistrationService;
 import com.agentyard.channel.gateway.extension.RuntimeChannelProviderRegistry;
 import com.agentyard.channel.gateway.shared.ConflictException;
 import com.agentyard.channel.gateway.testing.EmbeddedPostgresTestDatabase;
-import com.agentyard.contracts.channel.ChannelContracts.ChannelAssistantBinding;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelEntryBinding;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelProfileAccountSnapshot;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelProfileStatus;
@@ -68,7 +68,7 @@ class ChannelAdminServiceTest {
             ChannelProfileStatus.ACTIVE,
             true,
             Map.of(),
-            new ChannelAssistantBinding("assistant-1", null),
+            new ChannelEntryBinding("assistant-1"),
             new ChannelProfileAccountSnapshot("integration-account-1", "vault://opaque-ref")
         ));
 
@@ -82,7 +82,7 @@ class ChannelAdminServiceTest {
             ChannelProfileStatus.INACTIVE,
             false,
             Map.of(),
-            new ChannelAssistantBinding("assistant-2", "scenario-1"),
+            new ChannelEntryBinding("assistant-2"),
             new ChannelProfileAccountSnapshot("integration-account-2", null),
             1L
         ));
@@ -91,7 +91,7 @@ class ChannelAdminServiceTest {
         assertEquals("飞书客服机器人 Updated", updated.displayName());
         assertEquals("integration-account-2", updated.accountId());
         assertEquals(false, updated.hasExternalSecretRef());
-        assertEquals("assistant-2", updated.assistantBinding().assistantId());
+        assertEquals("assistant-2", updated.entryBinding().entryId());
     }
 
     @Test
@@ -137,7 +137,7 @@ class ChannelAdminServiceTest {
             ChannelProfileStatus.ACTIVE,
             true,
             Map.of(),
-            new ChannelAssistantBinding("assistant-1", "scenario-1"),
+            new ChannelEntryBinding("assistant-1"),
             new ChannelProfileAccountSnapshot("integration-account-1", "vault://opaque-ref")
         ));
 
@@ -149,7 +149,7 @@ class ChannelAdminServiceTest {
         assertEquals(created.displayName(), disabled.displayName());
         assertEquals(created.inboundEnabled(), disabled.inboundEnabled());
         assertEquals(created.config(), disabled.config());
-        assertEquals(created.assistantBinding(), disabled.assistantBinding());
+        assertEquals(created.entryBinding(), disabled.entryBinding());
         assertEquals(created.accountId(), disabled.accountId());
         assertEquals(created.hasExternalSecretRef(), disabled.hasExternalSecretRef());
 
@@ -533,7 +533,7 @@ class ChannelAdminServiceTest {
             null,
             true,
             Map.of(),
-            new ChannelAssistantBinding("assistant-1", null),
+            new ChannelEntryBinding("assistant-1"),
             null
         ));
     }

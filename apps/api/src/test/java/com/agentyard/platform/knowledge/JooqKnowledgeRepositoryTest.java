@@ -42,11 +42,10 @@ class JooqKnowledgeRepositoryTest {
         repository.inWriteTransaction(() -> {
             repository.upsertKnowledgeBase(new KnowledgeBaseDto(
                 "kb-1",
-                "dom-1",
                 "Knowledge Base",
-                ShareScope.DOMAIN_SHARED,
-                "DOMAIN",
-                "dom-1",
+                ShareScope.SHARED,
+                "PERSON",
+                "operator",
                 "summary",
                 "ops",
                 List.of("faq"),

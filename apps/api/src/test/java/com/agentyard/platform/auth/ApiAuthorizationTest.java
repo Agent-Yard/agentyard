@@ -23,10 +23,12 @@ import com.agentyard.platform.catalog.CatalogService;
 import com.agentyard.platform.event.PlatformEventController;
 import com.agentyard.platform.event.PlatformEventDtos;
 import com.agentyard.platform.event.PlatformEventService;
-import com.agentyard.platform.session.SessionRuntimeController;
-import com.agentyard.platform.session.SessionRuntimeDtos;
-import com.agentyard.platform.session.SessionRuntimeService;
-import com.agentyard.platform.session.SessionRuntimeStreamService;
+import com.agentyard.platform.agent.AgentController;
+import com.agentyard.platform.agent.AgentService;
+import com.agentyard.platform.agent.AgentHistoryClient;
+import com.agentyard.platform.catalog.CatalogAccess;
+import com.agentyard.platform.task.CollaborationService;
+import com.agentyard.contracts.agent.AgentContracts;
 import com.agentyard.platform.shared.ApiExceptionHandler;
 import com.agentyard.contracts.channel.ChannelContracts;
 import java.time.Instant;
@@ -45,109 +47,57 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class ApiAuthorizationTest {
     @Test
-    void shouldAllowBusinessUserToReadGovernanceData() throws Exception {
-        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
-            CatalogService catalogService = context.getBean(CatalogService.class);
-            when(catalogService.listDomains()).thenReturn(List.of());
-
-            MockMvc mockMvc = mockMvc(context);
-
-            mockMvc.perform(get("/api/domains").with(user("business")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true));
+    void shouldHideGovernanceCatalogFromBusinessUsers() throws Exception {
+        try (var context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
+            mockMvc(context).perform(get("/api/role-templates").with(user("business"))).andExpect(status().isForbidden());
+            mockMvc(context).perform(get("/api/catalog/summary").with(user("business"))).andExpect(status().isForbidden());
         }
     }
-
     @Test
-    void shouldRejectBusinessUserGovernanceWriteRequest() throws Exception {
-        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
-            MockMvc mockMvc = mockMvc(context);
-
-            mockMvc.perform(post("/api/domains")
-                    .with(user("business"))
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content("""
-                        {
-                          "name": "客户运营域",
-                          "description": "面向客户运营治理"
-                        }
-                        """))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.detail").value("Access is denied"));
+    void shouldAllowBusinessUserToDiscoverPermittedEntriesAndSendMessages() throws Exception {
+        try (var context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
+            var agents = context.getBean(AgentService.class);
+            when(agents.entries()).thenReturn(List.of());
+            when(agents.send(any())).thenReturn(new AgentContracts.Message("message-1","person-1","agent-1",null,null,
+                AgentContracts.MessageKind.MESSAGE,java.util.Map.of("text","hello"),Instant.parse("2026-04-01T00:00:00Z")));
+            var mvc=mockMvc(context);
+            mvc.perform(get("/api/agent/entries").with(user("business"))).andExpect(status().isOk());
+            mvc.perform(post("/api/agent/messages").with(user("business")).contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                  {"requestId":"request-1","recipientId":"agent-1","kind":"MESSAGE","body":{"text":"hello"}}
+                  """)).andExpect(status().isOk()).andExpect(jsonPath("$.data.id").value("message-1"));
         }
     }
-
     @Test
-    void shouldAllowDeveloperGovernanceWriteRequest() throws Exception {
-        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
-            CatalogService catalogService = context.getBean(CatalogService.class);
-            when(catalogService.createDomain(any())).thenReturn(new CatalogDtos.BusinessDomainDto(
-                "domain-1",
-                "客户运营域",
-                "面向客户运营治理",
-                List.of(),
-                List.of(),
-                List.of()
-            ));
-
-            MockMvc mockMvc = mockMvc(context);
-
-            mockMvc.perform(post("/api/domains")
-                    .with(user("developer"))
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .content("""
-                        {
-                          "name": "客户运营域",
-                          "description": "面向客户运营治理"
-                        }
-                        """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.id").value("domain-1"));
+    void shouldAllowDeveloperToCreateOwnTemplateButDenyAnotherPersonsOwnership() throws Exception {
+        try (var context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
+            var catalog=context.getBean(CatalogService.class);
+            when(catalog.createRoleTemplate(any())).thenReturn(new CatalogDtos.RoleTemplateDto("template-1","Research","Research",
+                "PERSON","user-dev",null,null,List.of()));
+            var mvc=mockMvc(context);
+            mvc.perform(post("/api/role-templates").with(user("developer")).contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                  {"name":"Research","description":"Research","ownerType":"PERSON","ownerId":"user-dev"}
+                  """)).andExpect(status().isOk()).andExpect(jsonPath("$.data.id").value("template-1"));
+            mvc.perform(post("/api/role-templates").with(user("developer")).contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                  {"name":"Research","description":"Research","ownerType":"PERSON","ownerId":"someone-else"}
+                  """)).andExpect(status().isForbidden());
         }
     }
-
     @Test
-    void shouldAllowBusinessUserRuntimeRequest() throws Exception {
-        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
-            SessionRuntimeService sessionRuntimeService = context.getBean(SessionRuntimeService.class);
-            when(sessionRuntimeService.sendTurn(any(), any())).thenReturn(new com.agentyard.contracts.session.SessionContracts.SendSessionTurnResponse(
-                "session-1",
-                "turn-1",
-                com.agentyard.contracts.session.SessionContracts.SessionMessageDeliveryStatus.ACCEPTED,
-                java.util.List.of("message-1"),
-                java.util.List.of(new com.agentyard.contracts.session.SessionContracts.AcceptedSessionMessageAllocation(0, "draft-1", "message-1", 0)),
-                java.util.List.of(),
-                null
-            ));
-
-            MockMvc mockMvc = mockMvc(context);
-
-            mockMvc.perform(post("/api/session-runtime/turns")
-                    .with(user("business"))
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .header("Idempotency-Key", "turn-1")
-                    .content("""
-                        {
-                          "assistantId": "assistant-1",
-                          "customerId": "customer-1",
-                          "turnDedupKey": "turn-1",
-                          "messages": [
-                            {
-                              "clientMessageId": "draft-1",
-                              "blocks": [
-                                {
-                                  "type": "TEXT",
-                                  "text": "你好"
-                                }
-                              ],
-                              "metadata": {}
-                            }
-                          ],
-                          "metadata": {}
-                        }
-                        """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.sessionId").value("session-1"));
+    void shouldAllowOnlyPlatformAdminToDeployEntryGrants() throws Exception {
+        try (var context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
+            String entry="""
+              {"name":"Reception","description":"Entry","ownerType":"PLATFORM","ownerId":"platform","shareScope":"SHARED",
+               "receptionTemplateVersionId":"version-1","enabled":true,"allowedTemplateIds":[],
+               "capabilityGrants":[{"operation":"tool.invoke","scopeKind":"PLATFORM","scopeId":"*","delegable":true}]}
+              """;
+            var mvc=mockMvc(context);
+            for(String principal:List.of("business","developer")) mvc.perform(post("/api/entries").with(user(principal))
+                .contentType(MediaType.APPLICATION_JSON).content(entry)).andExpect(status().isForbidden());
+            mvc.perform(post("/api/entries").with(user("admin")).contentType(MediaType.APPLICATION_JSON).content(entry))
+                .andExpect(status().isOk());
         }
     }
 
@@ -231,7 +181,7 @@ class ApiAuthorizationTest {
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
             MockMvc mockMvc = mockMvc(context);
 
-            mockMvc.perform(delete("/api/channel-admin/profiles/channel-profile-1/template-bindings/assistant-1/CARD/ORDER_STATUS/v1")
+            mockMvc.perform(delete("/api/channel-admin/profiles/channel-profile-1/template-bindings/entry-1/CARD/ORDER_STATUS/v1")
                     .queryParam("expectedRevision", "1")
                     .with(user("business")))
                 .andExpect(status().isForbidden())
@@ -292,14 +242,15 @@ class ApiAuthorizationTest {
     }
 
     @Test
-    void shouldAllowDeveloperPlatformEventsQuery() throws Exception {
+    void shouldRestrictGlobalPlatformEventsToAdministrator() throws Exception {
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext(TestConfig.class, AuthSecurityConfiguration.class)) {
             PlatformEventService platformEventService = context.getBean(PlatformEventService.class);
             when(platformEventService.listEvents(any(), any(), any(), any(), any())).thenReturn(new PlatformEventDtos.PlatformEventPageDto(List.of(), null));
 
             MockMvc mockMvc = mockMvc(context);
 
-            mockMvc.perform(get("/api/events").with(user("developer")))
+            mockMvc.perform(get("/api/events").with(user("developer"))).andExpect(status().isForbidden());
+            mockMvc.perform(get("/api/events").with(user("admin")))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
         }
@@ -311,7 +262,7 @@ class ApiAuthorizationTest {
             .standaloneSetup(
                 context.getBean(CatalogController.class),
                 context.getBean(ChannelAdminController.class),
-                context.getBean(SessionRuntimeController.class),
+                context.getBean(AgentController.class),
                 context.getBean(PlatformEventController.class)
             )
             .setControllerAdvice(context.getBean(ApiExceptionHandler.class))
@@ -323,8 +274,8 @@ class ApiAuthorizationTest {
     @EnableWebSecurity
     static class TestConfig {
         @Bean
-        CatalogController catalogController(CatalogService catalogService) {
-            return new CatalogController(catalogService);
+        CatalogController catalogController(CatalogService catalogService, CatalogAccess catalogAccess) {
+            return new CatalogController(catalogService,catalogAccess);
         }
 
         @Bean
@@ -332,18 +283,13 @@ class ApiAuthorizationTest {
             return new ChannelAdminController(channelAdminService);
         }
 
-        @Bean
-        SessionRuntimeController sessionRuntimeController(
-            SessionRuntimeService sessionRuntimeService,
-            SessionRuntimeStreamService sessionRuntimeStreamService,
-            CurrentUserResolver currentUserResolver
-        ) {
-            return new SessionRuntimeController(sessionRuntimeService, sessionRuntimeStreamService, currentUserResolver);
-        }
+        @Bean AgentController agentController(AgentService agents,AgentHistoryClient history) { return new AgentController(agents,history); }
+        @Bean CatalogAccess catalogAccess(CurrentUserResolver users,CollaborationService collaboration,CatalogService catalog) { return new CatalogAccess(users,collaboration,catalog); }
+        @Bean CollaborationService collaborationService() { return mock(CollaborationService.class); }
 
         @Bean
-        PlatformEventController platformEventController(PlatformEventService platformEventService) {
-            return new PlatformEventController(platformEventService);
+        PlatformEventController platformEventController(PlatformEventService platformEventService, CatalogAccess access) {
+            return new PlatformEventController(platformEventService, access);
         }
 
         @Bean
@@ -356,15 +302,8 @@ class ApiAuthorizationTest {
             return mock(ChannelAdminService.class);
         }
 
-        @Bean
-        SessionRuntimeService sessionRuntimeService() {
-            return mock(SessionRuntimeService.class);
-        }
-
-        @Bean
-        SessionRuntimeStreamService sessionRuntimeStreamService() {
-            return mock(SessionRuntimeStreamService.class);
-        }
+        @Bean AgentService agentService() { return mock(AgentService.class); }
+        @Bean AgentHistoryClient agentHistoryClient() { return mock(AgentHistoryClient.class); }
 
         @Bean
         PlatformEventService platformEventService() {

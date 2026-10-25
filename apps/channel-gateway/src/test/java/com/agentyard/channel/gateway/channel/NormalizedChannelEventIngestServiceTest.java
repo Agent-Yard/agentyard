@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.agentyard.channel.gateway.extension.ExtensionRegistrationProperties;
 import com.agentyard.channel.gateway.extension.ExtensionRegistrationService;
 import com.agentyard.channel.gateway.testing.EmbeddedPostgresTestDatabase;
-import com.agentyard.contracts.channel.ChannelContracts.ChannelAssistantBinding;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelEntryBinding;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelProfileStatus;
 import com.agentyard.contracts.channel.ChannelContracts.NormalizedChannelConversation;
@@ -57,7 +57,7 @@ class NormalizedChannelEventIngestServiceTest {
 
     @Test
     void duplicateDedupKeyReturnsExistingNonMessageEvent() {
-        createProfile("channel-profile-1", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelAssistantBinding("assistant-1", null));
+        createProfile("channel-profile-1", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelEntryBinding("assistant-1"));
         NormalizedChannelInboundEvent event = webhookVerifiedEvent("channel-profile-1", "enterprise.acme.internal-im:webhook:verified");
         NormalizedChannelInboundEventResult first = service.ingest(event, validHeaders(event.dedupKey()));
         NormalizedChannelInboundEventResult second = service.ingest(event, validHeaders(event.dedupKey()));
@@ -71,10 +71,10 @@ class NormalizedChannelEventIngestServiceTest {
 
     @Test
     void duplicateDedupKeyStillValidatesRequestedProfileBeforeReturningExistingNonMessageEvent() {
-        createProfile("channel-profile-1", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelAssistantBinding("assistant-1", null));
-        createProfile("inactive-profile", PROVIDER_TYPE, ChannelProfileStatus.INACTIVE, true, new ChannelAssistantBinding("assistant-1", null));
-        createProfile("disabled-profile", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, false, new ChannelAssistantBinding("assistant-1", null));
-        createProfile("mismatch-profile", TICKET_PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelAssistantBinding("assistant-1", null));
+        createProfile("channel-profile-1", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelEntryBinding("assistant-1"));
+        createProfile("inactive-profile", PROVIDER_TYPE, ChannelProfileStatus.INACTIVE, true, new ChannelEntryBinding("assistant-1"));
+        createProfile("disabled-profile", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, false, new ChannelEntryBinding("assistant-1"));
+        createProfile("mismatch-profile", TICKET_PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelEntryBinding("assistant-1"));
         NormalizedChannelInboundEvent original = webhookVerifiedEvent("channel-profile-1", "enterprise.acme.internal-im:webhook:verified");
         service.ingest(original, validHeaders(original.dedupKey()));
 
@@ -111,9 +111,9 @@ class NormalizedChannelEventIngestServiceTest {
 
     @Test
     void duplicateDedupKeyRejectsDifferentNonMessageEventSurface() {
-        createProfile("channel-profile-1", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelAssistantBinding("assistant-1", null));
-        createProfile("channel-profile-2", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelAssistantBinding("assistant-1", null));
-        createProfile("ticket-profile", TICKET_PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelAssistantBinding("assistant-1", null));
+        createProfile("channel-profile-1", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelEntryBinding("assistant-1"));
+        createProfile("channel-profile-2", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelEntryBinding("assistant-1"));
+        createProfile("ticket-profile", TICKET_PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelEntryBinding("assistant-1"));
         NormalizedChannelInboundEvent original = webhookVerifiedEvent("channel-profile-1", "enterprise.acme.internal-im:webhook:verified");
         service.ingest(original, validHeaders(original.dedupKey()));
 
@@ -142,7 +142,7 @@ class NormalizedChannelEventIngestServiceTest {
 
     @Test
     void webhookVerifiedStoresEventWithoutConversationBinding() {
-        createProfile("channel-profile-1", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelAssistantBinding("assistant-1", null));
+        createProfile("channel-profile-1", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelEntryBinding("assistant-1"));
 
         service.ingest(new NormalizedChannelInboundEvent(
             PROVIDER_TYPE,
@@ -169,9 +169,9 @@ class NormalizedChannelEventIngestServiceTest {
 
     @Test
     void rejectsProfileProviderMismatchInactiveAndInboundDisabled() {
-        createProfile("inactive-profile", PROVIDER_TYPE, ChannelProfileStatus.INACTIVE, true, new ChannelAssistantBinding("assistant-1", null));
-        createProfile("disabled-profile", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, false, new ChannelAssistantBinding("assistant-1", null));
-        createProfile("mismatch-profile", "enterprise.acme.ticket", ChannelProfileStatus.ACTIVE, true, new ChannelAssistantBinding("assistant-1", null));
+        createProfile("inactive-profile", PROVIDER_TYPE, ChannelProfileStatus.INACTIVE, true, new ChannelEntryBinding("assistant-1"));
+        createProfile("disabled-profile", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, false, new ChannelEntryBinding("assistant-1"));
+        createProfile("mismatch-profile", "enterprise.acme.ticket", ChannelProfileStatus.ACTIVE, true, new ChannelEntryBinding("assistant-1"));
 
         assertEquals(
             "channel profile is not ACTIVE: inactive-profile",
@@ -198,7 +198,7 @@ class NormalizedChannelEventIngestServiceTest {
 
     @Test
     void rejectsRegistrationThatDoesNotExposeProvider() {
-        createProfile("channel-profile-1", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelAssistantBinding("assistant-1", null));
+        createProfile("channel-profile-1", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelEntryBinding("assistant-1"));
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> service.ingest(
             webhookVerifiedEvent("channel-profile-1", "enterprise.acme.internal-im:webhook:verified"),
@@ -217,7 +217,7 @@ class NormalizedChannelEventIngestServiceTest {
 
     @Test
     void rejectsDescriptorTypeTraceAndIdempotencyHeaderViolations() {
-        createProfile("channel-profile-1", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelAssistantBinding("assistant-1", null));
+        createProfile("channel-profile-1", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, new ChannelEntryBinding("assistant-1"));
         NormalizedChannelInboundEvent event = webhookVerifiedEvent(
             "channel-profile-1",
             "enterprise.acme.internal-im:webhook:verified"
@@ -259,7 +259,7 @@ class NormalizedChannelEventIngestServiceTest {
     }
 
     @Test
-    void nonMessageEventDoesNotRequireAssistantBinding() {
+    void nonMessageEventDoesNotRequireEntryBinding() {
         createProfile("channel-profile-1", PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, null);
 
         NormalizedChannelInboundEventResult result = service.ingest(
@@ -276,7 +276,7 @@ class NormalizedChannelEventIngestServiceTest {
         String providerType,
         ChannelProfileStatus status,
         boolean inboundEnabled,
-        ChannelAssistantBinding assistantBinding
+        ChannelEntryBinding entryBinding
     ) {
         Instant now = Instant.parse("2026-04-23T00:00:00Z");
         repository.createProfile(new ChannelGatewayProfile(
@@ -286,7 +286,7 @@ class NormalizedChannelEventIngestServiceTest {
             status,
             inboundEnabled,
             Map.of(),
-            assistantBinding,
+            entryBinding,
             null,
             false,
             1,

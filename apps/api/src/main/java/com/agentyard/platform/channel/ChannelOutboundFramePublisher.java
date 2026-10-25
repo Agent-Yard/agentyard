@@ -3,8 +3,6 @@ package com.agentyard.platform.channel;
 import com.agentyard.contracts.channel.ChannelContracts;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelOutboundFrame;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelOutboundFrameKind;
-import com.agentyard.persistence.session.SessionRuntimeStore;
-import com.agentyard.platform.session.SessionRuntimeRepository;
 import com.agentyard.platform.shared.redis.RedisSharedStateProperties;
 import com.agentyard.shared.redis.RedisJsonCodec;
 import com.agentyard.shared.redis.RedisKeyspace;
@@ -44,7 +42,7 @@ public class ChannelOutboundFramePublisher {
     private static final int DEFAULT_MAX_FINAL_REPLAY_FRAMES = 100;
     private static final int SERVER_MAX_FINAL_REPLAY_FRAMES = 1_000;
 
-    private final SessionRuntimeRepository repository;
+    private final ChannelCollaborationOutbox repository;
     private final RedisPubSubBus pubSubBus;
     private final RedisKeyspace keyspace;
     private final RedisJsonCodec codec;
@@ -59,7 +57,7 @@ public class ChannelOutboundFramePublisher {
 
     @Autowired
     public ChannelOutboundFramePublisher(
-        SessionRuntimeRepository repository,
+        ChannelCollaborationOutbox repository,
         RedisPubSubBus pubSubBus,
         RedisKeyspace keyspace,
         RedisJsonCodec codec,
@@ -70,7 +68,7 @@ public class ChannelOutboundFramePublisher {
     }
 
     ChannelOutboundFramePublisher(
-        SessionRuntimeRepository repository,
+        ChannelCollaborationOutbox repository,
         RedisPubSubBus pubSubBus,
         RedisKeyspace keyspace,
         RedisJsonCodec codec,
@@ -220,40 +218,7 @@ public class ChannelOutboundFramePublisher {
     }
 
     private List<ChannelOutboundFrame> deriveFinalFrames(String channelProfileId, long afterFinalSequence, int limit) {
-        return repository.listChannelOutboundFinalMessages(channelProfileId, afterFinalSequence, limit)
-            .stream()
-            .map(ChannelOutboundFramePublisher::toFinalFrame)
-            .toList();
-    }
-
-    private static ChannelOutboundFrame toFinalFrame(SessionRuntimeStore.ChannelOutboundFinalMessageData message) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("sessionMessageId", message.messageId());
-        payload.put("messageSequence", message.messageSequence());
-        payload.put("messageBlocks", message.blocks());
-        Object resolvedTemplate = message.metadata().get("resolvedTemplate");
-        if (resolvedTemplate != null) {
-            payload.put("resolvedTemplate", resolvedTemplate);
-        }
-        String frameId = message.channelProfileId() + ":" + message.sessionId() + ":" + message.messageId() + ":FINAL_DELIVERY";
-        return new ChannelOutboundFrame(
-            ChannelContracts.CHANNEL_OUTBOUND_FRAME_PROTOCOL,
-            frameId,
-            message.channelProfileId(),
-            message.providerType(),
-            message.assistantId(),
-            message.externalConversationId(),
-            message.sessionId(),
-            null,
-            null,
-            null,
-            message.finalSequence(),
-            ChannelOutboundFrameKind.FINAL_DELIVERY,
-            message.updatedAt() == null ? message.createdAt() : message.updatedAt(),
-            ChannelContracts.channelOutboundFrameIdempotencyKey(frameId),
-            Map.copyOf(payload),
-            null
-        );
+        return repository.listFinalFrames(channelProfileId, afterFinalSequence, limit);
     }
 
     private void appendTransient(StoredFrame stored) {
@@ -323,6 +288,10 @@ public class ChannelOutboundFramePublisher {
 
     private void emitHeartbeat(String channelProfileId, Subscriber subscriber) {
         try {
+            if (emitFinalReplay(subscriber, DEFAULT_MAX_FINAL_REPLAY_FRAMES).exhausted()) {
+                unregister(channelProfileId, subscriber);
+                return;
+            }
             sendHeartbeat(subscriber.emitter());
         } catch (RuntimeException error) {
             unregister(channelProfileId, subscriber);

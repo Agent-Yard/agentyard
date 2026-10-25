@@ -92,9 +92,9 @@ public class ChannelProfile extends TableImpl<ChannelProfileRecord> {
     public final TableField<ChannelProfileRecord, JSONB> CONFIG = createField(DSL.name("config"), SQLDataType.JSONB.nullable(false), this, "");
 
     /**
-     * The column <code>public.channel_profile.assistant_binding</code>.
+     * The column <code>public.channel_profile.entry_binding</code>.
      */
-    public final TableField<ChannelProfileRecord, JSONB> ASSISTANT_BINDING = createField(DSL.name("assistant_binding"), SQLDataType.JSONB.nullable(false), this, "");
+    public final TableField<ChannelProfileRecord, JSONB> ENTRY_BINDING = createField(DSL.name("entry_binding"), SQLDataType.JSONB.nullable(false), this, "");
 
     /**
      * The column <code>public.channel_profile.integration_account_id</code>.

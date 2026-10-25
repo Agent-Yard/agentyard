@@ -620,7 +620,7 @@
         },
         "responses": {
           "200": {
-            "description": "Turn accepted, rejected, duplicated, or failed after synchronous session-runtime dispatch.",
+            "description": "Batch accepted, rejected, duplicated, or failed after verified participant messages are delivered to their reception Sessions.",
             "content": {
               "application/json": {
                 "schema": {
@@ -673,7 +673,10 @@
         "required": true,
         "schema": {
           "type": "string",
-          "enum": ["TOOL_CONNECTOR", "CHANNEL_PROVIDER"]
+          "enum": [
+            "TOOL_CONNECTOR",
+            "CHANNEL_PROVIDER"
+          ]
         }
       },
       "DescriptorIdHeader": {
@@ -737,7 +740,9 @@
       "TraceContext": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["traceparent"],
+        "required": [
+          "traceparent"
+        ],
         "properties": {
           "traceparent": {
             "type": "string",
@@ -768,7 +773,13 @@
       "ExtensionError": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["errorCode", "message", "category", "retryable", "details"],
+        "required": [
+          "errorCode",
+          "message",
+          "category",
+          "retryable",
+          "details"
+        ],
         "properties": {
           "errorCode": {
             "type": "string",
@@ -805,7 +816,12 @@
       "ServiceManifestEnvelope": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["extensionApiVersion", "coreMinVersion", "coreMaxVersion", "descriptors"],
+        "required": [
+          "extensionApiVersion",
+          "coreMinVersion",
+          "coreMaxVersion",
+          "descriptors"
+        ],
         "properties": {
           "extensionApiVersion": {
             "type": "integer",
@@ -826,10 +842,15 @@
           "descriptors": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["channelProviders", "toolConnectors"],
+            "required": [
+              "channelProviders",
+              "toolConnectors"
+            ],
             "anyOf": [
               {
-                "required": ["channelProviders"],
+                "required": [
+                  "channelProviders"
+                ],
                 "properties": {
                   "channelProviders": {
                     "minItems": 1
@@ -837,7 +858,9 @@
                 }
               },
               {
-                "required": ["toolConnectors"],
+                "required": [
+                  "toolConnectors"
+                ],
                 "properties": {
                   "toolConnectors": {
                     "minItems": 1
@@ -870,7 +893,15 @@
       },
       "ChannelProviderDescriptor": {
         "type": "object",
-        "required": ["providerType", "title", "accountConfigSchema", "accountConfigUiSchema", "configSchema", "configUiSchema", "endpoints"],
+        "required": [
+          "providerType",
+          "title",
+          "accountConfigSchema",
+          "accountConfigUiSchema",
+          "configSchema",
+          "configUiSchema",
+          "endpoints"
+        ],
         "properties": {
           "providerType": {
             "type": "string"
@@ -922,7 +953,13 @@
       "ChannelProviderOutboundCapability": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["mode", "supportsTyping", "supportsDraftUpdate", "supportsFinalDelivery", "requiresIdempotentFinalDelivery"],
+        "required": [
+          "mode",
+          "supportsTyping",
+          "supportsDraftUpdate",
+          "supportsFinalDelivery",
+          "requiresIdempotentFinalDelivery"
+        ],
         "properties": {
           "mode": {
             "type": "string",
@@ -948,7 +985,17 @@
       },
       "ToolConnectorDescriptor": {
         "type": "object",
-        "required": ["connectorType", "title", "accountConfigSchema", "accountConfigUiSchema", "configSchema", "configUiSchema", "operationMappingSchema", "operationMappingUiSchema", "endpoints"],
+        "required": [
+          "connectorType",
+          "title",
+          "accountConfigSchema",
+          "accountConfigUiSchema",
+          "configSchema",
+          "configUiSchema",
+          "operationMappingSchema",
+          "operationMappingUiSchema",
+          "endpoints"
+        ],
         "properties": {
           "connectorType": {
             "type": "string"
@@ -998,7 +1045,9 @@
       "ToolConnectorEndpoints": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["invoke"],
+        "required": [
+          "invoke"
+        ],
         "properties": {
           "invoke": {
             "$ref": "#/components/schemas/DeclaredPath"
@@ -1017,7 +1066,11 @@
       "CredentialLifecycleEndpointProfile": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["createCredential", "rotateCredential", "revokeCredential"],
+        "required": [
+          "createCredential",
+          "rotateCredential",
+          "revokeCredential"
+        ],
         "properties": {
           "createCredential": {
             "$ref": "#/components/schemas/DeclaredPath"
@@ -1035,7 +1088,12 @@
       },
       "ChannelJobDefinition": {
         "type": "object",
-        "required": ["jobType", "title", "jobConfigSchema", "jobConfigUiSchema"],
+        "required": [
+          "jobType",
+          "title",
+          "jobConfigSchema",
+          "jobConfigUiSchema"
+        ],
         "properties": {
           "jobType": {
             "type": "string"
@@ -1065,26 +1123,43 @@
       },
       "ScheduleConfig": {
         "type": "object",
-        "required": ["scheduleType", "timezone", "jobConfig"],
+        "required": [
+          "scheduleType",
+          "timezone",
+          "jobConfig"
+        ],
         "properties": {
           "enabled": {
             "type": "boolean"
           },
           "scheduleType": {
             "type": "string",
-            "enum": ["INTERVAL", "CRON", "MANUAL"]
+            "enum": [
+              "INTERVAL",
+              "CRON",
+              "MANUAL"
+            ]
           },
           "intervalSeconds": {
-            "type": ["integer", "null"]
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "cronExpression": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "timezone": {
             "type": "string"
           },
           "jobTimeoutSeconds": {
-            "type": ["integer", "null"]
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "jobConfig": {
             "$ref": "#/components/schemas/JsonObject"
@@ -1094,11 +1169,17 @@
       "DescriptorRef": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["type", "id"],
+        "required": [
+          "type",
+          "id"
+        ],
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["TOOL_CONNECTOR", "CHANNEL_PROVIDER"]
+            "enum": [
+              "TOOL_CONNECTOR",
+              "CHANNEL_PROVIDER"
+            ]
           },
           "id": {
             "type": "string"
@@ -1108,7 +1189,9 @@
       "CreateCredentialAccount": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["config"],
+        "required": [
+          "config"
+        ],
         "properties": {
           "config": {
             "$ref": "#/components/schemas/JsonObject"
@@ -1118,7 +1201,10 @@
       "ExistingCredentialAccount": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["config", "externalSecretRef"],
+        "required": [
+          "config",
+          "externalSecretRef"
+        ],
         "properties": {
           "config": {
             "$ref": "#/components/schemas/JsonObject"
@@ -1131,7 +1217,12 @@
       "CreateCredentialRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["descriptor", "account", "credential", "traceContext"],
+        "required": [
+          "descriptor",
+          "account",
+          "credential",
+          "traceContext"
+        ],
         "properties": {
           "descriptor": {
             "$ref": "#/components/schemas/DescriptorRef"
@@ -1150,7 +1241,12 @@
       "RotateCredentialRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["descriptor", "account", "credential", "traceContext"],
+        "required": [
+          "descriptor",
+          "account",
+          "credential",
+          "traceContext"
+        ],
         "properties": {
           "descriptor": {
             "$ref": "#/components/schemas/DescriptorRef"
@@ -1169,7 +1265,11 @@
       "ValidateCredentialRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["descriptor", "account", "traceContext"],
+        "required": [
+          "descriptor",
+          "account",
+          "traceContext"
+        ],
         "properties": {
           "descriptor": {
             "$ref": "#/components/schemas/DescriptorRef"
@@ -1185,7 +1285,11 @@
       "RevokeCredentialRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["descriptor", "account", "traceContext"],
+        "required": [
+          "descriptor",
+          "account",
+          "traceContext"
+        ],
         "properties": {
           "descriptor": {
             "$ref": "#/components/schemas/DescriptorRef"
@@ -1201,7 +1305,10 @@
       "CreateCredentialResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["externalSecretRef", "credentialStatus"],
+        "required": [
+          "externalSecretRef",
+          "credentialStatus"
+        ],
         "properties": {
           "externalSecretRef": {
             "$ref": "#/components/schemas/ExternalSecretRef"
@@ -1215,7 +1322,10 @@
       "RotateCredentialResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["externalSecretRef", "credentialStatus"],
+        "required": [
+          "externalSecretRef",
+          "credentialStatus"
+        ],
         "properties": {
           "externalSecretRef": {
             "$ref": "#/components/schemas/ExternalSecretRef"
@@ -1229,18 +1339,26 @@
       "ValidateCredentialResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["credentialStatus"],
+        "required": [
+          "credentialStatus"
+        ],
         "properties": {
           "credentialStatus": {
             "type": "string",
-            "enum": ["ACTIVE", "VALIDATION_FAILED", "ROTATION_REQUIRED"]
+            "enum": [
+              "ACTIVE",
+              "VALIDATION_FAILED",
+              "ROTATION_REQUIRED"
+            ]
           }
         }
       },
       "RevokeCredentialResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["credentialStatus"],
+        "required": [
+          "credentialStatus"
+        ],
         "properties": {
           "credentialStatus": {
             "type": "string",
@@ -1251,7 +1369,14 @@
       "RemoteToolInvokeRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["connectorType", "tool", "operation", "config", "input", "execution"],
+        "required": [
+          "connectorType",
+          "tool",
+          "operation",
+          "config",
+          "input",
+          "execution"
+        ],
         "properties": {
           "connectorType": {
             "type": "string"
@@ -1261,7 +1386,11 @@
           },
           "tool": {
             "type": "object",
-            "required": ["resourceId", "resourceVersionId", "name"],
+            "required": [
+              "resourceId",
+              "resourceVersionId",
+              "name"
+            ],
             "properties": {
               "resourceId": {
                 "type": "string"
@@ -1276,7 +1405,9 @@
           },
           "operation": {
             "type": "object",
-            "required": ["name"],
+            "required": [
+              "name"
+            ],
             "properties": {
               "name": {
                 "type": "string"
@@ -1289,7 +1420,10 @@
           "config": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["connector", "operationMapping"],
+            "required": [
+              "connector",
+              "operationMapping"
+            ],
             "properties": {
               "connector": {
                 "$ref": "#/components/schemas/JsonObject"
@@ -1301,7 +1435,9 @@
           },
           "input": {
             "type": "object",
-            "required": ["arguments"],
+            "required": [
+              "arguments"
+            ],
             "properties": {
               "arguments": {
                 "$ref": "#/components/schemas/JsonObject"
@@ -1311,7 +1447,11 @@
           "execution": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["idempotencyKey", "timeoutSeconds", "traceContext"],
+            "required": [
+              "idempotencyKey",
+              "timeoutSeconds",
+              "traceContext"
+            ],
             "properties": {
               "idempotencyKey": {
                 "$ref": "#/components/schemas/IdempotencyKey"
@@ -1330,7 +1470,11 @@
       "ToolInvokeResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["status", "output", "metadata"],
+        "required": [
+          "status",
+          "output",
+          "metadata"
+        ],
         "properties": {
           "status": {
             "type": "string",
@@ -1346,12 +1490,30 @@
       },
       "ChannelOutboundFrameKind": {
         "type": "string",
-        "enum": ["TYPING_START", "TYPING_STOP", "DRAFT_UPDATE", "DRAFT_COMPLETE", "DRAFT_DISCARD", "FINAL_DELIVERY"]
+        "enum": [
+          "TYPING_START",
+          "TYPING_STOP",
+          "DRAFT_UPDATE",
+          "DRAFT_COMPLETE",
+          "DRAFT_DISCARD",
+          "FINAL_DELIVERY"
+        ]
       },
       "ChannelOutboundFrame": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["protocol", "frameId", "channelProfileId", "providerType", "externalConversationId", "sessionId", "kind", "occurredAt", "idempotencyKey", "payload"],
+        "required": [
+          "protocol",
+          "frameId",
+          "channelProfileId",
+          "providerType",
+          "externalConversationId",
+          "sessionId",
+          "kind",
+          "occurredAt",
+          "idempotencyKey",
+          "payload"
+        ],
         "properties": {
           "protocol": {
             "type": "string",
@@ -1367,8 +1529,11 @@
           "providerType": {
             "type": "string"
           },
-          "assistantId": {
-            "type": ["string", "null"]
+          "entryId": {
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "externalConversationId": {
             "type": "string"
@@ -1376,10 +1541,10 @@
           "sessionId": {
             "type": "string"
           },
-          "turnId": {
+          "sourceMessageId": {
             "type": "string"
           },
-          "turnExecutionId": {
+          "activationId": {
             "type": "string"
           },
           "sourceSeq": {
@@ -1416,7 +1581,9 @@
       "ChannelOutboundTypingPayload": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["messageId"],
+        "required": [
+          "messageId"
+        ],
         "properties": {
           "messageId": {
             "type": "string"
@@ -1426,7 +1593,11 @@
       "ChannelOutboundDraftUpdatePayload": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["messageId", "blockId", "blockType"],
+        "required": [
+          "messageId",
+          "blockId",
+          "blockType"
+        ],
         "properties": {
           "messageId": {
             "type": "string"
@@ -1449,10 +1620,14 @@
                   "const": "TEXT"
                 }
               },
-              "required": ["blockType"]
+              "required": [
+                "blockType"
+              ]
             },
             "then": {
-              "required": ["delta"]
+              "required": [
+                "delta"
+              ]
             }
           }
         ]
@@ -1461,7 +1636,12 @@
         "type": "object",
         "additionalProperties": false,
         "description": "Completes the referenced transient draft block without stopping typing/streaming or representing formal external message delivery.",
-        "required": ["messageId", "blockId", "blockType", "block"],
+        "required": [
+          "messageId",
+          "blockId",
+          "blockType",
+          "block"
+        ],
         "properties": {
           "messageId": {
             "type": "string"
@@ -1480,7 +1660,9 @@
       "ChannelOutboundDraftDiscardPayload": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["messageId"],
+        "required": [
+          "messageId"
+        ],
         "properties": {
           "messageId": {
             "type": "string"
@@ -1493,7 +1675,11 @@
       "ChannelOutboundFinalDeliveryPayload": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["sessionMessageId", "messageSequence", "messageBlocks"],
+        "required": [
+          "sessionMessageId",
+          "messageSequence",
+          "messageBlocks"
+        ],
         "properties": {
           "sessionMessageId": {
             "type": "string"
@@ -1511,19 +1697,35 @@
           },
           "resolvedTemplate": {
             "$ref": "#/components/schemas/ResolvedTemplate"
+          },
+          "senderParticipantId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "draftMessageId": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Trusted correlation to the public draft completed by this durable message."
           }
         }
       },
       "ResolvedTemplate": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["messageType", "messageVersion", "externalTemplateId"],
+        "required": [
+          "messageType",
+          "messageVersion",
+          "externalTemplateId"
+        ],
         "properties": {
           "messageType": {
             "type": "string"
           },
           "messageSubtype": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "messageVersion": {
             "type": "string"
@@ -1532,14 +1734,25 @@
             "type": "string"
           },
           "externalTemplateVersion": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
       "ChannelOutboundFrameAck": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["protocol", "channelProfileId", "providerType", "frameId", "finalSequence", "sessionId", "sessionMessageId"],
+        "required": [
+          "protocol",
+          "channelProfileId",
+          "providerType",
+          "frameId",
+          "finalSequence",
+          "sessionId",
+          "sessionMessageId"
+        ],
         "properties": {
           "protocol": {
             "type": "string",
@@ -1571,16 +1784,24 @@
             "not": {
               "anyOf": [
                 {
-                  "required": ["providerResponse"]
+                  "required": [
+                    "providerResponse"
+                  ]
                 },
                 {
-                  "required": ["rawProviderResponse"]
+                  "required": [
+                    "rawProviderResponse"
+                  ]
                 },
                 {
-                  "required": ["credential"]
+                  "required": [
+                    "credential"
+                  ]
                 },
                 {
-                  "required": ["externalSecretRef"]
+                  "required": [
+                    "externalSecretRef"
+                  ]
                 }
               ]
             }
@@ -1590,7 +1811,10 @@
       "ChannelOutboundFrameAckResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["accepted", "duplicate"],
+        "required": [
+          "accepted",
+          "duplicate"
+        ],
         "properties": {
           "accepted": {
             "type": "boolean"
@@ -1599,7 +1823,10 @@
             "type": "boolean"
           },
           "lastAckedFinalSequence": {
-            "type": ["integer", "null"],
+            "type": [
+              "integer",
+              "null"
+            ],
             "minimum": 1
           }
         }
@@ -1607,7 +1834,14 @@
       "ChannelOutboundFrameSubscription": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["channelProfileId", "providerType", "status", "streamUrl", "revision", "updatedAt"],
+        "required": [
+          "channelProfileId",
+          "providerType",
+          "status",
+          "streamUrl",
+          "revision",
+          "updatedAt"
+        ],
         "properties": {
           "channelProfileId": {
             "type": "string"
@@ -1631,7 +1865,10 @@
             "format": "date-time"
           },
           "lastAckedFinalSequence": {
-            "type": ["integer", "null"],
+            "type": [
+              "integer",
+              "null"
+            ],
             "minimum": 1,
             "description": "Gateway durable final checkpoint for extension self-check."
           }
@@ -1640,7 +1877,9 @@
       "ChannelOutboundFrameSubscriptionList": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["subscriptions"],
+        "required": [
+          "subscriptions"
+        ],
         "properties": {
           "subscriptions": {
             "type": "array",
@@ -1653,7 +1892,14 @@
       "ChannelRunJobRequest": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["providerType", "channelProfileId", "config", "idempotencyKey", "traceContext", "payload"],
+        "required": [
+          "providerType",
+          "channelProfileId",
+          "config",
+          "idempotencyKey",
+          "traceContext",
+          "payload"
+        ],
         "properties": {
           "providerType": {
             "type": "string"
@@ -1676,7 +1922,10 @@
           "payload": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["jobType", "jobConfig"],
+            "required": [
+              "jobType",
+              "jobConfig"
+            ],
             "properties": {
               "jobType": {
                 "type": "string"
@@ -1695,14 +1944,25 @@
       "ChannelRunJobResponse": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["status", "inboundTurns", "events", "metadata"],
+        "required": [
+          "status",
+          "inboundTurns",
+          "events",
+          "metadata"
+        ],
         "properties": {
           "status": {
             "type": "string",
-            "enum": ["SUCCEEDED", "NOOP"]
+            "enum": [
+              "SUCCEEDED",
+              "NOOP"
+            ]
           },
           "nextCursor": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "inboundTurns": {
             "type": "array",
@@ -1748,7 +2008,10 @@
             "type": "string"
           },
           "externalUserId": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "conversation": {
             "$ref": "#/components/schemas/NormalizedConversation"
@@ -1780,16 +2043,27 @@
       "NormalizedChannelTurnMessage": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["externalMessageId", "role", "attachments", "metadata"],
+        "required": [
+          "externalMessageId",
+          "role",
+          "attachments",
+          "metadata"
+        ],
         "properties": {
           "externalEventId": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "externalMessageId": {
             "type": "string"
           },
           "occurredAt": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "format": "date-time"
           },
           "role": {
@@ -1799,10 +2073,16 @@
             "$ref": "#/components/schemas/NormalizedChannelMessageSender"
           },
           "type": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "text": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "attachments": {
             "type": "array",
@@ -1817,22 +2097,39 @@
       },
       "NormalizedChannelMessageRole": {
         "type": "string",
-        "enum": ["USER", "ASSISTANT", "HUMAN_OPERATOR", "SYSTEM"]
+        "enum": [
+          "USER",
+          "ASSISTANT",
+          "HUMAN_OPERATOR",
+          "SYSTEM"
+        ]
       },
       "NormalizedChannelSenderType": {
         "type": "string",
-        "enum": ["CUSTOMER", "AGENT", "HUMAN_OPERATOR", "SYSTEM"]
+        "enum": [
+          "CUSTOMER",
+          "AGENT",
+          "HUMAN_OPERATOR",
+          "SYSTEM"
+        ]
       },
       "NormalizedChannelMessageSender": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["senderType", "senderName", "metadata"],
+        "required": [
+          "senderType",
+          "senderName",
+          "metadata"
+        ],
         "properties": {
           "senderType": {
             "$ref": "#/components/schemas/NormalizedChannelSenderType"
           },
           "senderId": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "senderName": {
             "type": "string"
@@ -1845,25 +2142,45 @@
       "NormalizedChannelAttachment": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["metadata"],
+        "required": [
+          "metadata"
+        ],
         "properties": {
           "externalAttachmentId": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "externalFileId": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "fileName": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "mimeType": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "url": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "sizeBytes": {
-            "type": ["integer", "null"],
+            "type": [
+              "integer",
+              "null"
+            ],
             "format": "int64",
             "minimum": 0
           },
@@ -1874,18 +2191,34 @@
       },
       "ChannelInboundTurnStatus": {
         "type": "string",
-        "enum": ["RECEIVED", "DUPLICATE", "DISPATCHED", "PARTIALLY_DISPATCHED", "REJECTED", "FAILED"]
+        "enum": [
+          "RECEIVED",
+          "DUPLICATE",
+          "DISPATCHED",
+          "PARTIALLY_DISPATCHED",
+          "REJECTED",
+          "FAILED"
+        ]
       },
       "NormalizedChannelInboundTurnResult": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["turnId", "status", "duplicate", "acceptedMessageIds", "duplicateExternalMessageIds"],
+        "required": [
+          "turnId",
+          "status",
+          "duplicate",
+          "acceptedMessageIds",
+          "duplicateExternalMessageIds"
+        ],
         "properties": {
           "turnId": {
             "type": "string"
           },
           "sessionId": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "status": {
             "$ref": "#/components/schemas/ChannelInboundTurnStatus"
@@ -1906,14 +2239,24 @@
             }
           },
           "reason": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
       "NormalizedChannelInboundEvent": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["providerType", "channelProfileId", "eventType", "dedupKey", "normalizedPayload", "traceContext"],
+        "required": [
+          "providerType",
+          "channelProfileId",
+          "eventType",
+          "dedupKey",
+          "normalizedPayload",
+          "traceContext"
+        ],
         "properties": {
           "providerType": {
             "type": "string"
@@ -1978,14 +2321,23 @@
       },
       "NormalizedConversation": {
         "type": "object",
-        "required": ["externalConversationId", "type", "metadata"],
+        "required": [
+          "externalConversationId",
+          "type",
+          "metadata"
+        ],
         "properties": {
           "externalConversationId": {
             "type": "string"
           },
           "type": {
             "type": "string",
-            "enum": ["DIRECT", "GROUP", "CHANNEL", "UNKNOWN"]
+            "enum": [
+              "DIRECT",
+              "GROUP",
+              "CHANNEL",
+              "UNKNOWN"
+            ]
           },
           "title": {
             "type": "string"
@@ -1997,7 +2349,10 @@
       },
       "NormalizedSender": {
         "type": "object",
-        "required": ["externalUserId", "metadata"],
+        "required": [
+          "externalUserId",
+          "metadata"
+        ],
         "properties": {
           "externalUserId": {
             "type": "string"
@@ -2012,7 +2367,10 @@
       },
       "NormalizedMessage": {
         "type": "object",
-        "required": ["type", "metadata"],
+        "required": [
+          "type",
+          "metadata"
+        ],
         "properties": {
           "type": {
             "type": "string"
@@ -2037,7 +2395,9 @@
       "NormalizedEventAccepted": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["accepted"],
+        "required": [
+          "accepted"
+        ],
         "properties": {
           "accepted": {
             "type": "boolean",
@@ -2048,11 +2408,17 @@
       "ExtensionHealth": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["status"],
+        "required": [
+          "status"
+        ],
         "properties": {
           "status": {
             "type": "string",
-            "enum": ["UP", "DOWN", "DEGRADED"]
+            "enum": [
+              "UP",
+              "DOWN",
+              "DEGRADED"
+            ]
           },
           "details": {
             "$ref": "#/components/schemas/JsonObject"
@@ -2062,11 +2428,15 @@
       "HealthProbe": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["status"],
+        "required": [
+          "status"
+        ],
         "properties": {
           "status": {
             "type": "string",
-            "enum": ["UP"]
+            "enum": [
+              "UP"
+            ]
           }
         }
       }

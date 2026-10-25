@@ -64,145 +64,87 @@ public class LlmUsageRecordRecord extends UpdatableRecordImpl<LlmUsageRecordReco
     }
 
     /**
-     * Setter for <code>public.llm_usage_record.trigger_event_id</code>.
+     * Setter for <code>public.llm_usage_record.participant_id</code>.
      */
-    public void setTriggerEventId(String value) {
+    public void setParticipantId(String value) {
         set(3, value);
     }
 
     /**
-     * Getter for <code>public.llm_usage_record.trigger_event_id</code>.
+     * Getter for <code>public.llm_usage_record.participant_id</code>.
      */
-    public String getTriggerEventId() {
+    public String getParticipantId() {
         return (String) get(3);
     }
 
     /**
-     * Setter for <code>public.llm_usage_record.trigger_type</code>.
+     * Setter for <code>public.llm_usage_record.activation_id</code>.
      */
-    public void setTriggerType(String value) {
+    public void setActivationId(String value) {
         set(4, value);
     }
 
     /**
-     * Getter for <code>public.llm_usage_record.trigger_type</code>.
+     * Getter for <code>public.llm_usage_record.activation_id</code>.
      */
-    public String getTriggerType() {
+    public String getActivationId() {
         return (String) get(4);
     }
 
     /**
-     * Setter for <code>public.llm_usage_record.playbook_run_id</code>.
+     * Setter for <code>public.llm_usage_record.task_id</code>.
      */
-    public void setPlaybookRunId(String value) {
+    public void setTaskId(String value) {
         set(5, value);
     }
 
     /**
-     * Getter for <code>public.llm_usage_record.playbook_run_id</code>.
+     * Getter for <code>public.llm_usage_record.task_id</code>.
      */
-    public String getPlaybookRunId() {
+    public String getTaskId() {
         return (String) get(5);
     }
 
     /**
-     * Setter for <code>public.llm_usage_record.scenario_id</code>.
+     * Setter for <code>public.llm_usage_record.template_version_id</code>.
      */
-    public void setScenarioId(String value) {
+    public void setTemplateVersionId(String value) {
         set(6, value);
     }
 
     /**
-     * Getter for <code>public.llm_usage_record.scenario_id</code>.
+     * Getter for <code>public.llm_usage_record.template_version_id</code>.
      */
-    public String getScenarioId() {
+    public String getTemplateVersionId() {
         return (String) get(6);
-    }
-
-    /**
-     * Setter for <code>public.llm_usage_record.customer_id</code>.
-     */
-    public void setCustomerId(String value) {
-        set(7, value);
-    }
-
-    /**
-     * Getter for <code>public.llm_usage_record.customer_id</code>.
-     */
-    public String getCustomerId() {
-        return (String) get(7);
-    }
-
-    /**
-     * Setter for <code>public.llm_usage_record.assistant_id</code>.
-     */
-    public void setAssistantId(String value) {
-        set(8, value);
-    }
-
-    /**
-     * Getter for <code>public.llm_usage_record.assistant_id</code>.
-     */
-    public String getAssistantId() {
-        return (String) get(8);
-    }
-
-    /**
-     * Setter for
-     * <code>public.llm_usage_record.assistant_release_version</code>.
-     */
-    public void setAssistantReleaseVersion(String value) {
-        set(9, value);
-    }
-
-    /**
-     * Getter for
-     * <code>public.llm_usage_record.assistant_release_version</code>.
-     */
-    public String getAssistantReleaseVersion() {
-        return (String) get(9);
-    }
-
-    /**
-     * Setter for <code>public.llm_usage_record.agent_id</code>.
-     */
-    public void setAgentId(String value) {
-        set(10, value);
-    }
-
-    /**
-     * Getter for <code>public.llm_usage_record.agent_id</code>.
-     */
-    public String getAgentId() {
-        return (String) get(10);
     }
 
     /**
      * Setter for <code>public.llm_usage_record.provider_type</code>.
      */
     public void setProviderType(String value) {
-        set(11, value);
+        set(7, value);
     }
 
     /**
      * Getter for <code>public.llm_usage_record.provider_type</code>.
      */
     public String getProviderType() {
-        return (String) get(11);
+        return (String) get(7);
     }
 
     /**
      * Setter for <code>public.llm_usage_record.model_resource_id</code>.
      */
     public void setModelResourceId(String value) {
-        set(12, value);
+        set(8, value);
     }
 
     /**
      * Getter for <code>public.llm_usage_record.model_resource_id</code>.
      */
     public String getModelResourceId() {
-        return (String) get(12);
+        return (String) get(8);
     }
 
     /**
@@ -210,7 +152,7 @@ public class LlmUsageRecordRecord extends UpdatableRecordImpl<LlmUsageRecordReco
      * <code>public.llm_usage_record.model_resource_version_id</code>.
      */
     public void setModelResourceVersionId(String value) {
-        set(13, value);
+        set(9, value);
     }
 
     /**
@@ -218,133 +160,133 @@ public class LlmUsageRecordRecord extends UpdatableRecordImpl<LlmUsageRecordReco
      * <code>public.llm_usage_record.model_resource_version_id</code>.
      */
     public String getModelResourceVersionId() {
-        return (String) get(13);
+        return (String) get(9);
     }
 
     /**
      * Setter for <code>public.llm_usage_record.model_id</code>.
      */
     public void setModelId(String value) {
-        set(14, value);
+        set(10, value);
     }
 
     /**
      * Getter for <code>public.llm_usage_record.model_id</code>.
      */
     public String getModelId() {
-        return (String) get(14);
+        return (String) get(10);
     }
 
     /**
      * Setter for <code>public.llm_usage_record.usage_available</code>.
      */
     public void setUsageAvailable(Boolean value) {
-        set(15, value);
+        set(11, value);
     }
 
     /**
      * Getter for <code>public.llm_usage_record.usage_available</code>.
      */
     public Boolean getUsageAvailable() {
-        return (Boolean) get(15);
+        return (Boolean) get(11);
     }
 
     /**
      * Setter for <code>public.llm_usage_record.prompt_tokens</code>.
      */
     public void setPromptTokens(Integer value) {
-        set(16, value);
+        set(12, value);
     }
 
     /**
      * Getter for <code>public.llm_usage_record.prompt_tokens</code>.
      */
     public Integer getPromptTokens() {
-        return (Integer) get(16);
+        return (Integer) get(12);
     }
 
     /**
      * Setter for <code>public.llm_usage_record.completion_tokens</code>.
      */
     public void setCompletionTokens(Integer value) {
-        set(17, value);
+        set(13, value);
     }
 
     /**
      * Getter for <code>public.llm_usage_record.completion_tokens</code>.
      */
     public Integer getCompletionTokens() {
-        return (Integer) get(17);
+        return (Integer) get(13);
     }
 
     /**
      * Setter for <code>public.llm_usage_record.total_tokens</code>.
      */
     public void setTotalTokens(Integer value) {
-        set(18, value);
+        set(14, value);
     }
 
     /**
      * Getter for <code>public.llm_usage_record.total_tokens</code>.
      */
     public Integer getTotalTokens() {
-        return (Integer) get(18);
+        return (Integer) get(14);
     }
 
     /**
      * Setter for <code>public.llm_usage_record.raw_usage</code>.
      */
     public void setRawUsage(JSONB value) {
-        set(19, value);
+        set(15, value);
     }
 
     /**
      * Getter for <code>public.llm_usage_record.raw_usage</code>.
      */
     public JSONB getRawUsage() {
-        return (JSONB) get(19);
+        return (JSONB) get(15);
     }
 
     /**
      * Setter for <code>public.llm_usage_record.call_sequence</code>.
      */
     public void setCallSequence(Integer value) {
-        set(20, value);
+        set(16, value);
     }
 
     /**
      * Getter for <code>public.llm_usage_record.call_sequence</code>.
      */
     public Integer getCallSequence() {
-        return (Integer) get(20);
+        return (Integer) get(16);
     }
 
     /**
      * Setter for <code>public.llm_usage_record.tool_loop_step</code>.
      */
     public void setToolLoopStep(Integer value) {
-        set(21, value);
+        set(17, value);
     }
 
     /**
      * Getter for <code>public.llm_usage_record.tool_loop_step</code>.
      */
     public Integer getToolLoopStep() {
-        return (Integer) get(21);
+        return (Integer) get(17);
     }
 
     /**
      * Setter for <code>public.llm_usage_record.occurred_at</code>.
      */
     public void setOccurredAt(OffsetDateTime value) {
-        set(22, value);
+        set(18, value);
     }
 
     /**
      * Getter for <code>public.llm_usage_record.occurred_at</code>.
      */
     public OffsetDateTime getOccurredAt() {
-        return (OffsetDateTime) get(22);
+        return (OffsetDateTime) get(18);
     }
 
     // -------------------------------------------------------------------------
@@ -370,20 +312,16 @@ public class LlmUsageRecordRecord extends UpdatableRecordImpl<LlmUsageRecordReco
     /**
      * Create a detached, initialised LlmUsageRecordRecord
      */
-    public LlmUsageRecordRecord(String id, String sourceType, String sessionId, String triggerEventId, String triggerType, String playbookRunId, String scenarioId, String customerId, String assistantId, String assistantReleaseVersion, String agentId, String providerType, String modelResourceId, String modelResourceVersionId, String modelId, Boolean usageAvailable, Integer promptTokens, Integer completionTokens, Integer totalTokens, JSONB rawUsage, Integer callSequence, Integer toolLoopStep, OffsetDateTime occurredAt) {
+    public LlmUsageRecordRecord(String id, String sourceType, String sessionId, String participantId, String activationId, String taskId, String templateVersionId, String providerType, String modelResourceId, String modelResourceVersionId, String modelId, Boolean usageAvailable, Integer promptTokens, Integer completionTokens, Integer totalTokens, JSONB rawUsage, Integer callSequence, Integer toolLoopStep, OffsetDateTime occurredAt) {
         super(LlmUsageRecord.LLM_USAGE_RECORD);
 
         setId(id);
         setSourceType(sourceType);
         setSessionId(sessionId);
-        setTriggerEventId(triggerEventId);
-        setTriggerType(triggerType);
-        setPlaybookRunId(playbookRunId);
-        setScenarioId(scenarioId);
-        setCustomerId(customerId);
-        setAssistantId(assistantId);
-        setAssistantReleaseVersion(assistantReleaseVersion);
-        setAgentId(agentId);
+        setParticipantId(participantId);
+        setActivationId(activationId);
+        setTaskId(taskId);
+        setTemplateVersionId(templateVersionId);
         setProviderType(providerType);
         setModelResourceId(modelResourceId);
         setModelResourceVersionId(modelResourceVersionId);

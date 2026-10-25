@@ -1,31 +1,35 @@
 import type {
-  Agent,
-  Assistant,
-  BusinessDomain,
+  AgentSession,
+  AgentExecutionStatus,
+  AgentSessionDetail,
+  AgentSessionStatus,
   CatalogSummary,
-  ChannelProfile,
   ChannelConversationBinding,
   ChannelInboundEvent,
   ChannelOutboundFrameCheckpoint,
+  ChannelProfile,
   ChannelProviderDefinition,
   ChannelProviderJobConfig,
   ChannelProviderJobConfigWritePayload,
   ChannelProviderJobRun,
   ChannelTemplateBinding,
   ChannelTemplateBindingWritePayload,
-  CreateAssistantPayload,
+  CollaborationMessage,
   CreateChannelProfilePayload,
-  CreateAgentPayload,
   CreateIntegrationAccountCredentialPayload,
-  CreateDomainPayload,
+  CreateIntegrationAccountPayload,
   CreateKnowledgeBasePayload,
   CreateKnowledgeReleasePayload,
-  CreateIntegrationAccountPayload,
   CreatePlaybookPayload,
+  CreatePlaybookVersionPayload,
   CreateResourcePayload,
   CreateResourceVersionPayload,
-  CreateScenarioPayload,
+  CreateRoleTemplatePayload,
+  CreateRoleTemplateVersionPayload,
   DeletionImpactPreview,
+  Entry,
+  EntryPayload,
+  IntegrationAccount,
   KnowledgeBase,
   KnowledgeDocument,
   KnowledgeDocumentDeletionPreview,
@@ -33,43 +37,37 @@ import type {
   KnowledgeFile,
   KnowledgeImportJob,
   KnowledgeIndexSnapshot,
-  KnowledgeRetrievalPreviewRequest,
-  KnowledgeRetrievalPreviewResult,
   KnowledgeReference,
   KnowledgeRelease,
+  KnowledgeRetrievalPreviewRequest,
+  KnowledgeRetrievalPreviewResult,
   KnowledgeUploadCompletion,
   KnowledgeUploadSession,
-  IntegrationAccount,
   LogoutResponse,
   ObjectReferenceAnalysis,
-  Playbook,
+  OwnedConfiguration,
   PlatformAggregateType,
   PlatformEventPage,
+  Playbook,
+  PlaybookVersion,
+  Reception,
+  ReferenceObjectType,
   Resource,
   ResourceVersion,
-  ReferenceObjectType,
-  Scenario,
-  SendSessionTurnPayload,
-  SendSessionTurnResponse,
-  SessionRuntimeDetail,
-  SessionRuntimeStreamEvent,
-  PrivacyMappingSummary,
+  RoleTemplate,
+  RoleTemplateVersion,
   RotateIntegrationAccountCredentialPayload,
-  SessionRuntimeSession,
-  HumanOperatorReplyPayload,
+  SendMessage,
   ToolConnectorDefinition,
-  UpdateAssistantPayload,
-  UpdateAgentPayload,
   UpdateChannelProfilePayload,
-  UpdateDomainPayload,
-  UpdateKnowledgeBasePayload,
   UpdateIntegrationAccountPayload,
+  UpdateKnowledgeBasePayload,
   UpdatePlaybookPayload,
   UpdateResourcePayload,
   UpdateResourceVersionPayload,
-  UpdateScenarioPayload,
-  UserSession,
+  UserSession
 } from '../types';
+
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '/api';
 export const AUTH_LOGIN_PATH = `${API_BASE}/auth/login`;
@@ -206,46 +204,6 @@ function jsonOptions(
   return options;
 }
 
-function runtimeSessionStreamUrl(sessionId: string, lastEventId?: string | null) {
-  const url = new URL(`${API_BASE}/session-runtime/sessions/${sessionId}/stream`, window.location.origin);
-  if (lastEventId) {
-    url.searchParams.set('lastEventId', lastEventId);
-  }
-  return url.toString();
-}
-
-function stableStringify(value: unknown): string {
-  if (value == null) {
-    return 'null';
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map(stableStringify).join(',')}]`;
-  }
-  if (typeof value === 'object') {
-    const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right));
-    return `{${entries.map(([key, entryValue]) => `${JSON.stringify(key)}:${stableStringify(entryValue)}`).join(',')}}`;
-  }
-  return JSON.stringify(value);
-}
-
-function hashIdempotencySeed(seed: string): string {
-  let hash = 2166136261;
-  for (let index = 0; index < seed.length; index += 1) {
-    hash ^= seed.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, '0');
-}
-
-function externalCallbackIdempotencyKey(
-  sessionId: string,
-  payload: { playbookRunId: string; payload?: Record<string, unknown> },
-): string {
-  // Keep this aligned with the API-side ExternalCallbackIdempotencyKeyFactory fallback algorithm.
-  const payloadSeed = stableStringify(payload.payload ?? {});
-  return `external-callback:${sessionId}:${payload.playbookRunId}:${hashIdempotencySeed(payloadSeed)}`;
-}
-
 export const api = {
   getSession: () => request<UserSession>('/auth/session'),
   getCatalogSummary: () => request<CatalogSummary>('/catalog/summary'),
@@ -272,26 +230,26 @@ export const api = {
     request<ChannelTemplateBinding[]>(`/channel-admin/profiles/${channelProfileId}/template-bindings`),
   upsertChannelTemplateBinding: (
     channelProfileId: string,
-    assistantId: string,
+    entryId: string,
     messageType: string,
     messageSubtype: string,
     messageVersion: string,
     payload: ChannelTemplateBindingWritePayload,
   ) =>
     request<ChannelTemplateBinding>(
-      `/channel-admin/profiles/${channelProfileId}/template-bindings/${encodeURIComponent(assistantId)}/${encodeURIComponent(messageType)}/${encodeURIComponent(messageSubtype)}/${encodeURIComponent(messageVersion)}`,
+      `/channel-admin/profiles/${channelProfileId}/template-bindings/${encodeURIComponent(entryId)}/${encodeURIComponent(messageType)}/${encodeURIComponent(messageSubtype)}/${encodeURIComponent(messageVersion)}`,
       jsonOptions('PUT', payload),
     ),
   deleteChannelTemplateBinding: (
     channelProfileId: string,
-    assistantId: string,
+    entryId: string,
     messageType: string,
     messageSubtype: string,
     messageVersion: string,
     expectedRevision: number,
   ) =>
     request<ChannelTemplateBinding>(
-      `/channel-admin/profiles/${channelProfileId}/template-bindings/${encodeURIComponent(assistantId)}/${encodeURIComponent(messageType)}/${encodeURIComponent(messageSubtype)}/${encodeURIComponent(messageVersion)}?${new URLSearchParams({ expectedRevision: String(expectedRevision) }).toString()}`,
+      `/channel-admin/profiles/${channelProfileId}/template-bindings/${encodeURIComponent(entryId)}/${encodeURIComponent(messageType)}/${encodeURIComponent(messageSubtype)}/${encodeURIComponent(messageVersion)}?${new URLSearchParams({ expectedRevision: String(expectedRevision) }).toString()}`,
       jsonOptions('DELETE'),
     ),
   listChannelProviderJobs: (channelProfileId: string) =>
@@ -351,72 +309,38 @@ export const api = {
     const suffix = query.size > 0 ? `?${query.toString()}` : '';
     return request<PlatformEventPage>(`/events${suffix}`);
   },
-  getRuntimeSessions: () => request<SessionRuntimeSession[]>('/session-runtime/sessions'),
-  getRuntimeSessionDetail: (sessionId: string) =>
-    request<SessionRuntimeDetail>(`/session-runtime/sessions/${sessionId}`),
-  openRuntimeSessionStream: (
-    sessionId: string,
-    handlers: {
-      lastEventId?: string | null;
-      onEvent: (event: SessionRuntimeStreamEvent) => void;
-      onOpen?: () => void;
-      onError?: () => void;
-    },
-  ) => {
-    const eventSource = new EventSource(runtimeSessionStreamUrl(sessionId, handlers.lastEventId), { withCredentials: true });
-    const handleEvent = (rawEvent: Event) => {
-      const messageEvent = rawEvent as MessageEvent<string>;
-      handlers.onEvent(JSON.parse(messageEvent.data) as SessionRuntimeStreamEvent);
-    };
-    eventSource.addEventListener('SESSION_SNAPSHOT', handleEvent);
-    eventSource.addEventListener('SESSION_UPDATED', handleEvent);
-    eventSource.addEventListener('SESSION_PROGRESS', handleEvent);
-    eventSource.addEventListener('SESSION_REPLY_DRAFT', handleEvent);
-    eventSource.addEventListener('SESSION_STREAM_ERROR', handleEvent);
-    eventSource.onopen = () => handlers.onOpen?.();
-    eventSource.onerror = () => handlers.onError?.();
-    return eventSource;
+  listRoleTemplates: () => request<RoleTemplate[]>('/role-templates'),
+  createRoleTemplate: (body: CreateRoleTemplatePayload) => request<RoleTemplate>('/role-templates', jsonOptions('POST', body)),
+  updateRoleTemplate: (id: string, body: OwnedConfiguration) => request<RoleTemplate>(`/role-templates/${id}`, jsonOptions('PUT', body)),
+  deleteRoleTemplate: (id: string) => request<RoleTemplate>(`/role-templates/${id}`, jsonOptions('DELETE')),
+  createRoleTemplateVersion: (id: string, body: CreateRoleTemplateVersionPayload) => request<RoleTemplateVersion>(`/role-templates/${id}/versions`, jsonOptions('POST', body)),
+  publishRoleTemplateVersion: (id: string, versionId: string) => request<RoleTemplateVersion>(`/role-templates/${id}/versions/${versionId}/publish`, jsonOptions('POST')),
+  listEntries: () => request<Entry[]>('/entries'),
+  createEntry: (body: EntryPayload) => request<Entry>('/entries', jsonOptions('POST', body)),
+  updateEntry: (id: string, body: EntryPayload) => request<Entry>(`/entries/${id}`, jsonOptions('PUT', body)),
+  deleteEntry: (id: string) => request<Entry>(`/entries/${id}`, jsonOptions('DELETE')),
+  createPlaybookVersion: (id: string, body: CreatePlaybookVersionPayload) => request<PlaybookVersion>(`/playbooks/${id}/versions`, jsonOptions('POST', body)),
+  publishPlaybookVersion: (id: string, versionId: string) => request<PlaybookVersion>(`/playbooks/${id}/versions/${versionId}/publish`, jsonOptions('POST')),
+  receptionEntries: () => request<Entry[]>('/agent/entries'),
+  reception: (entryId?: string) => request<Reception>('/agent/reception', jsonOptions('POST', { entryId })),
+  receptionDetail: (id: string, pagination?: {cursor?:string;before?:string}) => {
+    const query = new URLSearchParams();
+    if(pagination?.cursor) query.set('cursor',pagination.cursor);
+    if(pagination?.before) query.set('before',pagination.before);
+    return request<Reception>(`/agent/reception/${encodeURIComponent(id)}${query.size?'?'+query.toString():''}`);
   },
-  getRuntimeSessionPrivacyMappingSummary: (sessionId: string) =>
-    request<PrivacyMappingSummary>(`/session-runtime/sessions/${sessionId}/privacy-mapping-summary`),
-  sendRuntimeSessionTurn: (payload: SendSessionTurnPayload) =>
-    request<SendSessionTurnResponse>(
-      '/session-runtime/turns',
-      jsonOptions('POST', payload, { 'Idempotency-Key': payload.turnDedupKey }),
-    ),
-  humanReplyRuntimeSession: (sessionId: string, payload: HumanOperatorReplyPayload) =>
-    request<SessionRuntimeSession>(`/session-runtime/sessions/${sessionId}/human-reply`, jsonOptions('POST', payload)),
-  resumeRuntimePlaybookWithHuman: (sessionId: string, payload: { playbookRunId: string; payload?: Record<string, unknown> }) =>
-    request<SessionRuntimeSession>(`/session-runtime/sessions/${sessionId}/human-resume`, jsonOptions('POST', payload)),
-  resumeRuntimePlaybookWithExternalCallback: (
-    sessionId: string,
-    payload: { playbookRunId: string; payload?: Record<string, unknown> },
-    idempotencyKey?: string,
-  ) =>
-    request<SessionRuntimeSession>(
-      `/session-runtime/sessions/${sessionId}/external-callback`,
-      jsonOptions('POST', payload, {
-        'Idempotency-Key': idempotencyKey ?? externalCallbackIdempotencyKey(sessionId, payload),
-      }),
-    ),
-  endRuntimeSessionHandoff: (sessionId: string) =>
-    request<SessionRuntimeSession>(`/session-runtime/sessions/${sessionId}/handoff/end`, jsonOptions('POST')),
-  createDomain: (payload: CreateDomainPayload) => request<BusinessDomain>('/domains', jsonOptions('POST', payload)),
-  updateDomain: (domainId: string, payload: UpdateDomainPayload) =>
-    request<BusinessDomain>(`/domains/${domainId}`, jsonOptions('PUT', payload)),
-  deleteDomain: (domainId: string) => request<BusinessDomain>(`/domains/${domainId}`, jsonOptions('DELETE')),
-  createScenario: (payload: CreateScenarioPayload) => request<Scenario>('/scenarios', jsonOptions('POST', payload)),
-  updateScenario: (scenarioId: string, payload: UpdateScenarioPayload) =>
-    request<Scenario>(`/scenarios/${scenarioId}`, jsonOptions('PUT', payload)),
-  deleteScenario: (scenarioId: string) => request<Scenario>(`/scenarios/${scenarioId}`, jsonOptions('DELETE')),
-  createAssistant: (payload: CreateAssistantPayload) => request<Assistant>('/assistants', jsonOptions('POST', payload)),
-  updateAssistant: (assistantId: string, payload: UpdateAssistantPayload) =>
-    request<Assistant>(`/assistants/${assistantId}`, jsonOptions('PUT', payload)),
-  deleteAssistant: (assistantId: string) => request<Assistant>(`/assistants/${assistantId}`, jsonOptions('DELETE')),
-  createAgent: (payload: CreateAgentPayload) => request<Agent>('/agents', jsonOptions('POST', payload)),
-  deleteAgent: (agentId: string) => request<Agent>(`/agents/${agentId}`, jsonOptions('DELETE')),
-  updateAgent: (agentId: string, payload: UpdateAgentPayload) =>
-    request<Agent>(`/agents/${agentId}`, jsonOptions('PUT', payload)),
+  sendMessage: (body: SendMessage) => request<CollaborationMessage>('/agent/messages', jsonOptions('POST', body)),
+  agentSession: (id: string) => request<AgentSessionDetail>(`/agent/sessions/${id}`),
+  agentStatus: (id: string, taskId: string) => request<AgentExecutionStatus>(`/agent/sessions/${id}/status?taskId=${encodeURIComponent(taskId)}`),
+  controlAgent: (id: string, status: AgentSessionStatus) => request<AgentSession>(`/agent/sessions/${id}/control`, jsonOptions('POST', { requestId: crypto.randomUUID(), status })),
+  openReceptionStream: (id: string, onReception: (value: Reception) => void, onError?: () => void) => {
+    const source = new EventSource(`${API_BASE}/agent/reception/${encodeURIComponent(id)}/stream`, { withCredentials: true });
+    source.addEventListener('reception', event => {
+      try { onReception(JSON.parse((event as MessageEvent<string>).data) as Reception); } catch { onError?.(); }
+    });
+    source.onerror = () => onError?.();
+    return source;
+  },
   createPlaybook: (payload: CreatePlaybookPayload) => request<Playbook>('/playbooks', jsonOptions('POST', payload)),
   deletePlaybook: (playbookId: string) => request<Playbook>(`/playbooks/${playbookId}`, jsonOptions('DELETE')),
   updatePlaybook: (playbookId: string, payload: UpdatePlaybookPayload) =>

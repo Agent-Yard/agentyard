@@ -7,7 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import com.agentyard.channel.gateway.extension.ExtensionRegistrationProperties;
 import com.agentyard.channel.gateway.extension.ExtensionRegistrationService;
 import com.agentyard.channel.gateway.testing.EmbeddedPostgresTestDatabase;
-import com.agentyard.contracts.channel.ChannelContracts.ChannelAssistantBinding;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelEntryBinding;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelInboundTurnMessageStatus;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelInboundTurnStatus;
@@ -20,10 +20,9 @@ import com.agentyard.contracts.channel.ChannelContracts.NormalizedChannelMessage
 import com.agentyard.contracts.channel.ChannelContracts.NormalizedChannelSenderType;
 import com.agentyard.contracts.channel.ChannelContracts.NormalizedChannelTraceContext;
 import com.agentyard.contracts.channel.ChannelContracts.NormalizedChannelTurnMessage;
-import com.agentyard.contracts.session.SessionContracts.AcceptedSessionMessageAllocation;
-import com.agentyard.contracts.session.SessionContracts.ChannelInboundSessionTurnRequest;
-import com.agentyard.contracts.session.SessionContracts.ChannelInboundSessionTurnResponse;
-import com.agentyard.contracts.session.SessionContracts.SessionMessageDeliveryStatus;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelReceptionAllocation;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelReceptionRequest;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelReceptionResponse;
 import com.agentyard.extension.sdk.protocol.DescriptorType;
 import com.agentyard.extension.sdk.registration.ExtensionRegistrationLoader;
 import java.time.Instant;
@@ -42,7 +41,7 @@ class ChannelInboundSessionDispatcherTest {
 
     private ChannelAdminRepository repository;
     private NormalizedChannelTurnIngestService ingestService;
-    private CapturingSessionRuntimeClient runtimeClient;
+    private CapturingReceptionClient runtimeClient;
 
     @BeforeAll
     static void startDatabase() throws Exception {
@@ -59,7 +58,7 @@ class ChannelInboundSessionDispatcherTest {
         database.reset();
         repository = new ChannelAdminRepository(database.dsl(), new ObjectMapper());
         ingestService = new NormalizedChannelTurnIngestService(repository, registrationService());
-        runtimeClient = new CapturingSessionRuntimeClient();
+        runtimeClient = new CapturingReceptionClient();
         createProfile();
     }
 
@@ -79,9 +78,9 @@ class ChannelInboundSessionDispatcherTest {
         assertEquals(ChannelInboundTurnStatus.DISPATCHED, result.status());
         assertEquals("session-v2-abc12345", result.sessionId());
         assertEquals(1, runtimeClient.requests.size());
-        ChannelInboundSessionTurnRequest request = runtimeClient.requests.getFirst();
-        assertEquals("assistant-1", request.assistantId());
-        assertEquals("user-1", request.customerId());
+        ChannelReceptionRequest request = runtimeClient.requests.getFirst();
+        assertEquals("assistant-1", request.entryId());
+        assertEquals("user-1", request.messages().getFirst().externalUserId());
         assertEquals("chat-1", request.externalConversationId());
         assertEquals(2, request.messages().size());
         assertEquals("hello", ((Map<?, ?>) request.messages().getFirst().message().blocks().getFirst()).get("text"));
@@ -181,9 +180,9 @@ class ChannelInboundSessionDispatcherTest {
         );
         dispatcher.dispatch(second, ingestService.ingest(second, headers(second.dedupKey())));
 
-        ChannelInboundSessionTurnRequest request = runtimeClient.requests.getLast();
-        assertEquals("user-2", request.customerId());
-        assertNull(request.sessionId());
+        ChannelReceptionRequest request = runtimeClient.requests.getLast();
+        assertEquals("user-2", request.messages().getFirst().externalUserId());
+        assertEquals(2, repository.listBindings("channel-profile-1").size());
     }
 
     @Test
@@ -274,7 +273,7 @@ class ChannelInboundSessionDispatcherTest {
             ChannelProfileStatus.ACTIVE,
             true,
             Map.of(),
-            new ChannelAssistantBinding("assistant-1", null),
+            new ChannelEntryBinding("assistant-1"),
             "integration-account-1",
             false,
             1,
@@ -346,13 +345,13 @@ class ChannelInboundSessionDispatcherTest {
         );
     }
 
-    private static final class CapturingSessionRuntimeClient implements ChannelSessionRuntimeClient {
-        private final List<ChannelInboundSessionTurnRequest> requests = new ArrayList<>();
+    private static final class CapturingReceptionClient implements ChannelReceptionClient {
+        private final List<ChannelReceptionRequest> requests = new ArrayList<>();
         private boolean rejectNext;
         private boolean failNext;
 
         @Override
-        public ChannelInboundSessionTurnResponse dispatchInboundTurn(ChannelInboundSessionTurnRequest request) {
+        public ChannelReceptionResponse dispatchInboundTurn(ChannelReceptionRequest request) {
             requests.add(request);
             if (rejectNext) {
                 rejectNext = false;
@@ -362,21 +361,18 @@ class ChannelInboundSessionDispatcherTest {
                 failNext = false;
                 throw new IllegalStateException("api unavailable");
             }
-            List<AcceptedSessionMessageAllocation> allocations = new ArrayList<>();
+            List<ChannelReceptionAllocation> allocations = new ArrayList<>();
             for (int index = 0; index < request.messages().size(); index += 1) {
                 String externalMessageId = request.messages().get(index).externalMessageId();
-                allocations.add(new AcceptedSessionMessageAllocation(
+                allocations.add(new ChannelReceptionAllocation(
                     index,
-                    null,
                     "session-message-" + externalMessageId,
-                    index
+                    "user-1".equals(request.messages().get(index).externalUserId()) ? "session-v2-abc12345" : "session-for-" + request.messages().get(index).externalUserId(),
+                    "participant-" + request.messages().get(index).externalUserId()
                 ));
             }
-            return new ChannelInboundSessionTurnResponse(
+            return new ChannelReceptionResponse(
                 "session-v2-abc12345",
-                "session-turn-1",
-                SessionMessageDeliveryStatus.ACCEPTED,
-                allocations.stream().map(AcceptedSessionMessageAllocation::messageId).toList(),
                 allocations,
                 List.of(),
                 null

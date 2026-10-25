@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentyard.dev/schemas/extension-protocol/entry-binding.schema.json",
+  "title": "Channel reception entry binding",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "entryId"
+  ],
+  "properties": {
+    "entryId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    }
+  }
+}

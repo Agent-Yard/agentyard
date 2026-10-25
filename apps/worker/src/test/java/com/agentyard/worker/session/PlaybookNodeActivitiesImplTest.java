@@ -1,174 +1,86 @@
 package com.agentyard.worker.session;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
-import com.agentyard.contracts.session.SessionContracts.PlaybookRunStatus;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+import com.agentyard.contracts.agent.AgentContracts.*;
+import com.agentyard.contracts.runtime.RuntimeContracts.*;
+import com.agentyard.worker.runtime.AgentRuntimeGateway;
+import com.agentyard.worker.runtime.ExecutionControlPlane;
 import com.agentyard.worker.runtime.SandboxGateway;
-import com.agentyard.worker.runtime.SessionAgentRuntimeGateway;
+import com.agentyard.worker.runtime.WorkerHttpClient.WorkerHttpException;
+import com.agentyard.worker.runtime.ExecutionPaused;
+import io.temporal.failure.ApplicationFailure;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import tools.jackson.databind.ObjectMapper;
 
 class PlaybookNodeActivitiesImplTest {
+    private final SandboxGateway sandbox = mock(SandboxGateway.class);
+    private final AgentRuntimeGateway runtime = mock(AgentRuntimeGateway.class);
+    private final ExecutionControlPlane control = mock(ExecutionControlPlane.class);
+    private final PlaybookNodeActivitiesImpl activities = new PlaybookNodeActivitiesImpl(sandbox, runtime, control, new ObjectMapper());
+
     @Test
-    void executeStep_shouldRejectMissingScriptIdentity() {
-        SandboxGateway sandboxGateway = mock(SandboxGateway.class);
-        PlaybookNodeActivitiesImpl activities = new PlaybookNodeActivitiesImpl(
-            sandboxGateway,
-            mock(SessionAgentRuntimeGateway.class),
-            new ObjectMapper()
-        );
-
-        PlaybookNodeActivities.PlaybookNodeExecutionResult result = activities.executeStep(
-            new PlaybookNodeActivities.PlaybookNodeExecutionRequest(
-                "session-1",
-                "run-1",
-                "playbook-1",
-                "step-1",
-                "Step 1",
-                null,
-                null,
-                null,
-                null,
-                null,
-                Map.of(),
-                Map.of()
-            )
-        );
-
-        assertEquals(PlaybookRunStatus.FAILED, result.terminalStatus());
-        assertEquals("playbook step must define scriptRef and scriptVersion", result.failureReason());
-        verify(sandboxGateway, never()).executePython(anyString(), anyString(), anyInt());
+    void checksCurrentAuthorizationBeforeRunningVersionedScript() {
+        var node = ToolRunFixtures.script("normalize", "refund.normalize", "v1",
+            Map.of("scriptVersions", Map.of("v1", Map.of("runtime", "python", "code", "result = {'statePatch': {'approved': True}}"))));
+        when(control.authorizeNode("run-1", "normalize", "run-1:normalize:1")).thenReturn(ToolRunFixtures.runtime(ToolRunFixtures.flow(node)));
+        when(sandbox.executePython(anyString(), anyString(), anyInt())).thenReturn(
+            new SandboxGateway.SandboxExecutionResult("ok", "__AGENTYARD_RESULT__{\"statePatch\":{\"approved\":true}}", ""));
+        var request = new ToolRunNodeRequest("run-1", "normalize", "run-1:normalize:1", Map.of("amount", 10));
+        var result = activities.executeStep(request);
+        assertNull(result.terminalStatus());
+        assertEquals(true, result.statePatch().get("approved"));
+        ArgumentCaptor<String> source = ArgumentCaptor.forClass(String.class);
+        verify(sandbox).executePython(source.capture(), anyString(), anyInt());
+        assertTrue(source.getValue().contains("refund.normalize"));
+        assertTrue(source.getValue().contains("v1"));
+        when(control.authorizeNode("run-1", "normalize", "run-1:normalize:1")).thenThrow(new IllegalStateException("permission revoked"));
+        assertEquals(PlaybookRunStatus.FAILED, activities.executeStep(request).terminalStatus());
+        verify(sandbox, times(1)).executePython(anyString(), anyString(), anyInt());
     }
 
     @Test
-    void executeStep_shouldInjectScriptIdentityIntoSandboxPayload() {
-        SandboxGateway sandboxGateway = mock(SandboxGateway.class);
-        when(sandboxGateway.executePython(anyString(), anyString(), anyInt())).thenReturn(
-            new SandboxGateway.SandboxExecutionResult(
-                "ok",
-                "__AGENTYARD_RESULT__{\"statePatch\":{\"approved\":true},\"routeKey\":null}",
-                ""
-            )
-        );
-        PlaybookNodeActivitiesImpl activities = new PlaybookNodeActivitiesImpl(
-            sandboxGateway,
-            mock(SessionAgentRuntimeGateway.class),
-            new ObjectMapper()
-        );
-
-        PlaybookNodeActivities.PlaybookNodeExecutionResult result = activities.executeStep(
-            new PlaybookNodeActivities.PlaybookNodeExecutionRequest(
-                "session-1",
-                "run-1",
-                "playbook-1",
-                "step-1",
-                "Step 1",
-                null,
-                "refund.normalize",
-                "2026.04.20",
-                null,
-                null,
-                Map.of("amount", 10),
-                Map.of(
-                    "scriptVersions",
-                    Map.of(
-                        "2026.04.20",
-                        Map.of("runtime", "python", "code", "result = {'statePatch': {'approved': True}, 'routeKey': None}")
-                    ),
-                    "code",
-                    "result = {'statePatch': {'approved': False}, 'routeKey': None}"
-                )
-            )
-        );
-
-        ArgumentCaptor<String> scriptCaptor = ArgumentCaptor.forClass(String.class);
-        verify(sandboxGateway).executePython(scriptCaptor.capture(), anyString(), anyInt());
-        assertTrue(scriptCaptor.getValue().contains("refund.normalize"));
-        assertTrue(scriptCaptor.getValue().contains("2026.04.20"));
-        assertTrue(scriptCaptor.getValue().contains("'approved': True"));
-        assertTrue(scriptCaptor.getValue().contains("script_config"));
-        assertEquals(null, result.terminalStatus());
-        assertEquals(Boolean.TRUE, result.statePatch().get("approved"));
+    void pauseIsReportedBeforeAnySandboxOrToolEffectWithoutActivityRetry() {
+        var paused=new WorkerHttpException(423,"/authorize-node");
+        when(control.authorizeNode(anyString(),anyString(),anyString())).thenThrow(paused);
+        var request=new ToolRunNodeRequest("run","node","call",Map.of());
+        for(var execute:java.util.List.<java.util.function.Function<ToolRunNodeRequest,PlaybookNodeActivities.PlaybookNodeExecutionResult>>of(activities::executeStep,activities::executeTool)) {
+            var failure=assertThrows(ApplicationFailure.class,()->execute.apply(request));
+            assertEquals(ExecutionPaused.TYPE,failure.getType());assertTrue(failure.isNonRetryable());
+        }
+        verifyNoInteractions(sandbox,runtime);
     }
 
     @Test
-    void executeStep_shouldRejectMissingVersionedScriptConfig() {
-        SandboxGateway sandboxGateway = mock(SandboxGateway.class);
-        PlaybookNodeActivitiesImpl activities = new PlaybookNodeActivitiesImpl(
-            sandboxGateway,
-            mock(SessionAgentRuntimeGateway.class),
-            new ObjectMapper()
-        );
-
-        PlaybookNodeActivities.PlaybookNodeExecutionResult result = activities.executeStep(
-            new PlaybookNodeActivities.PlaybookNodeExecutionRequest(
-                "session-1",
-                "run-1",
-                "playbook-1",
-                "step-1",
-                "Step 1",
-                null,
-                "refund.normalize",
-                "2026.04.20",
-                null,
-                null,
-                Map.of(),
-                Map.of("scriptVersions", Map.of("2026.04.19", Map.of("runtime", "python", "code", "result = {}")))
-            )
-        );
-
+    void rejectsUnversionedOrMissingScriptWithoutSideEffect() {
+        var node = ToolRunFixtures.script("normalize", "refund.normalize", "v1", Map.of());
+        when(control.authorizeNode(anyString(), anyString(), anyString())).thenReturn(ToolRunFixtures.runtime(ToolRunFixtures.flow(node)));
+        var result = activities.executeStep(new ToolRunNodeRequest("run-1", "normalize", "call-1", Map.of()));
         assertEquals(PlaybookRunStatus.FAILED, result.terminalStatus());
-        assertEquals(
-            "playbook step refund.normalize@2026.04.20 is missing versioned script config",
-            result.failureReason()
-        );
-        verify(sandboxGateway, never()).executePython(anyString(), anyString(), anyInt());
+        assertTrue(result.failureReason().contains("scriptVersions"));
+        verifyNoInteractions(sandbox);
     }
 
     @Test
-    void executeTool_shouldRejectDirectCancelledTerminalStatus() {
-        SessionAgentRuntimeGateway runtimeGateway = mock(SessionAgentRuntimeGateway.class);
-        when(runtimeGateway.executePlaybookToolTask(org.mockito.ArgumentMatchers.any())).thenReturn(
-            new com.agentyard.contracts.session.SessionContracts.PlaybookToolTaskResult(
-                Map.of(),
-                null,
-                PlaybookRunStatus.CANCELLED,
-                "cancelled by tool"
-            )
-        );
-        PlaybookNodeActivitiesImpl activities = new PlaybookNodeActivitiesImpl(
-            mock(SandboxGateway.class),
-            runtimeGateway,
-            new ObjectMapper()
-        );
-
-        PlaybookNodeActivities.PlaybookNodeExecutionResult result = activities.executeTool(
-            new PlaybookNodeActivities.PlaybookNodeExecutionRequest(
-                "session-1",
-                "run-1",
-                "playbook-1",
-                "tool-1",
-                "Tool 1",
-                null,
-                null,
-                null,
-                "tool-ref",
-                "invoke",
-                Map.of(),
-                Map.of()
-            )
-        );
-
+    void rejectsWrongNodeTypeBeforeSandboxExecution() {
+        var node = ToolRunFixtures.node("tool", PlaybookNodeType.TOOL_TASK);
+        when(control.authorizeNode(anyString(), anyString(), anyString())).thenReturn(ToolRunFixtures.runtime(ToolRunFixtures.flow(node)));
+        var result = activities.executeStep(new ToolRunNodeRequest("run-1", "tool", "call-1", Map.of()));
         assertEquals(PlaybookRunStatus.FAILED, result.terminalStatus());
-        assertEquals("playbook tool task cannot emit CANCELLED directly", result.failureReason());
+        verifyNoInteractions(sandbox);
+    }
+
+    @Test
+    void externalToolRunsWithOnlyTrustedRunReferenceAndRejectsForgedCancellation() {
+        var node = ToolRunFixtures.node("tool", PlaybookNodeType.TOOL_TASK);
+        when(control.authorizeNode(anyString(), anyString(), anyString())).thenReturn(ToolRunFixtures.runtime(ToolRunFixtures.flow(node)));
+        when(runtime.executeToolNode(any())).thenReturn(new PlaybookToolTaskResult(Map.of(), null, PlaybookRunStatus.CANCELLED, "cancel"));
+        var request = new ToolRunNodeRequest("run-1", "tool", "call-1", Map.of());
+        var result = activities.executeTool(request);
+        assertEquals(PlaybookRunStatus.FAILED, result.terminalStatus());
+        verify(runtime).executeToolNode(request);
     }
 }

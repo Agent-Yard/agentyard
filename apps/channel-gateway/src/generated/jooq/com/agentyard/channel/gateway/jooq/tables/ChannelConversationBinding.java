@@ -80,14 +80,15 @@ public class ChannelConversationBinding extends TableImpl<ChannelConversationBin
     public final TableField<ChannelConversationBindingRecord, String> EXTERNAL_USER_ID = createField(DSL.name("external_user_id"), SQLDataType.VARCHAR(255), this, "");
 
     /**
-     * The column <code>public.channel_conversation_binding.assistant_id</code>.
+     * The column <code>public.channel_conversation_binding.entry_id</code>.
      */
-    public final TableField<ChannelConversationBindingRecord, String> ASSISTANT_ID = createField(DSL.name("assistant_id"), SQLDataType.VARCHAR(64), this, "");
+    public final TableField<ChannelConversationBindingRecord, String> ENTRY_ID = createField(DSL.name("entry_id"), SQLDataType.VARCHAR(64), this, "");
 
     /**
-     * The column <code>public.channel_conversation_binding.customer_id</code>.
+     * The column
+     * <code>public.channel_conversation_binding.participant_id</code>.
      */
-    public final TableField<ChannelConversationBindingRecord, String> CUSTOMER_ID = createField(DSL.name("customer_id"), SQLDataType.VARCHAR(255), this, "");
+    public final TableField<ChannelConversationBindingRecord, String> PARTICIPANT_ID = createField(DSL.name("participant_id"), SQLDataType.VARCHAR(255), this, "");
 
     /**
      * The column <code>public.channel_conversation_binding.session_id</code>.
@@ -152,7 +153,7 @@ public class ChannelConversationBinding extends TableImpl<ChannelConversationBin
 
     @Override
     public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_CHANNEL_BINDING_PROFILE_UPDATED, Indexes.IDX_CHANNEL_BINDING_SESSION, Indexes.UK_CHANNEL_BINDING_ACTIVE_SESSION, Indexes.UK_CHANNEL_CONVERSATION_BINDING_PROFILE_EXTERNAL_CONVERSATION);
+        return Arrays.asList(Indexes.IDX_CHANNEL_BINDING_PROFILE_UPDATED, Indexes.IDX_CHANNEL_BINDING_SESSION, Indexes.UK_CHANNEL_BINDING_ACTIVE_SESSION, Indexes.UK_CHANNEL_CONVERSATION_PARTICIPANT);
     }
 
     @Override

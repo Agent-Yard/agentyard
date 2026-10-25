@@ -13,7 +13,6 @@ public class CollaborationController {
     public CollaborationController(CollaborationService service,TaskCommandService commands) { this.service=service;this.commands=commands; }
     @GetMapping("/actors/me") public ApiResponse<?> me() { return ApiResponse.ok(service.currentActor()); }
     @GetMapping("/actors") public ApiResponse<?> actors(@RequestParam(defaultValue="") String query) { return ApiResponse.ok(service.actors(query)); }
-    @PostMapping("/actors/agents") public ApiResponse<?> agent(@RequestBody CreateAgentActor request) { return ApiResponse.ok(service.registerAgent(request)); }
     @GetMapping("/organizations") public ApiResponse<?> organizations() { return ApiResponse.ok(service.organizations()); }
     @PostMapping("/organizations") public ApiResponse<?> createOrganization(@RequestBody CreateOrganization request) { return ApiResponse.ok(service.createOrganization(request)); }
     @GetMapping("/organizations/{id}") public ApiResponse<?> organization(@PathVariable String id) { return ApiResponse.ok(service.organization(id)); }
@@ -26,5 +25,6 @@ public class CollaborationController {
     @GetMapping("/tasks/{id}/context") public ApiResponse<?> context(@PathVariable String id,@RequestParam(required=false) String cursor,@RequestParam(defaultValue="100") int limit) { return ApiResponse.ok(service.context(id,cursor,limit)); }
     @GetMapping("/tasks/{id}/context/{entryId}/versions") public ApiResponse<?> versions(@PathVariable String id,@PathVariable String entryId) { return ApiResponse.ok(service.versions(id,entryId)); }
     @GetMapping("/tasks/{id}/events") public ApiResponse<?> events(@PathVariable String id,@RequestParam(defaultValue="0") long afterRevision,@RequestParam(defaultValue="100") int limit) { return ApiResponse.ok(service.events(id,afterRevision,limit)); }
+    @GetMapping("/tasks/{id}/decisions") public ApiResponse<?> decisions(@PathVariable String id,@RequestParam(required=false) String cursor,@RequestParam(defaultValue="100") int limit) { return ApiResponse.ok(service.decisions(id,cursor,limit)); }
     @GetMapping("/sessions/{sessionId}/tasks") public ApiResponse<?> sessionTasks(@PathVariable String sessionId) { return ApiResponse.ok(service.sessionTasks(sessionId)); }
 }

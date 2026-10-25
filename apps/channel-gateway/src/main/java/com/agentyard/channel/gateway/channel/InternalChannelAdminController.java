@@ -85,10 +85,10 @@ public class InternalChannelAdminController {
         return ApiResponse.ok(channelAdminService.listTemplateBindings(channelProfileId));
     }
 
-    @PutMapping("/{channelProfileId}/template-bindings/{assistantId}/{messageType}/{messageSubtype}/{messageVersion}")
+    @PutMapping("/{channelProfileId}/template-bindings/{entryId}/{messageType}/{messageSubtype}/{messageVersion}")
     public ApiResponse<?> upsertTemplateBinding(
         @PathVariable String channelProfileId,
-        @PathVariable String assistantId,
+        @PathVariable String entryId,
         @PathVariable String messageType,
         @PathVariable String messageSubtype,
         @PathVariable String messageVersion,
@@ -96,7 +96,7 @@ public class InternalChannelAdminController {
     ) {
         return ApiResponse.ok(channelAdminService.upsertTemplateBinding(
             channelProfileId,
-            assistantId,
+            entryId,
             messageType,
             messageSubtype,
             messageVersion,
@@ -104,10 +104,10 @@ public class InternalChannelAdminController {
         ));
     }
 
-    @DeleteMapping("/{channelProfileId}/template-bindings/{assistantId}/{messageType}/{messageSubtype}/{messageVersion}")
+    @DeleteMapping("/{channelProfileId}/template-bindings/{entryId}/{messageType}/{messageSubtype}/{messageVersion}")
     public ApiResponse<?> deleteTemplateBinding(
         @PathVariable String channelProfileId,
-        @PathVariable String assistantId,
+        @PathVariable String entryId,
         @PathVariable String messageType,
         @PathVariable String messageSubtype,
         @PathVariable String messageVersion,
@@ -115,7 +115,7 @@ public class InternalChannelAdminController {
     ) {
         return ApiResponse.ok(channelAdminService.deleteTemplateBinding(
             channelProfileId,
-            assistantId,
+            entryId,
             messageType,
             messageSubtype,
             messageVersion,

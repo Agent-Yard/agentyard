@@ -34,115 +34,101 @@ public class KnowledgeBaseRecord extends UpdatableRecordImpl<KnowledgeBaseRecord
     }
 
     /**
-     * Setter for <code>public.knowledge_base.domain_id</code>.
-     */
-    public void setDomainId(String value) {
-        set(1, value);
-    }
-
-    /**
-     * Getter for <code>public.knowledge_base.domain_id</code>.
-     */
-    public String getDomainId() {
-        return (String) get(1);
-    }
-
-    /**
      * Setter for <code>public.knowledge_base.name</code>.
      */
     public void setName(String value) {
-        set(2, value);
+        set(1, value);
     }
 
     /**
      * Getter for <code>public.knowledge_base.name</code>.
      */
     public String getName() {
-        return (String) get(2);
+        return (String) get(1);
     }
 
     /**
      * Setter for <code>public.knowledge_base.share_scope</code>.
      */
     public void setShareScope(String value) {
-        set(3, value);
+        set(2, value);
     }
 
     /**
      * Getter for <code>public.knowledge_base.share_scope</code>.
      */
     public String getShareScope() {
-        return (String) get(3);
+        return (String) get(2);
     }
 
     /**
      * Setter for <code>public.knowledge_base.owner_type</code>.
      */
     public void setOwnerType(String value) {
-        set(4, value);
+        set(3, value);
     }
 
     /**
      * Getter for <code>public.knowledge_base.owner_type</code>.
      */
     public String getOwnerType() {
-        return (String) get(4);
+        return (String) get(3);
     }
 
     /**
      * Setter for <code>public.knowledge_base.owner_id</code>.
      */
     public void setOwnerId(String value) {
-        set(5, value);
+        set(4, value);
     }
 
     /**
      * Getter for <code>public.knowledge_base.owner_id</code>.
      */
     public String getOwnerId() {
-        return (String) get(5);
+        return (String) get(4);
     }
 
     /**
      * Setter for <code>public.knowledge_base.summary</code>.
      */
     public void setSummary(String value) {
-        set(6, value);
+        set(5, value);
     }
 
     /**
      * Getter for <code>public.knowledge_base.summary</code>.
      */
     public String getSummary() {
-        return (String) get(6);
+        return (String) get(5);
     }
 
     /**
      * Setter for <code>public.knowledge_base.steward</code>.
      */
     public void setSteward(String value) {
-        set(7, value);
+        set(6, value);
     }
 
     /**
      * Getter for <code>public.knowledge_base.steward</code>.
      */
     public String getSteward() {
-        return (String) get(7);
+        return (String) get(6);
     }
 
     /**
      * Setter for <code>public.knowledge_base.tags</code>.
      */
     public void setTags(JSONB value) {
-        set(8, value);
+        set(7, value);
     }
 
     /**
      * Getter for <code>public.knowledge_base.tags</code>.
      */
     public JSONB getTags() {
-        return (JSONB) get(8);
+        return (JSONB) get(7);
     }
 
     // -------------------------------------------------------------------------
@@ -168,11 +154,10 @@ public class KnowledgeBaseRecord extends UpdatableRecordImpl<KnowledgeBaseRecord
     /**
      * Create a detached, initialised KnowledgeBaseRecord
      */
-    public KnowledgeBaseRecord(String id, String domainId, String name, String shareScope, String ownerType, String ownerId, String summary, String steward, JSONB tags) {
+    public KnowledgeBaseRecord(String id, String name, String shareScope, String ownerType, String ownerId, String summary, String steward, JSONB tags) {
         super(KnowledgeBase.KNOWLEDGE_BASE);
 
         setId(id);
-        setDomainId(domainId);
         setName(name);
         setShareScope(shareScope);
         setOwnerType(ownerType);

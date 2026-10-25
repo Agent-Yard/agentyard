@@ -149,7 +149,7 @@ public final class ChannelContracts {
         ChannelProfileStatus status,
         boolean inboundEnabled,
         Map<String, Object> config,
-        ChannelAssistantBinding assistantBinding,
+        ChannelEntryBinding entryBinding,
         String accountId,
         boolean hasExternalSecretRef,
         long revision,
@@ -169,7 +169,7 @@ public final class ChannelContracts {
         ChannelProfileStatus status,
         boolean inboundEnabled,
         Map<String, Object> config,
-        ChannelAssistantBinding assistantBinding,
+        ChannelEntryBinding entryBinding,
         String accountId,
         boolean hasExternalSecretRef,
         long revision,
@@ -181,7 +181,25 @@ public final class ChannelContracts {
         }
     }
 
-    public record ChannelAssistantBinding(String assistantId, String scenarioId) {
+    public record ChannelEntryBinding(String entryId) {
+    }
+
+    public record ChannelReceptionMessage(String externalMessageId, String externalUserId, String displayName,
+        com.agentyard.contracts.runtime.RuntimeContracts.MessageContent message) {}
+
+    public record ChannelReceptionRequest(String channelProfileId, String externalConversationId, String dedupKey,
+        String entryId, List<ChannelReceptionMessage> messages, Map<String, Object> metadata) {
+        public ChannelReceptionRequest { messages = List.copyOf(messages); metadata = immutableObjectMap(metadata); }
+    }
+
+    public record ChannelReceptionAllocation(int requestIndex, String messageId, String sessionId, String participantId) {}
+
+    public record ChannelReceptionResponse(String sessionId, List<ChannelReceptionAllocation> acceptedMessageAllocations,
+        List<String> duplicateExternalMessageIds, String reason) {
+        public ChannelReceptionResponse {
+            acceptedMessageAllocations = List.copyOf(acceptedMessageAllocations);
+            duplicateExternalMessageIds = List.copyOf(duplicateExternalMessageIds);
+        }
     }
 
     public record ChannelProfileIntegrationAccountSummary(
@@ -363,8 +381,8 @@ public final class ChannelContracts {
         String channelProfileId,
         String externalConversationId,
         String externalUserId,
-        String assistantId,
-        String customerId,
+        String entryId,
+        String participantId,
         String sessionId,
         ChannelConversationBindingStatus status,
         Map<String, Object> metadata,
@@ -383,8 +401,8 @@ public final class ChannelContracts {
         String providerType,
         String externalConversationId,
         String externalUserId,
-        String assistantId,
-        String customerId,
+        String entryId,
+        String participantId,
         String bindingStatus,
         ChannelProfileStatus profileStatus,
         long profileRevision,
@@ -470,16 +488,17 @@ public final class ChannelContracts {
         }
     }
 
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
     public record ChannelOutboundFrame(
         String protocol,
         String frameId,
         String channelProfileId,
         String providerType,
-        String assistantId,
+        String entryId,
         String externalConversationId,
         String sessionId,
-        String turnId,
-        String turnExecutionId,
+        String sourceMessageId,
+        String activationId,
         Long sourceSeq,
         Long finalSequence,
         ChannelOutboundFrameKind kind,
@@ -505,7 +524,7 @@ public final class ChannelContracts {
             }
             requireText(idempotencyKey, "idempotencyKey");
             payload = requiredImmutableObjectMap(payload, "payload");
-            validateOutboundFrameSemantics(kind, turnId, turnExecutionId, sourceSeq, finalSequence, payload);
+            validateOutboundFrameSemantics(kind, sourceMessageId, activationId, sourceSeq, finalSequence, payload);
         }
     }
 
@@ -622,8 +641,8 @@ public final class ChannelContracts {
 
     private static void validateOutboundFrameSemantics(
         ChannelOutboundFrameKind kind,
-        String turnId,
-        String turnExecutionId,
+        String sourceMessageId,
+        String activationId,
         Long sourceSeq,
         Long finalSequence,
         Map<String, Object> payload
@@ -638,20 +657,20 @@ public final class ChannelContracts {
         if (finalSequence != null) {
             throw new IllegalArgumentException("finalSequence is only allowed for FINAL_DELIVERY");
         }
-        requireText(turnId, "turnId");
-        requireText(turnExecutionId, "turnExecutionId");
+        requireText(sourceMessageId, "sourceMessageId");
+        requireText(activationId, "activationId");
         if (sourceSeq == null || sourceSeq <= 0) {
             throw new IllegalArgumentException("sourceSeq is required for transient frames");
         }
         switch (kind) {
-            case TYPING_START, TYPING_STOP, DRAFT_DISCARD -> requirePayloadFields(payload, "replyMessageId");
+            case TYPING_START, TYPING_STOP, DRAFT_DISCARD -> requirePayloadFields(payload, "messageId");
             case DRAFT_UPDATE -> {
-                requirePayloadFields(payload, "replyMessageId", "blockId", "blockType");
+                requirePayloadFields(payload, "messageId", "blockId", "blockType");
                 if ("TEXT".equals(payload.get("blockType"))) {
                     requirePayloadNonEmptyString(payload, "delta");
                 }
             }
-            case DRAFT_COMPLETE -> requirePayloadFields(payload, "replyMessageId", "blockId", "blockType", "block");
+            case DRAFT_COMPLETE -> requirePayloadFields(payload, "messageId", "blockId", "blockType", "block");
             default -> throw new IllegalArgumentException("unsupported channel outbound frame kind");
         }
     }
@@ -682,7 +701,7 @@ public final class ChannelContracts {
 
     public record ChannelTemplateBindingKey(
         String channelProfileId,
-        String assistantId,
+        String entryId,
         String messageType,
         String messageSubtype,
         String messageVersion
@@ -692,7 +711,7 @@ public final class ChannelContracts {
     public record ChannelTemplateBinding(
         String id,
         String channelProfileId,
-        String assistantId,
+        String entryId,
         String messageType,
         String messageSubtype,
         String messageVersion,
@@ -861,7 +880,7 @@ public final class ChannelContracts {
         ChannelProfileStatus status,
         Boolean inboundEnabled,
         Map<String, Object> config,
-        ChannelAssistantBinding assistantBinding,
+        ChannelEntryBinding entryBinding,
         String integrationAccountId
     ) {
         public CreateChannelProfileRequest {
@@ -875,7 +894,7 @@ public final class ChannelContracts {
         ChannelProfileStatus status,
         Boolean inboundEnabled,
         Map<String, Object> config,
-        ChannelAssistantBinding assistantBinding,
+        ChannelEntryBinding entryBinding,
         String integrationAccountId,
         Long expectedRevision
     ) {
@@ -890,7 +909,7 @@ public final class ChannelContracts {
         ChannelProfileStatus status,
         Boolean inboundEnabled,
         Map<String, Object> config,
-        ChannelAssistantBinding assistantBinding,
+        ChannelEntryBinding entryBinding,
         ChannelProfileAccountSnapshot accountSnapshot
     ) {
         public CreateChannelProfileInternalRequest {
@@ -904,7 +923,7 @@ public final class ChannelContracts {
         ChannelProfileStatus status,
         Boolean inboundEnabled,
         Map<String, Object> config,
-        ChannelAssistantBinding assistantBinding,
+        ChannelEntryBinding entryBinding,
         ChannelProfileAccountSnapshot accountSnapshot,
         Long expectedRevision
     ) {

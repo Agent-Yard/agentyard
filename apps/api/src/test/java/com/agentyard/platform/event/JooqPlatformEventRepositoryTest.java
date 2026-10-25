@@ -55,13 +55,13 @@ class JooqPlatformEventRepositoryTest {
 
     @Test
     void shouldFilterAndPaginatePlatformEvents() {
-        repository.append(event("platform-event-1", "DOMAIN_CREATED", PlatformAggregateType.DOMAIN, "domain-1", "user-1", "2026-04-01T00:00:00Z"));
-        repository.append(event("platform-event-2", "DOMAIN_UPDATED", PlatformAggregateType.DOMAIN, "domain-1", "user-1", "2026-04-02T00:00:00Z"));
-        repository.append(event("platform-event-3", "SCENARIO_CREATED", PlatformAggregateType.SCENARIO, "scenario-1", "user-2", "2026-04-03T00:00:00Z"));
+        repository.append(event("platform-event-1", "ROLE_TEMPLATE_CREATED", PlatformAggregateType.ROLE_TEMPLATE, "template-1", "user-1", "2026-04-01T00:00:00Z"));
+        repository.append(event("platform-event-2", "ROLE_TEMPLATE_UPDATED", PlatformAggregateType.ROLE_TEMPLATE, "template-1", "user-1", "2026-04-02T00:00:00Z"));
+        repository.append(event("platform-event-3", "ENTRY_CREATED", PlatformAggregateType.ENTRY, "entry-1", "user-2", "2026-04-03T00:00:00Z"));
 
         var filtered = repository.list(new PlatformEventRepository.PlatformEventQuery(
-            PlatformAggregateType.DOMAIN,
-            "domain-1",
+            PlatformAggregateType.ROLE_TEMPLATE,
+            "template-1",
             Instant.parse("2026-04-01T12:00:00Z"),
             null,
             null,

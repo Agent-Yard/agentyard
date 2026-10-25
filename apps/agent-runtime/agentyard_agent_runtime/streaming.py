@@ -1,551 +1,329 @@
 from __future__ import annotations
 
+from .context_budget import bounded_provider_messages, bounded_tool_result, encoded
+from .openai_compatible import parse_stream_tool_call
+
+import asyncio
+import contextlib
 import json
 import re
 import uuid
 from collections.abc import AsyncIterator
-from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Callable, Protocol
+from typing import Any
 
+import httpx
 from starlette.concurrency import run_in_threadpool
 
 from .data_security.detectors import PLACEHOLDER_PATTERN
 from .data_security.validator import collect_placeholders
-from .models import (
-    AgentDecision,
-    AgentTurnExecutionOutcome,
-    AgentTurnRequest,
-    AgentTurnResult,
-    AgentTurnStreamFrame,
-    SessionMessageInput,
-)
-from .openai_compatible import (
-    LlmUsageTracker,
-    OpenAiCompatibleStreamAccumulator,
-    OpenAiCompatibleStreamError,
-    OpenAiCompatibleStreamEvent,
-    OpenAiCompatibleStreamIdleTimeoutError,
-    OpenAiCompatibleStreamMalformedError,
-    OpenAiCompatibleStreamMessage,
-    OpenAiCompatibleStreamToolCall,
-    OpenAiCompatibleSettings,
-    apply_reasoning_settings,
-    stream_chat_completion_events,
-)
+from .json_schema import validate_json_schema_value
+from .models import ActivationOutcome, ActivationRuntime, ActivationStreamFrame, MessageContent, LlmUsageEntry
+from .openai_compatible import (LlmUsageTracker, OpenAiCompatibleStreamAccumulator,
+    OpenAiCompatibleStreamError, OpenAiCompatibleStreamEvent, OpenAiCompatibleStreamIdleTimeoutError,
+    OpenAiCompatibleStreamMalformedError, OpenAiCompatibleStreamMessage, OpenAiCompatibleStreamToolCall,
+    OpenAiCompatibleSettings, apply_reasoning_settings, stream_chat_completion_events)
 from .openai_adapter import render_openai_tool_definitions
 from .privacy_pipeline import PrivacyPipeline, build_privacy_pipeline
 from .provider_settings import resolve_provider_settings
-from .prompting import (
-    build_initial_runtime_messages,
-    build_system_instruction,
-    build_turn_input_messages,
-    render_openai_runtime_messages,
-    render_openai_streaming_messages,
-)
-from .tooling import (
-    APPEND_CARD_BLOCK_TOOL,
-    APPEND_IMAGE_BLOCK_TOOL,
-    APPEND_RICH_TEXT_BLOCK_TOOL,
-    HUMAN_HANDOFF_TOOL,
-    OUTCOME_TOOL_KINDS,
-    RUN_PLAYBOOK_TOOL,
-    SECURITY_BLOCK_TOOL,
-    SWITCH_OWNER_TOOL,
-    UPDATE_SHARED_STATE_TOOL,
-    RuntimeToolKind,
-    execute_tool_call,
-    runtime_tool_registry,
-)
-from .transcript_store import (
-    TranscriptEntry,
-    TranscriptStore,
-    TurnExecutionContext,
-    transcript_entries_from_provider_messages,
-    transcript_entry_from_provider_message,
-)
+from .prompting import build_system_instruction, build_turn_input_messages, render_openai_runtime_messages
+from .tooling import (APPEND_CARD_BLOCK_TOOL, APPEND_IMAGE_BLOCK_TOOL, APPEND_RICH_TEXT_BLOCK_TOOL,
+    SECURITY_BLOCK_TOOL, FINISH_ACTIVATION_TOOL, OUTCOME_TOOL_KINDS, RuntimeToolKind, RuntimeToolSpec, execute_tool_call, runtime_tool_registry)
+from .transcript_store import (TranscriptStore, TurnExecutionContext, transcript_entries_from_provider_messages,
+    transcript_entry_from_provider_message)
 
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
-class _FrameWriter:
-    def __init__(self, request: AgentTurnRequest) -> None:
-        self._request = request
-        self._stream_id = "stream-" + str(uuid.uuid4())
-        self._seq = 0
-        self._turn_id = request.turnId or request.trigger.eventId or "turn-" + str(uuid.uuid4())
-        self._turn_execution_id = request.turnExecutionId or self._turn_id + ":exec-1"
-        self._reply_message_id = request.replyMessageId
-        self._execution_attempt_id = "attempt-" + str(uuid.uuid4())
+class _ActivationYield(RuntimeError):
+    """A compute slice ended; durable execution must continue without user input."""
 
-    @property
-    def turn_id(self) -> str:
-        return self._turn_id
+
+def _retryable(error: Exception) -> bool:
+    if isinstance(error, httpx.HTTPStatusError):
+        return error.response.status_code == 429 or error.response.status_code >= 500
+    return isinstance(error, (_ActivationYield, httpx.TransportError, OpenAiCompatibleStreamError,
+                              ConnectionError, TimeoutError))
+
+
+class _FrameWriter:
+    def __init__(self, request: ActivationRuntime) -> None:
+        self.request = request
+        self.stream_id = "stream-" + str(uuid.uuid4())
+        self.execution_attempt_id = "attempt-" + str(uuid.uuid4())
+        self.seq = 0
+        self.reply_message_id = request.activationId + ":reply"
 
     @property
     def turn_execution_id(self) -> str:
-        return self._turn_execution_id
+        return self.request.activationId
 
-    @property
-    def reply_message_id(self) -> str:
-        return self._reply_message_id
-
-    @property
-    def execution_attempt_id(self) -> str:
-        return self._execution_attempt_id
-
-    def frame(
-        self,
-        *,
-        kind: str,
-        visibility: str,
-        payload: dict[str, Any],
-    ) -> AgentTurnStreamFrame:
-        self._seq += 1
-        return AgentTurnStreamFrame(
-            frameId=f"{self._turn_execution_id}:{self._seq}",
-            streamId=self._stream_id,
-            sessionId=self._request.sessionId,
-            turnId=self._turn_id,
-            turnExecutionId=self._turn_execution_id,
-            ownerAgentId=self._request.currentOwner.agentId,
-            ownershipEpoch=self._request.ownershipEpoch,
-            seq=self._seq,
-            kind=kind,  # type: ignore[arg-type]
-            visibility=visibility,  # type: ignore[arg-type]
-            occurredAt=_now_iso(),
-            payload=payload,
-        )
+    def frame(self, *, kind: str, visibility: str, payload: dict[str, Any]) -> ActivationStreamFrame:
+        self.seq += 1
+        return ActivationStreamFrame(frameId=f"{self.stream_id}:{self.seq}", streamId=self.stream_id,
+            sessionId=self.request.sessionId, activationId=self.request.activationId,
+            participantId=self.request.participantId, seq=self.seq, kind=kind, visibility=visibility,
+            occurredAt=_now_iso(), payload=payload)
 
 
-class _LlmStreamProvider(Protocol):
-    @property
-    def provider_type(self) -> str:
-        ...
-
-    def stream(
-        self,
-        request: AgentTurnRequest,
-        writer: _FrameWriter,
-        *,
-        replay_messages: list[dict[str, Any]],
-        transcript_store: TranscriptStore | None,
-        turn_context: TurnExecutionContext,
-    ) -> AsyncIterator[AgentTurnStreamFrame]:
-        ...
+def _turn_execution_context(request: ActivationRuntime, writer: _FrameWriter) -> TurnExecutionContext:
+    return TurnExecutionContext(request.sessionId, request.participantId, request.trigger.id,
+        request.activationId, writer.execution_attempt_id)
 
 
-@dataclass(frozen=True)
-class _OpenAiCompatibleStreamProvider:
-    settings: OpenAiCompatibleSettings
-
-    @property
-    def provider_type(self) -> str:
-        return self.settings.provider_type
-
-    def stream(
-        self,
-        request: AgentTurnRequest,
-        writer: _FrameWriter,
-        *,
-        replay_messages: list[dict[str, Any]],
-        transcript_store: TranscriptStore | None,
-        turn_context: TurnExecutionContext,
-    ) -> AsyncIterator[AgentTurnStreamFrame]:
-        return _stream_via_openai_compatible(
-            request,
-            writer,
-            settings=self.settings,
-            replay_messages=replay_messages,
-            transcript_store=transcript_store,
-            turn_context=turn_context,
-        )
+async def _heartbeat(store: TranscriptStore, context: TurnExecutionContext) -> None:
+    while True:
+        await asyncio.sleep(15)
+        await run_in_threadpool(store.heartbeat, context)
 
 
-async def stream_agent_turn(
-    request: AgentTurnRequest,
-    transcript_store: TranscriptStore | None = None,
-) -> AsyncIterator[AgentTurnStreamFrame]:
+async def stream_activation(request: ActivationRuntime, transcript_store: TranscriptStore) -> AsyncIterator[ActivationStreamFrame]:
+    if transcript_store is None:
+        raise RuntimeError("every activation requires a durable transcript store")
     writer = _FrameWriter(request)
-    turn_context = _turn_execution_context(request, writer)
-    replay_messages: list[dict[str, Any]] = []
-    if transcript_store is not None:
-        cached_outcome = await run_in_threadpool(transcript_store.begin_execution, turn_context)
-        if cached_outcome is not None:
-            yield writer.frame(
-                kind="FINAL_OUTCOME",
-                visibility="INTERNAL",
-                payload={"replyMessageId": writer.reply_message_id, "outcome": cached_outcome.model_dump(mode="json")},
-            )
-            return
-
-    provider = _resolve_llm_stream_provider(request)
-    if transcript_store is not None and provider is not None:
-        if request.transcriptBootstrap:
-            await run_in_threadpool(
-                transcript_store.reset_committed_provider_transcript_for_bootstrap,
-                turn_context,
-                provider.provider_type,
-            )
-        replay_messages = await run_in_threadpool(
-            transcript_store.load_committed_provider_messages,
-            turn_context,
-            provider.provider_type,
-        )
-
-    yield writer.frame(
-        kind="TURN_STARTED",
-        visibility="OPERATOR",
-        payload={
-            "replyMessageId": writer.reply_message_id,
-            "triggerType": request.trigger.triggerType,
-            "inputMessageCount": len(request.messages),
-        },
-    )
-
-    if provider is None:
-        message = "execute-stream requires a configured streaming model provider for current owner"
-        outcome = AgentTurnExecutionOutcome(success=False, failureReason=message)
-        if transcript_store is not None:
-            await run_in_threadpool(transcript_store.mark_failed, turn_context, message)
-        yield writer.frame(
-            kind="ERROR",
-            visibility="OPERATOR",
-            payload={
-                "code": "PROVIDER_STREAM_UNAVAILABLE",
-                "replyMessageId": writer.reply_message_id,
-                "message": message,
-                "stage": "PROVIDER_STREAM",
-                "retryable": False,
-                "details": {},
-            },
-        )
-        yield writer.frame(
-            kind="FINAL_OUTCOME",
-            visibility="INTERNAL",
-            payload={"replyMessageId": writer.reply_message_id, "outcome": outcome.model_dump(mode="json")},
-        )
+    context = _turn_execution_context(request, writer)
+    cached = await run_in_threadpool(transcript_store.begin_execution, context)
+    if cached is not None:
+        yield writer.frame(kind="FINAL_OUTCOME", visibility="INTERNAL",
+            payload={"replyMessageId": writer.reply_message_id, "outcome": cached.model_dump(mode="json")})
         return
-
-    async for frame in provider.stream(
-        request,
-        writer,
-        replay_messages=replay_messages,
-        transcript_store=transcript_store,
-        turn_context=turn_context,
-    ):
-        yield frame
-
-
-def _resolve_llm_stream_provider(request: AgentTurnRequest) -> _LlmStreamProvider | None:
-    settings = resolve_provider_settings(request)
-    if settings is None:
-        return None
-    return _OpenAiCompatibleStreamProvider(settings=settings)
-
-
-async def _stream_via_openai_compatible(
-    request: AgentTurnRequest,
-    writer: _FrameWriter,
-    *,
-    settings: OpenAiCompatibleSettings,
-    replay_messages: list[dict[str, Any]],
-    transcript_store: TranscriptStore | None,
-    turn_context: TurnExecutionContext,
-) -> AsyncIterator[AgentTurnStreamFrame]:
-    usage_tracker = LlmUsageTracker()
-    outcome_accumulator = _StreamingOutcomeAccumulator(request)
-    text_guard = _CustomerTextStreamGuard()
-    next_reply_block_index = 1
-    privacy_pipeline = build_privacy_pipeline(request, usage_tracker)
-    customer_restorer = _ChunkSafePrivacyRestorer(privacy_pipeline)
+    heartbeat = asyncio.create_task(_heartbeat(transcript_store, context))
     try:
-        if replay_messages:
-            turn_input_messages = privacy_pipeline.sanitize_semantic_messages(build_turn_input_messages(request))
-            current_messages = render_openai_runtime_messages(turn_input_messages)
-            current_messages_round_id = f"{writer.turn_execution_id}:turn-input"
+        yield writer.frame(kind="TURN_STARTED", visibility="OPERATOR", payload={
+            "replyMessageId": writer.reply_message_id, "triggerType": request.trigger.kind, "inputMessageCount": 1})
+        settings = resolve_provider_settings(request)
+        if settings is None:
+            raise ValueError("activation requires a configured streaming model provider")
+        replay = await run_in_threadpool(transcript_store.load_committed_provider_messages, context, settings.provider_type, request.agent.memoryWindowSize)
+        pending = await run_in_threadpool(transcript_store.load_execution_messages, context, settings.provider_type)
+        async for frame in _stream_via_openai_compatible(request, writer, settings=settings, replay_messages=replay,
+            pending_messages=pending, transcript_store=transcript_store, turn_context=context):
+            yield frame
+    except asyncio.CancelledError:
+        with contextlib.suppress(RuntimeError):
+            await run_in_threadpool(transcript_store.mark_failed, context, "activation request interrupted; checkpoints and tool receipts retained")
+        raise
+    except Exception as error:
+        reason = str(error) or type(error).__name__
+        with contextlib.suppress(RuntimeError):
+            await run_in_threadpool(transcript_store.mark_failed, context, reason)
+        yield writer.frame(kind="ERROR", visibility="OPERATOR", payload={"code": "ACTIVATION_FAILED",
+            "replyMessageId": writer.reply_message_id, "message": reason, "stage": "PROVIDER_STREAM", "retryable": _retryable(error)})
+        yield writer.frame(kind="FINAL_OUTCOME", visibility="INTERNAL", payload={
+            "replyMessageId": writer.reply_message_id, "outcome": ActivationOutcome(success=False, failureReason=reason,
+                retryable=_retryable(error), llmUsage=getattr(error, "activation_usage", [])).model_dump(mode="json")})
+    finally:
+        heartbeat.cancel()
+        with contextlib.suppress(asyncio.CancelledError, RuntimeError):
+            await heartbeat
+
+
+async def _stream_via_openai_compatible(request: ActivationRuntime, writer: _FrameWriter, *,
+        settings: OpenAiCompatibleSettings, replay_messages: list[dict[str, Any]], pending_messages: list[dict[str, Any]],
+        transcript_store: TranscriptStore, turn_context: TurnExecutionContext) -> AsyncIterator[ActivationStreamFrame]:
+    usage = LlmUsageTracker()
+    usage.restore([LlmUsageEntry.model_validate(entry) for entry in
+        await run_in_threadpool(transcript_store.execution_usage, turn_context)])
+    accumulator = _StreamingOutcomeAccumulator(request)
+    pipeline = build_privacy_pipeline(request, usage)
+    registry = runtime_tool_registry(request)
+    try:
+        role_instruction = pipeline.sanitize_prompt_instruction(request.agent.systemPrompt.strip())
+        system = build_system_instruction(request) + ("\n\nRole instructions:\n" + role_instruction if role_instruction else "")
+        # The system envelope is rebuilt from the current authorized template.
+        # Persistent records are evidence, never stale system instructions.
+        provider_messages = [{"role": "system", "content": system}]
+        provider_messages.extend(m for m in replay_messages if m.get("role") != "system")
+        uncertain = await run_in_threadpool(transcript_store.uncertain_tool_calls, turn_context)
+        if uncertain:
+            provider_messages.append({"role": "user", "content": "Earlier tool calls have unresolved durable receipts. They may already have changed external state; inspect their history and reconcile before repeating an operation:\n" + json.dumps(uncertain, ensure_ascii=False)})
+        if pending_messages:
+            provider_messages.extend(m for m in pending_messages if m.get("role") != "system")
+            _restore_accumulator(accumulator, pending_messages)
         else:
-            system_instruction = build_system_instruction(request)
-            owner_instruction = privacy_pipeline.sanitize_prompt_instruction(request.currentOwner.systemPrompt.strip())
-            runtime_messages = privacy_pipeline.sanitize_semantic_messages(build_initial_runtime_messages(request))
-            current_messages = render_openai_streaming_messages(system_instruction, owner_instruction, runtime_messages)
-            current_messages_round_id = f"{writer.turn_execution_id}:prompt"
-        provider_messages = _merge_replay_messages(current_messages, replay_messages)
-        completed_transcript_entries: list[TranscriptEntry] = transcript_entries_from_provider_messages(
-            current_messages,
-            provider_type=settings.provider_type,
-            model_round_id=current_messages_round_id,
-        )
-        tool_registry = runtime_tool_registry(request)
-        payload: dict[str, Any] = {
-            "model": settings.model_id,
-            "temperature": settings.temperature,
-            "messages": provider_messages,
-            "tools": render_openai_tool_definitions([spec.definition for spec in tool_registry.values()]),
-        }
+            current = render_openai_runtime_messages(pipeline.sanitize_semantic_messages(build_turn_input_messages(request)))
+            await run_in_threadpool(transcript_store.append_pending_entries, turn_context,
+                transcript_entries_from_provider_messages(current, provider_type=settings.provider_type,
+                    model_round_id=f"{request.activationId}:input"))
+            provider_messages.extend(current)
+        # Recover the exact pending calls using their durable call IDs. A cached
+        # receipt returns the original result; uncertain writes are never replayed.
+        recovered = _pending_tool_calls(pending_messages)
+        for index, call in enumerate(recovered, 1):
+            spec = registry.get(call.tool_name)
+            if call.tool_name == FINISH_ACTIVATION_TOOL and any(
+                    len(m.get("tool_calls", [])) > 1 and any(c["id"] == call.call_id for c in m["tool_calls"])
+                    for m in pending_messages if m.get("role") == "assistant"):
+                result = {"success": False, "code": "FINISH_MUST_BE_ALONE",
+                    "message": "Call activation_finish alone after inspecting all other tool results."}
+            elif spec is None:
+                result = {"success": False, "code": "CAPABILITY_UNAVAILABLE", "message": "This pending capability is no longer available."}
+            else:
+                result = await _execute_recorded_tool(request, call, spec, accumulator, transcript_store, turn_context, pipeline)
+            provider_result = pipeline.sanitize_outbound("TOOL_RESULT", _llm_visible_tool_result(spec.kind if spec else RuntimeToolKind.CONTEXT_TOOL, result))
+            message = _provider_tool_result_message(call, bounded_tool_result(provider_result,
+                activation_id=request.activationId, call_id=call.call_id))
+            await run_in_threadpool(transcript_store.append_pending_entries, turn_context,
+                [transcript_entry_from_provider_message(message, provider_type=settings.provider_type,
+                    model_round_id=f"{request.activationId}:recover:{call.call_id}", seq=1)])
+            provider_messages.append(message)
+        if accumulator.finished:
+            outcome = _restore_successful_outcome(pipeline, accumulator.build_outcome(usage))
+            await run_in_threadpool(transcript_store.commit_success, turn_context, outcome, [])
+            yield writer.frame(kind="FINAL_OUTCOME", visibility="INTERNAL",
+                payload={"replyMessageId": writer.reply_message_id, "outcome": outcome.model_dump(mode="json")})
+            return
+        payload: dict[str, Any] = {"model": settings.model_id, "temperature": settings.temperature,
+            "messages": provider_messages, "tools": render_openai_tool_definitions([s.definition for s in registry.values()])}
         if settings.max_tokens > 0:
             payload["max_tokens"] = settings.max_tokens
         apply_reasoning_settings(payload, settings)
-        max_steps = _max_streaming_tool_steps(request)
-        for step in range(max_steps + 1):
-            model_round_id = f"{writer.turn_execution_id}:round-{step}"
-            round_block_id: str | None = None
-            round_customer_text_parts: list[str] = []
-
-            def current_round_block_id() -> str:
-                nonlocal next_reply_block_index, round_block_id
-                if round_block_id is None:
-                    round_block_id = f"reply-block-{next_reply_block_index}"
-                    next_reply_block_index += 1
-                return round_block_id
-
-            usage_tracker.set_tool_loop_step(step)
-            payload["messages"] = provider_messages
-            yield writer.frame(
-                kind="MODEL_STARTED",
-                visibility="DEVELOPER",
-                payload={"modelRoundId": model_round_id},
-            )
-            round_accumulator = OpenAiCompatibleStreamAccumulator()
-            events = stream_chat_completion_events(
-                settings,
-                payload,
-                idle_timeout_seconds=20.0,
-            )
+        first_round = sum(1 for m in pending_messages if m.get("role") == "assistant")
+        missing_finish = 0
+        for step in range(first_round, first_round + _max_streaming_tool_steps(request) + 1):
+            round_id = f"{request.activationId}:round-{step}"
+            usage.set_tool_loop_step(step)
+            yield writer.frame(kind="MODEL_STARTED", visibility="DEVELOPER", payload={"modelRoundId": round_id})
+            streamed = OpenAiCompatibleStreamAccumulator()
+            payload["messages"] = bounded_provider_messages(provider_messages,
+                tool_schema_chars=len(encoded(payload["tools"])))
+            events = stream_chat_completion_events(settings, payload, idle_timeout_seconds=20.0)
             while True:
                 event = await run_in_threadpool(_next_stream_event, events)
                 if event is None:
                     break
-                round_accumulator.apply(event)
-                if event.event_type == "content_delta" and event.delta:
-                    customer_delta = customer_restorer.accept(text_guard.accept(event.delta))
-                    if customer_delta:
-                        block_id = current_round_block_id()
-                        round_customer_text_parts.append(customer_delta)
-                        yield writer.frame(
-                            kind="REPLY_BLOCK_DELTA",
-                            visibility="CUSTOMER",
-                            payload={
-                                "replyMessageId": writer.reply_message_id,
-                                "blockId": block_id,
-                                "blockType": "TEXT",
-                                "delta": customer_delta,
-                            },
-                        )
-            message = round_accumulator.build_message()
-            customer_tail = customer_restorer.flush()
-            if customer_tail:
-                block_id = current_round_block_id()
-                round_customer_text_parts.append(customer_tail)
-                yield writer.frame(
-                    kind="REPLY_BLOCK_DELTA",
-                    visibility="CUSTOMER",
-                    payload={
-                        "replyMessageId": writer.reply_message_id,
-                        "blockId": block_id,
-                        "blockType": "TEXT",
-                        "delta": customer_tail,
-                    },
-                )
-            if message.usage is not None:
-                usage_tracker.record("SESSION_OWNER_MODEL", settings, message.usage, tool_loop_step=step)
-            yield writer.frame(
-                kind="MODEL_COMPLETED",
-                visibility="DEVELOPER",
-                payload={
-                    "modelRoundId": model_round_id,
-                    "status": "SUCCEEDED",
-                },
-            )
-            if text_guard.json_like or _is_legacy_json_contract_text(message.content):
-                outcome = AgentTurnExecutionOutcome(
-                    success=False,
-                    failureReason="legacy JSON streaming unsupported: assistant text must not contain decision JSON",
-                    llmUsage=usage_tracker.entries(),
-                )
-                break
-            round_customer_text = "".join(round_customer_text_parts)
-            if round_customer_text.strip():
-                block_id = current_round_block_id()
-                outcome_accumulator.append_assistant_text(round_customer_text)
-                yield writer.frame(
-                    kind="REPLY_BLOCK_COMPLETED",
-                    visibility="CUSTOMER",
-                    payload={
-                        "replyMessageId": writer.reply_message_id,
-                        "blockId": block_id,
-                        "block": {"type": "TEXT", "text": round_customer_text},
-                    },
-                )
-            assistant_provider_message = _provider_message_from_stream_message(message)
-            if message.tool_calls:
-                provider_messages.append(assistant_provider_message)
-                completed_transcript_entries.append(
-                    transcript_entry_from_provider_message(
-                        assistant_provider_message,
-                        provider_type=settings.provider_type,
-                        model_round_id=model_round_id,
-                        seq=1,
-                    )
-                )
-                should_continue = False
-                for index, tool_call in enumerate(message.tool_calls, start=1):
-                    spec = tool_registry.get(tool_call.tool_name)
-                    if spec is None:
-                        raise ValueError(f"unsupported streaming tool call: {tool_call.tool_name}")
+                streamed.apply(event)
+            message = streamed.build_message()
+            usage.record("AGENT_MODEL", settings, message.usage, tool_loop_step=step)
+            await run_in_threadpool(transcript_store.checkpoint_usage, turn_context, usage.entries())
+            if _is_legacy_json_contract_text(message.content):
+                raise ValueError("model returned a decision object instead of a reply or tool call")
+            # All intermediate model text belongs to the private execution transcript.
+            # Only the explicit final envelope is published to a conversation/channel.
+            assistant_message = _provider_message_from_stream_message(message)
+            await run_in_threadpool(transcript_store.append_pending_entries, turn_context,
+                [transcript_entry_from_provider_message(assistant_message, provider_type=settings.provider_type, model_round_id=round_id, seq=1)])
+            provider_messages.append(assistant_message)
+            yield writer.frame(kind="MODEL_COMPLETED", visibility="DEVELOPER",
+                payload={"modelRoundId": round_id, "finishReason": message.finish_reason})
+            for index, call in enumerate(message.tool_calls, 2):
+                spec = registry.get(call.tool_name)
+                if call.tool_name == FINISH_ACTIVATION_TOOL and len(message.tool_calls) != 1:
+                    result = {"success": False, "code": "FINISH_MUST_BE_ALONE",
+                        "message": "Complete all other tools, inspect their results, then call activation_finish alone."}
+                    kind = RuntimeToolKind.COMPLETION_TOOL
+                elif spec is None:
+                    result = {"success": False, "code": "UNKNOWN_TOOL", "message": "Use a declared tool name."}
+                    kind = RuntimeToolKind.CONTEXT_TOOL
+                else:
                     kind = spec.kind
-                    yield writer.frame(
-                        kind="ACTION_TOOL_STARTED",
-                        visibility="OPERATOR",
-                        payload={
-                            "modelRoundId": model_round_id,
-                            "toolCallId": tool_call.call_id,
-                            "toolName": tool_call.tool_name,
-                            "toolKind": kind.value,
-                        },
-                    )
-                    if kind == RuntimeToolKind.CONTEXT_TOOL:
-                        tool_result = execute_tool_call(request, spec, tool_call.arguments)
-                        should_continue = True
-                    else:
-                        tool_result = outcome_accumulator.apply_tool_call(tool_call, kind)
-                    if kind in {RuntimeToolKind.STATE_TOOL, RuntimeToolKind.MESSAGE_BLOCK_TOOL}:
-                        should_continue = True
-                    completed_payload = {
-                        "toolCallId": tool_call.call_id,
-                        "toolName": tool_call.tool_name,
-                        "toolKind": kind.value,
-                        "status": _tool_completion_status(tool_result),
-                    }
-                    produced = _tool_produced_payload(kind, tool_call, tool_result)
-                    if produced is not None:
-                        completed_payload["produced"] = produced
-                    yield writer.frame(
-                        kind="ACTION_TOOL_COMPLETED",
-                        visibility="OPERATOR",
-                        payload=completed_payload,
-                    )
-                    llm_tool_result = _llm_visible_tool_result(kind, tool_result)
-                    provider_tool_result = privacy_pipeline.sanitize_outbound("TOOL_RESULT", llm_tool_result)
-                    tool_provider_message = _provider_tool_result_message(tool_call, provider_tool_result)
-                    provider_messages.append(tool_provider_message)
-                    completed_transcript_entries.append(
-                        transcript_entry_from_provider_message(
-                            tool_provider_message,
-                            provider_type=settings.provider_type,
-                            model_round_id=model_round_id,
-                            seq=index + 1,
-                        )
-                    )
-                if should_continue:
-                    continue
-            outcome = _restore_successful_outcome(
-                privacy_pipeline,
-                outcome_accumulator.build_outcome(usage_tracker),
-            )
-            break
-        else:
-            outcome = AgentTurnExecutionOutcome(
-                success=False,
-                failureReason="model did not return a final streaming outcome within loop step budget",
-                llmUsage=usage_tracker.entries(),
-            )
-        if transcript_store is not None:
-            if outcome.success:
-                if not message.tool_calls:
-                    completed_transcript_entries.append(
-                        transcript_entry_from_provider_message(
-                            assistant_provider_message,
-                            provider_type=settings.provider_type,
-                            model_round_id=f"{writer.turn_execution_id}:round-{step}",
-                            seq=1,
-                        )
-                    )
-                await run_in_threadpool(
-                    transcript_store.commit_success,
-                    turn_context,
-                    outcome,
-                    completed_transcript_entries,
-                )
+                    yield writer.frame(kind="ACTION_TOOL_STARTED", visibility="OPERATOR",
+                        payload={"modelRoundId": round_id, "toolCallId": call.call_id, "toolName": call.tool_name, "toolKind": kind.value})
+                    result = await _execute_recorded_tool(request, call, spec, accumulator, transcript_store, turn_context, pipeline)
+                yield writer.frame(kind="ACTION_TOOL_COMPLETED", visibility="OPERATOR",
+                    payload={"toolCallId": call.call_id, "toolName": call.tool_name, "toolKind": kind.value,
+                        "status": _tool_completion_status(result)})
+                llm_result = pipeline.sanitize_outbound("TOOL_RESULT", _llm_visible_tool_result(kind, result))
+                tool_message = _provider_tool_result_message(call, bounded_tool_result(llm_result,
+                    activation_id=request.activationId, call_id=call.call_id))
+                await run_in_threadpool(transcript_store.append_pending_entries, turn_context,
+                    [transcript_entry_from_provider_message(tool_message, provider_type=settings.provider_type, model_round_id=round_id, seq=index)])
+                provider_messages.append(tool_message)
+            if accumulator.continuing:
+                raise _ActivationYield("continuing unfinished work from durable checkpoints: " + accumulator.summary)
+            if accumulator.finished:
+                outcome = _restore_successful_outcome(pipeline, accumulator.build_outcome(usage))
+                await run_in_threadpool(transcript_store.commit_success, turn_context, outcome, [])
+                if outcome.replyMessage:
+                    for index, block in enumerate(outcome.replyMessage.blocks):
+                        yield writer.frame(kind="REPLY_BLOCK_COMPLETED", visibility="CUSTOMER", payload={
+                            "replyMessageId": writer.reply_message_id, "blockId": f"final-{index}",
+                            "block": block.model_dump(mode="json")})
+                yield writer.frame(kind="FINAL_OUTCOME", visibility="INTERNAL",
+                    payload={"replyMessageId": writer.reply_message_id, "outcome": outcome.model_dump(mode="json")})
+                return
+            if not message.tool_calls:
+                missing_finish += 1
+                if missing_finish >= 3:
+                    raise ValueError("model stopped repeatedly without an explicit activation disposition; work is not marked complete")
+                feedback = {"role": "user", "content": "Execution is not complete merely because you stopped speaking. Carry out the remaining authorized work now. When your contribution is actually done call activation_finish alone with COMPLETED and the final reply; for a real external dependency use WAITING with waitingFor, for a concrete obstacle use BLOCKED. If more compute is needed use CONTINUE. Do not repeat a result already sent with message_send; omit reply for a courtesy acknowledgement."}
+                await run_in_threadpool(transcript_store.append_pending_entries, turn_context,
+                    [transcript_entry_from_provider_message(feedback, provider_type=settings.provider_type, model_round_id=round_id, seq=2)])
+                provider_messages.append(feedback)
             else:
-                await run_in_threadpool(
-                    transcript_store.mark_failed,
-                    turn_context,
-                    outcome.failureReason or "openai-compatible provider stream failed",
-                )
-        if not outcome.success:
-            failure_reason = outcome.failureReason or "agent turn rejected"
-            yield writer.frame(
-                kind="ERROR",
-                visibility="OPERATOR",
-                payload={
-                    "code": "FINAL_OUTCOME_REJECTED",
-                    "replyMessageId": writer.reply_message_id,
-                    "message": failure_reason,
-                    "stage": "FINAL_OUTCOME_BUILD",
-                    "retryable": False,
-                    "details": {},
-                },
-            )
-        yield writer.frame(
-            kind="FINAL_OUTCOME",
-            visibility="INTERNAL",
-            payload={"replyMessageId": writer.reply_message_id, "outcome": outcome.model_dump(mode="json")},
-        )
-    except OpenAiCompatibleStreamError as error:
-        outcome = AgentTurnExecutionOutcome(
-            success=False,
-            failureReason=str(error) or "openai-compatible provider stream failed",
-            llmUsage=usage_tracker.entries(),
-        )
-        if transcript_store is not None:
-            await run_in_threadpool(transcript_store.mark_failed, turn_context, outcome.failureReason)
-        yield writer.frame(
-            kind="ERROR",
-            visibility="OPERATOR",
-            payload={
-                "code": _provider_stream_error_code(error),
-                "replyMessageId": writer.reply_message_id,
-                "message": outcome.failureReason,
-                "stage": "PROVIDER_STREAM",
-                "retryable": isinstance(error, OpenAiCompatibleStreamIdleTimeoutError),
-                "details": {},
-            },
-        )
-        yield writer.frame(
-            kind="FINAL_OUTCOME",
-            visibility="INTERNAL",
-            payload={"replyMessageId": writer.reply_message_id, "outcome": outcome.model_dump(mode="json")},
-        )
-    except Exception as error:  # noqa: BLE001
-        outcome = AgentTurnExecutionOutcome(
-            success=False,
-            failureReason=str(error) or "openai-compatible provider stream failed",
-            llmUsage=usage_tracker.entries(),
-        )
-        if transcript_store is not None:
-            await run_in_threadpool(transcript_store.mark_failed, turn_context, outcome.failureReason)
-        yield writer.frame(
-            kind="ERROR",
-            visibility="OPERATOR",
-            payload={
-                "code": "PROVIDER_STREAM_FAILED",
-                "replyMessageId": writer.reply_message_id,
-                "message": outcome.failureReason,
-                "stage": "PROVIDER_STREAM",
-                "retryable": True,
-                "details": {},
-            },
-        )
-        yield writer.frame(
-            kind="FINAL_OUTCOME",
-            visibility="INTERNAL",
-            payload={"replyMessageId": writer.reply_message_id, "outcome": outcome.model_dump(mode="json")},
-        )
+                missing_finish = 0
+        raise _ActivationYield("activation reached its tool step budget; continuing from durable context and receipts")
+    except Exception as error:
+        error.activation_usage = usage.entries()
+        with contextlib.suppress(RuntimeError):
+            await run_in_threadpool(transcript_store.checkpoint_usage, turn_context, usage.entries())
+        raise
     finally:
-        privacy_pipeline.close()
+        pipeline.close()
+
+
+async def _execute_recorded_tool(request: ActivationRuntime, call: OpenAiCompatibleStreamToolCall, spec: RuntimeToolSpec,
+        accumulator: "_StreamingOutcomeAccumulator", store: TranscriptStore, context: TurnExecutionContext,
+        pipeline: PrivacyPipeline) -> dict[str, Any]:
+    if call.argument_error:
+        return {"success": False, "code": "INVALID_TOOL_ARGUMENTS", "message": call.argument_error}
+    try:
+        validate_json_schema_value(call.arguments, spec.definition.input_schema)
+    except ValueError as error:
+        return {"success": False, "code": "INVALID_ARGUMENTS", "message": str(error)}
+    cached = await run_in_threadpool(store.begin_tool_call, context, call.call_id, call.tool_name, call.arguments,
+        retry_safe=spec.retry_safe)
+    if cached is not None:
+        if spec.kind != RuntimeToolKind.CONTEXT_TOOL and cached.get("accepted") is True:
+            accumulator.apply_tool_call(call, spec.kind)
+        accumulator.observe_tool_result(call, cached)
+        return cached
+    try:
+        if spec.kind == RuntimeToolKind.CONTEXT_TOOL:
+            arguments = call.arguments if spec.resource_type == "SESSION_HISTORY" else _restore_privacy_payload(pipeline, "MODEL_TOOL_ARGUMENT", call.arguments)
+            result = await run_in_threadpool(execute_tool_call, request, spec, arguments,
+                call_id=call.call_id, transcript_store=store, context=context,
+                result_sanitizer=lambda value: pipeline.sanitize_outbound("TOOL_RESULT", value))
+        else:
+            result = accumulator.apply_tool_call(call, spec.kind)
+    except httpx.HTTPStatusError as error:
+        if error.response.status_code >= 500:
+            raise
+        result = {"success": False, "code": "TOOL_REJECTED", "message": f"Tool execution was rejected (HTTP {error.response.status_code})."}
+    except (ValueError, KeyError) as error:
+        result = {"success": False, "code": "TOOL_REJECTED", "message": str(error)}
+    await run_in_threadpool(store.complete_tool_call, context, call.call_id, result)
+    accumulator.observe_tool_result(call, result)
+    return result
+
+
+def _pending_tool_calls(messages: list[dict[str, Any]]) -> list[OpenAiCompatibleStreamToolCall]:
+    completed = {m.get("tool_call_id") for m in messages if m.get("role") == "tool"}
+    return [parse_stream_tool_call(0, c["id"], c["function"]["name"], c["function"]["arguments"])
+        for m in messages if m.get("role") == "assistant" for c in m.get("tool_calls", []) if c["id"] not in completed]
+
+
+def _restore_accumulator(accumulator: "_StreamingOutcomeAccumulator", messages: list[dict[str, Any]]) -> None:
+    completed = {m.get("tool_call_id") for m in messages if m.get("role") == "tool"
+                 and json.loads(m.get("content") or "{}").get("accepted") is True}
+    for m in messages:
+        if m.get("role") != "assistant":
+            continue
+        for c in m.get("tool_calls", []):
+            name = c["function"]["name"]
+            if c["id"] in completed and name in OUTCOME_TOOL_KINDS:
+                call = parse_stream_tool_call(0, c["id"], name, c["function"]["arguments"])
+                if not call.argument_error:
+                    if name != FINISH_ACTIVATION_TOOL or call.arguments.get("status") != "CONTINUE":
+                        accumulator.apply_tool_call(call, OUTCOME_TOOL_KINDS[name])
+    calls = {c["id"]: c for m in messages for c in m.get("tool_calls", [])}
+    for m in messages:
+        if m.get("role") == "tool" and m.get("tool_call_id") in calls:
+            c = calls[m["tool_call_id"]]
+            call = parse_stream_tool_call(0, c["id"], c["function"]["name"], c["function"]["arguments"])
+            accumulator.observe_tool_result(call, json.loads(m.get("content") or "{}"))
 
 
 def _next_stream_event(events: Any) -> OpenAiCompatibleStreamEvent | None:
@@ -555,286 +333,74 @@ def _next_stream_event(events: Any) -> OpenAiCompatibleStreamEvent | None:
         return None
 
 
-def _turn_execution_context(request: AgentTurnRequest, writer: _FrameWriter) -> TurnExecutionContext:
-    return TurnExecutionContext(
-        session_id=request.sessionId,
-        owner_agent_id=request.currentOwner.agentId,
-        ownership_epoch=request.ownershipEpoch,
-        turn_id=writer.turn_id,
-        turn_execution_id=writer.turn_execution_id,
-        execution_attempt_id=writer.execution_attempt_id,
-    )
-
-
-def _merge_replay_messages(
-    current_messages: list[dict[str, Any]],
-    replay_messages: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    if not replay_messages:
-        return [*current_messages]
-    if not current_messages:
-        return [*replay_messages]
-    # Keep committed provider-native messages as the exact LLM prefix for cache stability.
-    return [*replay_messages, *current_messages]
-
-
-@dataclass(frozen=True)
-class _LifecycleActionCandidate:
-    action: str
-    payload: dict[str, Any]
-    error: str | None = None
-
-
-_LIFECYCLE_ACTION_BY_TOOL = {
-    SWITCH_OWNER_TOOL: "SWITCH_OWNER",
-    RUN_PLAYBOOK_TOOL: "RUN_PLAYBOOK",
-    HUMAN_HANDOFF_TOOL: "SESSION_HUMAN_HANDOFF",
-    SECURITY_BLOCK_TOOL: "SECURITY_BLOCK",
-}
-
-
-_OutcomeToolHandler = Callable[[OpenAiCompatibleStreamToolCall], dict[str, Any]]
-
-
 class _StreamingOutcomeAccumulator:
-    def __init__(self, request: AgentTurnRequest) -> None:
+    def __init__(self, request: ActivationRuntime) -> None:
         self._request = request
         self._reply_blocks: list[dict[str, Any]] = []
-        self._shared_state: dict[str, Any] = dict(request.sharedState)
-        self._lifecycle_actions: list[_LifecycleActionCandidate] = []
         self._security_assessment: dict[str, Any] | None = None
-        self._outcome_tool_handlers = self._build_outcome_tool_handlers()
-        self._require_outcome_tool_handler_contract()
+        self.completion: str | None = None
+        self.summary = ""
+        self.waiting_for: str | None = None
+        self._reply_sent = request.context.get("replyAlreadyDelivered") is True
 
-    def append_assistant_text(self, text: str) -> None:
-        if text.strip():
-            self._reply_blocks.append({"type": "TEXT", "text": text})
+    def observe_tool_result(self, call: OpenAiCompatibleStreamToolCall, result: dict[str, Any]) -> None:
+        if call.tool_name == "message_send" and result.get("success") is True:
+            message = result.get("result") or {}
+            if message.get("kind") in {"RESULT", "QUESTION"} and message.get("recipientId") == self._request.context.get("replyRecipientId"):
+                self._reply_sent = True
+
+    @property
+    def finished(self) -> bool:
+        return self.security_blocked or self.completion in {"COMPLETED", "WAITING", "BLOCKED"}
+
+    @property
+    def continuing(self) -> bool:
+        return self.completion == "CONTINUE"
+
+    @property
+    def security_blocked(self) -> bool:
+        return self._security_assessment is not None
 
     def handled_outcome_tool_kinds(self) -> dict[str, RuntimeToolKind]:
-        return {
-            name: kind
-            for name, (kind, _handler) in self._outcome_tool_handlers.items()
-        }
+        return dict(OUTCOME_TOOL_KINDS)
 
-    def apply_tool_call(
-        self,
-        tool_call: OpenAiCompatibleStreamToolCall,
-        kind: RuntimeToolKind,
-    ) -> dict[str, Any]:
-        handler_entry = self._outcome_tool_handlers.get(tool_call.tool_name)
-        if handler_entry is None:
-            raise ValueError(f"unsupported outcome tool: {tool_call.tool_name}")
-        expected_kind, handler = handler_entry
-        if kind != expected_kind:
-            raise ValueError(
-                f"outcome tool {tool_call.tool_name} kind mismatch: expected {expected_kind.value}, got {kind.value}"
-            )
-        return handler(tool_call)
-
-    def _build_outcome_tool_handlers(self) -> dict[str, tuple[RuntimeToolKind, _OutcomeToolHandler]]:
-        return {
-            UPDATE_SHARED_STATE_TOOL: (RuntimeToolKind.STATE_TOOL, self._apply_update_shared_state_tool),
-            APPEND_IMAGE_BLOCK_TOOL: (RuntimeToolKind.MESSAGE_BLOCK_TOOL, self._apply_message_block_tool),
-            APPEND_RICH_TEXT_BLOCK_TOOL: (RuntimeToolKind.MESSAGE_BLOCK_TOOL, self._apply_message_block_tool),
-            APPEND_CARD_BLOCK_TOOL: (RuntimeToolKind.MESSAGE_BLOCK_TOOL, self._apply_message_block_tool),
-            SWITCH_OWNER_TOOL: (RuntimeToolKind.LIFECYCLE_ACTION_TOOL, self._apply_switch_owner_tool),
-            RUN_PLAYBOOK_TOOL: (RuntimeToolKind.LIFECYCLE_ACTION_TOOL, self._apply_run_playbook_tool),
-            HUMAN_HANDOFF_TOOL: (RuntimeToolKind.LIFECYCLE_ACTION_TOOL, self._apply_human_handoff_tool),
-            SECURITY_BLOCK_TOOL: (RuntimeToolKind.LIFECYCLE_ACTION_TOOL, self._apply_security_block_tool),
-        }
-
-    def _require_outcome_tool_handler_contract(self) -> None:
-        handled_kinds = self.handled_outcome_tool_kinds()
-        if handled_kinds == OUTCOME_TOOL_KINDS:
-            return
-        missing = sorted(set(OUTCOME_TOOL_KINDS) - set(handled_kinds))
-        extra = sorted(set(handled_kinds) - set(OUTCOME_TOOL_KINDS))
-        mismatched = sorted(
-            name
-            for name in set(handled_kinds) & set(OUTCOME_TOOL_KINDS)
-            if handled_kinds[name] != OUTCOME_TOOL_KINDS[name]
-        )
-        raise ValueError(
-            "outcome tool handler contract mismatch"
-            f": missing={missing}, extra={extra}, mismatched={mismatched}"
-        )
-
-    def build_outcome(self, usage_tracker: LlmUsageTracker) -> AgentTurnExecutionOutcome:
-        try:
-            decision = self._build_decision()
-            self._validate_final_action(decision.action)
-            return AgentTurnExecutionOutcome(
-                success=True,
-                result=AgentTurnResult(
-                    decision=decision,
-                    sharedState=dict(self._shared_state),
-                    securityAssessment=self._security_assessment,
-                ),
-                llmUsage=usage_tracker.entries(),
-            )
-        except Exception as error:  # noqa: BLE001
-            return AgentTurnExecutionOutcome(
-                success=False,
-                failureReason=str(error) or "streaming outcome validation failed",
-                llmUsage=usage_tracker.entries(),
-            )
-
-    def _apply_update_shared_state_tool(self, tool_call: OpenAiCompatibleStreamToolCall) -> dict[str, Any]:
-        patch = tool_call.arguments.get("patch")
-        if not isinstance(patch, dict):
-            raise ValueError("update_shared_state.patch must be an object")
-        self._shared_state = _deep_merge_dicts(self._shared_state, patch)
-        return {"accepted": True}
-
-    def _apply_message_block_tool(self, tool_call: OpenAiCompatibleStreamToolCall) -> dict[str, Any]:
-        block = _message_block_from_tool_call(tool_call)
-        reply = SessionMessageInput.model_validate({"blocks": [block], "metadata": {}})
-        normalized = reply.blocks[0].model_dump(mode="json")
-        self._reply_blocks.append(normalized)
+    def apply_tool_call(self, call: OpenAiCompatibleStreamToolCall, kind: RuntimeToolKind) -> dict[str, Any]:
+        if OUTCOME_TOOL_KINDS.get(call.tool_name) != kind:
+            raise ValueError("outcome tool kind mismatch")
+        if call.tool_name == FINISH_ACTIVATION_TOOL:
+            status = call.arguments["status"]
+            waiting_for = call.arguments.get("waitingFor")
+            reply = str(call.arguments.get("reply") or "").strip()
+            if status == "WAITING" and not waiting_for:
+                raise ValueError("WAITING requires waitingFor identifying the actual external dependency")
+            if status == "CONTINUE" and (reply or self._reply_blocks):
+                raise ValueError("CONTINUE checkpoints unfinished work without publishing a final reply")
+            if reply and self._reply_blocks:
+                raise ValueError("A reply was already composed with message blocks; omit reply to avoid publishing two answers")
+            if status == "BLOCKED" and not (reply or self._reply_blocks or self._reply_sent):
+                raise ValueError("BLOCKED must communicate the actual obstacle through reply or an already delivered message")
+            self.completion, self.summary, self.waiting_for = status, call.arguments["summary"], waiting_for
+            if reply:
+                self._reply_blocks.append({"type": "TEXT", "text": reply})
+            return {"accepted": True, "status": status}
+        if call.tool_name == SECURITY_BLOCK_TOOL:
+            self._security_assessment = {"action": "BLOCK", "categories": _required_string_array(call.arguments.get("categories"), "categories required"),
+                "reason": _required_trimmed_string(call.arguments.get("reason"), "reason required"),
+                "confidence": float(_required_number(call.arguments.get("confidence"), "confidence required"))}
+            self._reply_blocks.clear()
+            self.completion = "BLOCKED"
+            return {"accepted": True}
+        block = _message_block_from_tool_call(call)
+        reply = MessageContent.model_validate({"blocks": [block], "metadata": {}})
+        self._reply_blocks.append(reply.blocks[0].model_dump(mode="json"))
         return {"accepted": True, "blockId": f"tool-block-{len(self._reply_blocks)}"}
 
-    def _apply_switch_owner_tool(self, tool_call: OpenAiCompatibleStreamToolCall) -> dict[str, Any]:
-        action = _LIFECYCLE_ACTION_BY_TOOL[SWITCH_OWNER_TOOL]
-        target_agent_id = str(tool_call.arguments.get("targetAgentId") or "").strip()
-        error = _first_error(
-            self._lifecycle_action_allowed_error(action),
-            _missing_value_error(target_agent_id, "switch_owner targetAgentId is required"),
-            _value_not_allowed_error(
-                target_agent_id,
-                set(self._request.currentOwner.switchableOwnerAgentIds),
-                "switch_owner targetAgentId is not allowed",
-            ),
-        )
-        return self._record_lifecycle_action(
-            action=action,
-            payload={"targetAgentId": target_agent_id},
-            error=error,
-        )
-
-    def _apply_run_playbook_tool(self, tool_call: OpenAiCompatibleStreamToolCall) -> dict[str, Any]:
-        action = _LIFECYCLE_ACTION_BY_TOOL[RUN_PLAYBOOK_TOOL]
-        playbook_id = str(tool_call.arguments.get("playbookId") or "").strip()
-        playbook_input = tool_call.arguments.get("playbookInput")
-        error = _first_error(
-            self._lifecycle_action_allowed_error(action),
-            _missing_value_error(playbook_id, "run_playbook playbookId is required"),
-            _value_not_allowed_error(
-                playbook_id,
-                set(self._request.currentOwner.playbookIds),
-                "run_playbook playbookId is not allowed",
-            ),
-            None if isinstance(playbook_input, dict) else "run_playbook playbookInput must be an object",
-        )
-        return self._record_lifecycle_action(
-            action=action,
-            payload={
-                "playbookId": playbook_id,
-                "playbookInput": playbook_input if isinstance(playbook_input, dict) else {},
-            },
-            error=error,
-        )
-
-    def _apply_human_handoff_tool(self, tool_call: OpenAiCompatibleStreamToolCall) -> dict[str, Any]:
-        action = _LIFECYCLE_ACTION_BY_TOOL[HUMAN_HANDOFF_TOOL]
-        operator_reason = _optional_string(tool_call.arguments.get("operatorReason"))
-        payload = {"operatorReason": operator_reason} if operator_reason else {}
-        return self._record_lifecycle_action(
-            action=action,
-            payload=payload,
-            error=self._lifecycle_action_allowed_error(action),
-        )
-
-    def _apply_security_block_tool(self, tool_call: OpenAiCompatibleStreamToolCall) -> dict[str, Any]:
-        categories = _required_string_array(
-            tool_call.arguments.get("categories"),
-            "security_block categories must be a non-empty string array",
-        )
-        self._security_assessment = {
-            "action": "BLOCK",
-            "categories": categories,
-            "reason": _required_trimmed_string(
-                tool_call.arguments.get("reason"),
-                "security_block reason is required",
-            ),
-            "confidence": float(
-                _required_number(
-                    tool_call.arguments.get("confidence"),
-                    "security_block confidence must be a number",
-                )
-            ),
-        }
-        return self._record_lifecycle_action(
-            action=_LIFECYCLE_ACTION_BY_TOOL[SECURITY_BLOCK_TOOL],
-            payload={},
-        )
-
-    def _record_lifecycle_action(
-        self,
-        *,
-        action: str,
-        payload: dict[str, Any],
-        error: str | None = None,
-    ) -> dict[str, Any]:
-        self._lifecycle_actions.append(_LifecycleActionCandidate(action=action, payload=payload, error=error))
-        return _tool_acceptance(error)
-
-    def _lifecycle_action_allowed_error(self, action: str) -> str | None:
-        if action in set(self._request.currentOwner.allowedActions):
-            return None
-        return f"action {action} is not allowed"
-
-    def _build_decision(self) -> AgentDecision:
-        reply = self._reply_message()
-        lifecycle_action = self._resolve_lifecycle_action()
-        if lifecycle_action is None:
-            return AgentDecision(action="REPLY", replyMessage=reply) if reply is not None else AgentDecision(action="NO_OP")
-        if lifecycle_action.action == "SECURITY_BLOCK":
-            return AgentDecision(action="SECURITY_BLOCK", replyMessage=reply)
-        if lifecycle_action.action == "SWITCH_OWNER":
-            return AgentDecision(
-                action="SWITCH_OWNER",
-                replyMessage=reply,
-                targetAgentId=str(lifecycle_action.payload.get("targetAgentId") or ""),
-            )
-        if lifecycle_action.action == "RUN_PLAYBOOK":
-            return AgentDecision(
-                action="RUN_PLAYBOOK",
-                replyMessage=reply,
-                playbookId=str(lifecycle_action.payload.get("playbookId") or ""),
-                playbookInput=dict(lifecycle_action.payload.get("playbookInput") or {}),
-            )
-        if lifecycle_action.action == "SESSION_HUMAN_HANDOFF":
-            return AgentDecision(
-                action="SESSION_HUMAN_HANDOFF",
-                replyMessage=reply,
-                operatorReason=_optional_string(lifecycle_action.payload.get("operatorReason")),
-            )
-        raise ValueError(f"unsupported lifecycle action: {lifecycle_action.action}")
-
-    def _reply_message(self) -> SessionMessageInput | None:
-        if not self._reply_blocks:
-            return None
-        reply = SessionMessageInput.model_validate({"blocks": self._reply_blocks, "metadata": {}})
-        return reply if _has_message_content(reply) else None
-
-    def _resolve_lifecycle_action(self) -> _LifecycleActionCandidate | None:
-        security_actions = [candidate for candidate in self._lifecycle_actions if candidate.action == "SECURITY_BLOCK"]
-        if security_actions:
-            return security_actions[-1]
-        lifecycle_actions = [candidate for candidate in self._lifecycle_actions if candidate.action != "SECURITY_BLOCK"]
-        if len(lifecycle_actions) > 1:
-            raise ValueError("multiple lifecycle actions are not allowed in one streaming outcome")
-        for candidate in lifecycle_actions:
-            if candidate.error:
-                raise ValueError(candidate.error)
-        return lifecycle_actions[-1] if lifecycle_actions else None
-
-    def _validate_allowed_action(self, action: str) -> None:
-        if action != "SECURITY_BLOCK" and action not in set(self._request.currentOwner.allowedActions):
-            raise ValueError(f"action {action} is not allowed")
-
-    def _validate_final_action(self, action: str) -> None:
-        self._validate_allowed_action(action)
+    def build_outcome(self, usage: LlmUsageTracker) -> ActivationOutcome:
+        if not self.finished:
+            raise ValueError("activation has no explicit completion disposition")
+        reply = MessageContent.model_validate({"blocks": self._reply_blocks, "metadata": {}}) if self._reply_blocks and not self._reply_sent else None
+        return ActivationOutcome(success=True, replyMessage=reply, workMemory={},
+            completion=self.completion, securityAssessment=self._security_assessment, llmUsage=usage.entries())
 
 
 class _CustomerTextStreamGuard:
@@ -936,22 +502,13 @@ def _is_incomplete_privacy_placeholder_prefix(text: str) -> bool:
     return _PRIVACY_PLACEHOLDER_PREFIX_PATTERN.fullmatch(body) is not None
 
 
-def _restore_successful_outcome(
-    privacy_pipeline: PrivacyPipeline,
-    outcome: AgentTurnExecutionOutcome,
-) -> AgentTurnExecutionOutcome:
-    if not privacy_pipeline.enabled or not outcome.success or outcome.result is None:
+def _restore_successful_outcome(privacy_pipeline: PrivacyPipeline, outcome: ActivationOutcome) -> ActivationOutcome:
+    if not privacy_pipeline.enabled:
         return outcome
-    restored_payload = _restore_privacy_payload(
-        privacy_pipeline,
-        "MODEL_FINAL_RESPONSE",
-        outcome.result.model_dump(mode="json"),
-    )
-    result = AgentTurnResult.model_validate(restored_payload)
-    telemetry = privacy_pipeline.telemetry()
-    if telemetry is not None and telemetry.enabled:
-        result = result.model_copy(update={"mappingTelemetry": telemetry})
-    return outcome.model_copy(update={"result": result})
+    value = _restore_privacy_payload(privacy_pipeline, "MODEL_FINAL_RESPONSE", outcome.model_dump(mode="json"))
+    result = ActivationOutcome.model_validate(value)
+    result.mappingTelemetry = privacy_pipeline.telemetry()
+    return result
 
 
 def _restore_privacy_payload(privacy_pipeline: PrivacyPipeline, channel: str, payload: Any) -> Any:
@@ -987,7 +544,7 @@ def _provider_message_from_stream_message(message: OpenAiCompatibleStreamMessage
                 "type": "function",
                 "function": {
                     "name": tool_call.tool_name,
-                    "arguments": json.dumps(tool_call.arguments, ensure_ascii=False),
+                    "arguments": tool_call.raw_arguments if tool_call.raw_arguments is not None else json.dumps(tool_call.arguments, ensure_ascii=False),
                 },
             }
             for tool_call in message.tool_calls
@@ -1094,7 +651,7 @@ def _required_number(value: Any, error: str) -> int | float:
 
 
 def _tool_completion_status(result: dict[str, Any]) -> str:
-    return "ACCEPTED" if bool(result.get("accepted", True)) else "REJECTED"
+    return "REJECTED" if result.get("accepted") is False or result.get("success") is False else "ACCEPTED"
 
 
 def _llm_visible_tool_result(kind: RuntimeToolKind, result: dict[str, Any]) -> dict[str, Any]:
@@ -1105,26 +662,7 @@ def _llm_visible_tool_result(kind: RuntimeToolKind, result: dict[str, Any]) -> d
     return visible_result
 
 
-def _tool_produced_payload(
-    kind: RuntimeToolKind,
-    tool_call: OpenAiCompatibleStreamToolCall,
-    result: dict[str, Any],
-) -> dict[str, Any] | None:
-    if kind == RuntimeToolKind.STATE_TOOL:
-        return {"sharedStateUpdated": bool(result.get("accepted", True))}
-    if kind == RuntimeToolKind.MESSAGE_BLOCK_TOOL:
-        block_id = result.get("blockId")
-        return {"messageBlockId": str(block_id)} if block_id else None
-    if kind == RuntimeToolKind.LIFECYCLE_ACTION_TOOL:
-        return {"action": _lifecycle_action_name(tool_call.tool_name)}
-    return None
-
-
-def _lifecycle_action_name(tool_name: str) -> str:
-    return _LIFECYCLE_ACTION_BY_TOOL.get(tool_name, tool_name)
-
-
-def _has_message_content(message: SessionMessageInput | None) -> bool:
+def _has_message_content(message: MessageContent | None) -> bool:
     if message is None:
         return False
     return any(block.model_dump(mode="json") for block in message.blocks)
@@ -1146,23 +684,8 @@ def _optional_int(value: Any) -> int | None:
         return None
 
 
-def _max_streaming_tool_steps(request: AgentTurnRequest | None = None) -> int:
-    task_execution = request is not None and request.taskExecutionId is not None
-    default_steps, maximum_steps = (24, 100) if task_execution else (6, 20)
-    setting = "AGENTYARD_AGENT_RUNTIME_TASK_MAX_TOOL_STEPS" if task_execution else "AGENTYARD_AGENT_RUNTIME_MAX_TOOL_STEPS"
-    raw_value = ""
-    try:
-        import os
-
-        raw_value = (os.getenv(setting) or "").strip()
-    except Exception:  # pragma: no cover
-        raw_value = ""
-    if not raw_value:
-        return default_steps
-    try:
-        return max(1, min(int(raw_value), maximum_steps))
-    except ValueError:
-        return default_steps
+def _max_streaming_tool_steps(request: ActivationRuntime) -> int:
+    return max(1, min(request.maxToolSteps, 100))
 
 
 def _is_legacy_json_contract_text(text: str) -> bool:
@@ -1175,8 +698,8 @@ def _is_legacy_json_contract_text(text: str) -> bool:
         return stripped.startswith("{")
     if isinstance(parsed, dict):
         legacy_keys = {"decision", "sharedState", "securityAssessment", "skillReads"}
-        return bool(legacy_keys.intersection(parsed))
-    return True
+        return bool(legacy_keys.intersection(parsed)) or parsed.get("action") in {"REPLY", "NO_OP", "SWITCH_OWNER", "RUN_PLAYBOOK", "SESSION_HUMAN_HANDOFF", "SECURITY_BLOCK"}
+    return False
 
 
 def _provider_stream_error_code(error: OpenAiCompatibleStreamError) -> str:

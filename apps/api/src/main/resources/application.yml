@@ -59,6 +59,9 @@ server:
         same-site: ${AGENTYARD_SESSION_COOKIE_SAME_SITE:Lax}
 
 agentyard:
+  agent:
+    max-tool-steps: ${AGENTYARD_AGENT_MAX_TOOL_STEPS:32}
+    max-concurrent-activations: ${AGENTYARD_AGENT_MAX_CONCURRENT_ACTIVATIONS:32}
   auth:
     bootstrap:
       username: ${AGENTYARD_AUTH_BOOTSTRAP_USERNAME:admin}

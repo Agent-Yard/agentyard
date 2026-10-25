@@ -5,7 +5,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "assistantId",
+    "entryId",
     "channelProfileId",
     "messageType",
     "messageVersion",
@@ -13,7 +13,7 @@
     "enabled"
   ],
   "properties": {
-    "assistantId": {
+    "entryId": {
       "type": "string",
       "minLength": 1,
       "maxLength": 128

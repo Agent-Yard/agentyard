@@ -235,7 +235,7 @@ paths:
                 $ref: '#/components/schemas/ApiResponseChannelTemplateBindingList'
         '404':
           description: Channel profile not found
-  /internal/channel-admin/profiles/{channelProfileId}/template-bindings/{assistantId}/{messageType}/{messageSubtype}/{messageVersion}:
+  /internal/channel-admin/profiles/{channelProfileId}/template-bindings/{entryId}/{messageType}/{messageSubtype}/{messageVersion}:
     put:
       summary: Create or update an external template binding
       parameters:
@@ -245,7 +245,7 @@ paths:
           schema:
             type: string
         - in: path
-          name: assistantId
+          name: entryId
           required: true
           schema:
             type: string
@@ -290,7 +290,7 @@ paths:
           schema:
             type: string
         - in: path
-          name: assistantId
+          name: entryId
           required: true
           schema:
             type: string
@@ -579,15 +579,13 @@ components:
         - REACTION_ADDED
         - WEBHOOK_VERIFIED
         - UNKNOWN
-    ChannelAssistantBinding:
+    ChannelEntryBinding:
       type: object
+      required: [entryId]
       properties:
-        assistantId:
+        entryId:
           type: string
-          nullable: true
-        scenarioId:
-          type: string
-          nullable: true
+          minLength: 1
     ChannelProfileAccountSnapshot:
       type: object
       properties:
@@ -949,8 +947,8 @@ components:
         config:
           type: object
           additionalProperties: true
-        assistantBinding:
-          $ref: '#/components/schemas/ChannelAssistantBinding'
+        entryBinding:
+          $ref: '#/components/schemas/ChannelEntryBinding'
           nullable: true
         accountId:
           type: string
@@ -994,7 +992,7 @@ components:
       required:
         - id
         - channelProfileId
-        - assistantId
+        - entryId
         - messageType
         - messageSubtype
         - messageVersion
@@ -1010,7 +1008,7 @@ components:
           type: string
         channelProfileId:
           type: string
-        assistantId:
+        entryId:
           type: string
         messageType:
           type: string
@@ -1116,8 +1114,8 @@ components:
           type: object
           additionalProperties: true
           nullable: true
-        assistantBinding:
-          $ref: '#/components/schemas/ChannelAssistantBinding'
+        entryBinding:
+          $ref: '#/components/schemas/ChannelEntryBinding'
           nullable: true
         accountSnapshot:
           $ref: '#/components/schemas/ChannelProfileAccountSnapshot'
@@ -1145,8 +1143,8 @@ components:
           type: object
           additionalProperties: true
           nullable: true
-        assistantBinding:
-          $ref: '#/components/schemas/ChannelAssistantBinding'
+        entryBinding:
+          $ref: '#/components/schemas/ChannelEntryBinding'
           nullable: true
         accountSnapshot:
           $ref: '#/components/schemas/ChannelProfileAccountSnapshot'
@@ -1175,10 +1173,10 @@ components:
         externalUserId:
           type: string
           nullable: true
-        assistantId:
+        entryId:
           type: string
           nullable: true
-        customerId:
+        participantId:
           type: string
           nullable: true
         sessionId:

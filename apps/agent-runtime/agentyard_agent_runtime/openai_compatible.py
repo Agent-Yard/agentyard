@@ -59,6 +59,23 @@ class OpenAiCompatibleStreamToolCall:
     call_id: str
     tool_name: str
     arguments: dict[str, Any]
+    raw_arguments: str | None = None
+    argument_error: str | None = None
+
+
+def parse_stream_tool_call(index: int, call_id: str, tool_name: str, raw_arguments: str) -> OpenAiCompatibleStreamToolCall:
+    if not call_id.strip():
+        raise OpenAiCompatibleStreamMalformedError(f"tool call id is required for index {index}")
+    if not tool_name.strip():
+        raise OpenAiCompatibleStreamMalformedError(f"tool call {index} missing function name")
+    try:
+        arguments = json.loads(raw_arguments)
+        if not isinstance(arguments, dict):
+            raise ValueError("arguments must be a JSON object")
+        return OpenAiCompatibleStreamToolCall(index, call_id, tool_name, arguments)
+    except (json.JSONDecodeError, ValueError):
+        return OpenAiCompatibleStreamToolCall(index, call_id, tool_name, {}, raw_arguments,
+            "Tool arguments are incomplete or invalid JSON. This call was not executed. Send a complete JSON object; shorten the content or split a large report into separate contributions to fit the model output limit.")
 
 
 @dataclass(frozen=True)
@@ -126,28 +143,7 @@ class OpenAiCompatibleStreamAccumulator:
         for index in sorted(self._tool_calls):
             parts = self._tool_calls[index]
             raw_arguments = "".join(parts.argument_parts).strip() or "{}"
-            try:
-                parsed_arguments = json.loads(raw_arguments)
-            except json.JSONDecodeError as error:
-                raise OpenAiCompatibleStreamMalformedError(
-                    f"tool call arguments for index {index} are not valid JSON"
-                ) from error
-            if not isinstance(parsed_arguments, dict):
-                raise OpenAiCompatibleStreamMalformedError(
-                    f"tool call arguments for index {index} must decode to a JSON object"
-                )
-            if not parts.call_id.strip():
-                raise OpenAiCompatibleStreamMalformedError(f"tool call id is required for index {index}")
-            if not parts.tool_name.strip():
-                raise OpenAiCompatibleStreamMalformedError(f"tool call {index} missing function name")
-            tool_calls.append(
-                OpenAiCompatibleStreamToolCall(
-                    index=index,
-                    call_id=parts.call_id,
-                    tool_name=parts.tool_name,
-                    arguments=parsed_arguments,
-                )
-            )
+            tool_calls.append(parse_stream_tool_call(index, parts.call_id, parts.tool_name, raw_arguments))
         return tool_calls
 
 
@@ -165,6 +161,10 @@ class LlmUsageTracker:
 
     def entries(self) -> list[LlmUsageEntry]:
         return list(self._entries)
+
+    def restore(self, entries: list[LlmUsageEntry]) -> None:
+        self._entries = list(entries)
+        self._next_sequence = max((entry.callSequence for entry in entries), default=0) + 1
 
     def record(
         self,

@@ -1,255 +1,50 @@
 package com.agentyard.platform.catalog;
 
 import static com.agentyard.platform.catalog.CatalogDtos.*;
+import java.util.*;
+import java.util.function.Supplier;
 
-import com.agentyard.platform.shared.ConflictException;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
-
+/** In-memory transactional repository used by unit tests and local fixtures. */
 public class InMemoryCatalogRepository implements CatalogRepository {
-    protected static final class CatalogData {
-        final List<BusinessDomainDto> domains;
-        final List<ScenarioDto> scenarios;
-        final List<AssistantDto> assistants;
-        final List<AgentDto> agents;
-        final List<PlaybookDto> playbooks;
-        final List<ResourceDto> resources;
-        final Map<String, List<StoredResourceVersion>> resourceVersions;
-        final Map<String, List<AssistantReleaseDto>> assistantReleases;
-
-        private CatalogData() {
-            this(List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), Map.of(), Map.of());
-        }
-
-        private CatalogData(
-            List<BusinessDomainDto> domains,
-            List<ScenarioDto> scenarios,
-            List<AssistantDto> assistants,
-            List<AgentDto> agents,
-            List<PlaybookDto> playbooks,
-            List<ResourceDto> resources,
-            Map<String, List<StoredResourceVersion>> resourceVersions,
-            Map<String, List<AssistantReleaseDto>> assistantReleases
-        ) {
-            this.domains = new ArrayList<>(domains);
-            this.scenarios = new ArrayList<>(scenarios);
-            this.assistants = new ArrayList<>(assistants);
-            this.agents = new ArrayList<>(agents);
-            this.playbooks = new ArrayList<>(playbooks);
-            this.resources = new ArrayList<>(resources);
-            this.resourceVersions = copyMappedLists(resourceVersions);
-            this.assistantReleases = copyMappedLists(assistantReleases);
-        }
-
-        private CatalogData copy() {
-            return new CatalogData(domains, scenarios, assistants, agents, playbooks, resources, resourceVersions, assistantReleases);
-        }
-    }
-
-    private CatalogData committedData = new CatalogData();
     private long revision;
-    private final ThreadLocal<CatalogData> transactionalData = new ThreadLocal<>();
-    private final ThreadLocal<CatalogData> readOnlyData = new ThreadLocal<>();
-
-    private CatalogData activeData() {
-        CatalogData current = transactionalData.get();
-        if (current != null) {
-            return current;
-        }
-        CatalogData readSnapshot = readOnlyData.get();
-        return readSnapshot == null ? committedData : readSnapshot;
+    private int depth;
+    private Map<String, Object> records = new LinkedHashMap<>();
+    @Override public synchronized long revision() { return revision; }
+    @Override public synchronized <T> T inReadTransaction(Supplier<T> action) { return action.get(); }
+    @Override public synchronized <T> T inWriteTransaction(Supplier<T> action) {
+        if (depth > 0) return action.get();
+        Map<String, Object> previous = records;
+        records = new LinkedHashMap<>(previous);
+        depth++;
+        try { T result = action.get(); revision++; return result; }
+        catch (RuntimeException | Error error) { records = previous; throw error; }
+        finally { depth--; }
     }
-
-    protected CatalogData committedCopy() {
-        return committedData.copy();
+    private <T> List<T> list(String prefix, Class<T> type) {
+        return records.entrySet().stream().filter(e -> e.getKey().startsWith(prefix + ":"))
+            .map(e -> type.cast(e.getValue())).toList();
     }
-
-    protected void commit(CatalogData working, long expectedRevision) {
-        if (revision != expectedRevision) {
-            throw new ConflictException("catalog changed on another instance; retry the request");
-        }
-        committedData = working.copy();
-        revision += 1;
-    }
-
-    @Override
-    public long revision() {
-        return revision;
-    }
-
-    @Override
-    public <T> T inReadTransaction(java.util.function.Supplier<T> action) {
-        if (transactionalData.get() != null || readOnlyData.get() != null) {
-            return action.get();
-        }
-        readOnlyData.set(committedData.copy());
-        try {
-            return action.get();
-        } finally {
-            readOnlyData.remove();
-        }
-    }
-
-    @Override
-    public <T> T inWriteTransaction(java.util.function.Supplier<T> action) {
-        if (transactionalData.get() != null) {
-            return action.get();
-        }
-        CatalogData working = committedData.copy();
-        long expectedRevision = revision;
-        transactionalData.set(working);
-        try {
-            T result = action.get();
-            commit(working, expectedRevision);
-            return result;
-        } finally {
-            transactionalData.remove();
-        }
-    }
-
-    @Override
-    public List<BusinessDomainDto> listDomains() {
-        return List.copyOf(activeData().domains);
-    }
-
-    @Override
-    public List<ScenarioDto> listScenarios() {
-        return List.copyOf(activeData().scenarios);
-    }
-
-    @Override
-    public List<AssistantDto> listAssistants() {
-        return List.copyOf(activeData().assistants);
-    }
-
-    @Override
-    public List<AgentDto> listAgents() {
-        return List.copyOf(activeData().agents);
-    }
-
-    @Override
-    public List<PlaybookDto> listPlaybooks() {
-        return List.copyOf(activeData().playbooks);
-    }
-
-    @Override
-    public List<ResourceDto> listResources() {
-        return List.copyOf(activeData().resources);
-    }
-
-    @Override
-    public List<StoredResourceVersion> listResourceVersions(String resourceId) {
-        return List.copyOf(activeData().resourceVersions.getOrDefault(resourceId, List.of()));
-    }
-
-    @Override
-    public List<AssistantReleaseDto> listAssistantReleases(String assistantId) {
-        return List.copyOf(activeData().assistantReleases.getOrDefault(assistantId, List.of()));
-    }
-
-    @Override
-    public java.util.Optional<AssistantReleaseDto> findAssistantReleaseById(String releaseId) {
-        return activeData().assistantReleases.values().stream()
-            .flatMap(List::stream)
-            .filter(item -> item.id().equals(releaseId))
-            .findFirst();
-    }
-
-    @Override
-    public void upsertDomain(BusinessDomainDto domain) {
-        upsert(activeData().domains, domain, BusinessDomainDto::id);
-    }
-
-    @Override
-    public void deleteDomain(String domainId) {
-        activeData().domains.removeIf(item -> item.id().equals(domainId));
-    }
-
-    @Override
-    public void upsertScenario(ScenarioDto scenario) {
-        upsert(activeData().scenarios, scenario, ScenarioDto::id);
-    }
-
-    @Override
-    public void deleteScenario(String scenarioId) {
-        activeData().scenarios.removeIf(item -> item.id().equals(scenarioId));
-    }
-
-    @Override
-    public void upsertAssistant(AssistantDto assistant) {
-        upsert(activeData().assistants, assistant, AssistantDto::id);
-    }
-
-    @Override
-    public void deleteAssistant(String assistantId) {
-        activeData().assistants.removeIf(item -> item.id().equals(assistantId));
-    }
-
-    @Override
-    public void upsertAgent(AgentDto agent) {
-        upsert(activeData().agents, agent, AgentDto::id);
-    }
-
-    @Override
-    public void deleteAgent(String agentId) {
-        activeData().agents.removeIf(item -> item.id().equals(agentId));
-    }
-
-    @Override
-    public void upsertPlaybook(PlaybookDto playbook) {
-        upsert(activeData().playbooks, playbook, PlaybookDto::id);
-    }
-
-    @Override
-    public void deletePlaybook(String playbookId) {
-        activeData().playbooks.removeIf(item -> item.id().equals(playbookId));
-    }
-
-    @Override
-    public void upsertResource(ResourceDto resource) {
-        upsert(activeData().resources, resource, ResourceDto::id);
-    }
-
-    @Override
-    public void deleteResource(String resourceId) {
-        activeData().resources.removeIf(item -> item.id().equals(resourceId));
-    }
-
-    @Override
-    public void replaceResourceVersions(String resourceId, List<StoredResourceVersion> versions) {
-        activeData().resourceVersions.put(resourceId, new ArrayList<>(versions));
-    }
-
-    @Override
-    public void deleteResourceVersions(String resourceId) {
-        activeData().resourceVersions.remove(resourceId);
-    }
-
-    @Override
-    public void replaceAssistantReleases(String assistantId, List<AssistantReleaseDto> releases) {
-        activeData().assistantReleases.put(assistantId, new ArrayList<>(releases));
-    }
-
-    @Override
-    public void deleteAssistantReleases(String assistantId) {
-        activeData().assistantReleases.remove(assistantId);
-    }
-
-    private static <T, K> void upsert(List<T> items, T replacement, Function<T, K> keyExtractor) {
-        K replacementKey = keyExtractor.apply(replacement);
-        items.removeIf(item -> keyExtractor.apply(item).equals(replacementKey));
-        items.add(replacement);
-    }
-
-    private static <T> Map<String, List<T>> copyMappedLists(Map<String, List<T>> source) {
-        Map<String, List<T>> copied = new LinkedHashMap<>();
-        for (Map.Entry<String, List<T>> entry : source.entrySet()) {
-            copied.put(entry.getKey(), new ArrayList<>(entry.getValue()));
-        }
-        return copied;
-    }
-
+    @SuppressWarnings("unchecked")
+    private <T> List<T> versions(String prefix, String id) { return (List<T>) records.getOrDefault(prefix + ":" + id, List.of()); }
+    @Override public synchronized List<RoleTemplateDto> listRoleTemplates() { return list("RoleTemplate", RoleTemplateDto.class); }
+    @Override public synchronized void upsertRoleTemplate(RoleTemplateDto value) { records.put("RoleTemplate:" + value.id(), value); }
+    @Override public synchronized void deleteRoleTemplate(String id) { records.remove("RoleTemplate:" + id); }
+    @Override public synchronized List<EntryDto> listEntries() { return list("Entry", EntryDto.class); }
+    @Override public synchronized void upsertEntry(EntryDto value) { records.put("Entry:" + value.id(), value); }
+    @Override public synchronized void deleteEntry(String id) { records.remove("Entry:" + id); }
+    @Override public synchronized List<PlaybookDto> listPlaybooks() { return list("Playbook", PlaybookDto.class); }
+    @Override public synchronized void upsertPlaybook(PlaybookDto value) { records.put("Playbook:" + value.id(), value); }
+    @Override public synchronized void deletePlaybook(String id) { records.remove("Playbook:" + id); }
+    @Override public synchronized List<ResourceDto> listResources() { return list("Resource", ResourceDto.class); }
+    @Override public synchronized void upsertResource(ResourceDto value) { records.put("Resource:" + value.id(), value); }
+    @Override public synchronized void deleteResource(String id) { records.remove("Resource:" + id); }
+    @Override public synchronized List<RoleTemplateVersionDto> listRoleTemplateVersions(String id) { return versions("RoleTemplateVersion", id); }
+    @Override public synchronized void replaceRoleTemplateVersions(String id, List<RoleTemplateVersionDto> versions) { records.put("RoleTemplateVersion:" + id, List.copyOf(versions)); }
+    @Override public synchronized void deleteRoleTemplateVersions(String id) { records.remove("RoleTemplateVersion:" + id); }
+    @Override public synchronized List<PlaybookVersionDto> listPlaybookVersions(String id) { return versions("PlaybookVersion", id); }
+    @Override public synchronized void replacePlaybookVersions(String id, List<PlaybookVersionDto> versions) { records.put("PlaybookVersion:" + id, List.copyOf(versions)); }
+    @Override public synchronized void deletePlaybookVersions(String id) { records.remove("PlaybookVersion:" + id); }
+    @Override public synchronized List<StoredResourceVersion> listResourceVersions(String id) { return versions("ResourceVersion", id); }
+    @Override public synchronized void replaceResourceVersions(String id, List<StoredResourceVersion> versions) { records.put("ResourceVersion:" + id, List.copyOf(versions)); }
+    @Override public synchronized void deleteResourceVersions(String id) { records.remove("ResourceVersion:" + id); }
 }

@@ -43,8 +43,7 @@ export interface ChannelProfileFormState {
   displayName: string;
   status: ChannelProfile['status'];
   inboundEnabled: boolean;
-  assistantId: string | null;
-  scenarioId: string | null;
+  entryId: string | null;
   integrationAccountId: string | null;
   config: JsonObject;
 }
@@ -120,8 +119,7 @@ export function createProfileFormForDefinition(definition: ChannelProviderDefini
     displayName: definition?.title ?? '',
     status: 'INACTIVE',
     inboundEnabled: false,
-    assistantId: null,
-    scenarioId: null,
+    entryId: null,
     integrationAccountId: null,
     config: defaultConfigForProvider(definition),
   };
@@ -133,8 +131,7 @@ export function profileFormFromProfile(profile: ChannelProfile): ChannelProfileF
     displayName: profile.displayName,
     status: profile.status,
     inboundEnabled: profile.inboundEnabled,
-    assistantId: profile.assistantBinding?.assistantId ?? null,
-    scenarioId: profile.assistantBinding?.scenarioId ?? null,
+    entryId: profile.entryBinding?.entryId ?? null,
     integrationAccountId: profile.accountId,
     config: cloneJsonObject(profile.config),
   };

@@ -8,8 +8,8 @@ import json
 os.environ.setdefault("AGENTYARD_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
 from agentyard_agent_runtime.http_clients import reset_shared_http_client_registry
-from agentyard_agent_runtime.models import PlaybookToolTaskRequest
-from agentyard_agent_runtime.tooling import execute_playbook_tool_task
+from agentyard_agent_runtime.models import ResolvedToolNode
+from agentyard_agent_runtime.tooling import _execute_resolved_tool_node
 
 
 class _FakeResponse:
@@ -60,12 +60,13 @@ class _FakeClient:
 def _request_payload() -> dict:
     return {
         "sessionId": "session-1",
-        "playbookRunId": "run-1",
-        "playbookId": "pb-1",
+        "toolRunId": "run-1",
+        "activationId": "activation-1",
+        "executionId": "run-1:tool-node:1",
+        "participantId": "participant-agent-1",
         "nodeKey": "tool-node",
         "nodeName": "Create Ticket",
-        "ownerAgent": {
-            "agentId": "agent-a",
+        "agent": {
             "name": "Agent A",
             "role": "support",
             "responsibility": "help the customer",
@@ -114,22 +115,22 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
         reset_shared_http_client_registry()
 
     @patch("agentyard_agent_runtime.tooling._call_connector_tool")
-    def test_should_execute_playbook_tool_task_and_map_output(self, mock_call_connector_tool) -> None:
+    def test_should__execute_resolved_tool_node_and_map_output(self, mock_call_connector_tool) -> None:
         mock_call_connector_tool.return_value = {
             "ticketId": "t-100",
             "routeKey": "success",
             "status": "created",
         }
-        request = PlaybookToolTaskRequest.model_validate(_request_payload())
+        request = ResolvedToolNode.model_validate(_request_payload())
 
-        result = execute_playbook_tool_task(request)
+        result = _execute_resolved_tool_node(request)
 
         self.assertEqual(result.routeKey, "success")
         self.assertEqual(result.statePatch["workflow.ticket"]["ticketId"], "t-100")
 
     def test_business_code_secret_http_should_sign_payload_with_runtime_credential(self) -> None:
         payload = _request_payload()
-        tool = payload["ownerAgent"]["tools"][0]
+        tool = payload["agent"]["tools"][0]
         tool["connector"] = {
             "connectorType": "business-code-secret-http",
             "accountSnapshot": {"accountId": "integration-account-1"},
@@ -144,11 +145,11 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
                 "create_ticket": {"method": "POST", "path": "/tickets", "requestPlacement": "JSON_BODY"}
             },
         }
-        request = PlaybookToolTaskRequest.model_validate(payload)
+        request = ResolvedToolNode.model_validate(payload)
         request_log: list[dict] = []
 
         with patch("agentyard_agent_runtime.http_clients.httpx.Client", side_effect=lambda *args, **kwargs: _FakeClient(request_log)):
-            result = execute_playbook_tool_task(request)
+            result = _execute_resolved_tool_node(request)
 
         signed_payload = request_log[1]["json"]
         expected_signature = hmac.new(
@@ -166,7 +167,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
 
     def test_business_code_secret_http_should_reject_account_type_mismatch(self) -> None:
         payload = _request_payload()
-        tool = payload["ownerAgent"]["tools"][0]
+        tool = payload["agent"]["tools"][0]
         tool["connector"] = {
             "connectorType": "business-code-secret-http",
             "accountSnapshot": {"accountId": "integration-account-1"},
@@ -177,7 +178,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
                 "create_ticket": {"method": "POST", "path": "/tickets", "requestPlacement": "JSON_BODY"}
             },
         }
-        request = PlaybookToolTaskRequest.model_validate(payload)
+        request = ResolvedToolNode.model_validate(payload)
 
         with patch(
             "agentyard_agent_runtime.tooling._load_runtime_integration_account",
@@ -191,11 +192,11 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
             },
         ):
             with self.assertRaisesRegex(ValueError, "subjectId must be business-code-secret-http"):
-                execute_playbook_tool_task(request)
+                _execute_resolved_tool_node(request)
 
     def test_simple_http_connector_should_send_bearer_token_from_optional_account(self) -> None:
         payload = _request_payload()
-        tool = payload["ownerAgent"]["tools"][0]
+        tool = payload["agent"]["tools"][0]
         tool["connector"] = {
             "connectorType": "simple-http",
             "accountSnapshot": {"accountId": "integration-account-simple"},
@@ -206,7 +207,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
                 "create_ticket": {"method": "POST", "path": "/create", "requestPlacement": "JSON_BODY"}
             },
         }
-        request = PlaybookToolTaskRequest.model_validate(payload)
+        request = ResolvedToolNode.model_validate(payload)
         request_log: list[dict] = []
 
         with patch(
@@ -221,14 +222,14 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
             },
         ):
             with patch("agentyard_agent_runtime.http_clients.httpx.Client", side_effect=lambda *args, **kwargs: _FakeClient(request_log)):
-                result = execute_playbook_tool_task(request)
+                result = _execute_resolved_tool_node(request)
 
         self.assertEqual(result.routeKey, "success")
         self.assertEqual(request_log[0]["headers"], {"Authorization": "Bearer vendor-token"})
 
     def test_simple_http_connector_should_reject_account_type_mismatch(self) -> None:
         payload = _request_payload()
-        tool = payload["ownerAgent"]["tools"][0]
+        tool = payload["agent"]["tools"][0]
         tool["connector"] = {
             "connectorType": "simple-http",
             "accountSnapshot": {"accountId": "integration-account-business"},
@@ -239,7 +240,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
                 "create_ticket": {"method": "POST", "path": "/create", "requestPlacement": "JSON_BODY"}
             },
         }
-        request = PlaybookToolTaskRequest.model_validate(payload)
+        request = ResolvedToolNode.model_validate(payload)
 
         with patch(
             "agentyard_agent_runtime.tooling._load_runtime_integration_account",
@@ -253,11 +254,11 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
             },
         ):
             with self.assertRaisesRegex(ValueError, "subjectId must be simple-http"):
-                execute_playbook_tool_task(request)
+                _execute_resolved_tool_node(request)
 
     def test_simple_http_connector_should_reject_disabled_runtime_account(self) -> None:
         payload = _request_payload()
-        tool = payload["ownerAgent"]["tools"][0]
+        tool = payload["agent"]["tools"][0]
         tool["connector"] = {
             "connectorType": "simple-http",
             "accountSnapshot": {"accountId": "integration-account-disabled"},
@@ -268,7 +269,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
                 "create_ticket": {"method": "POST", "path": "/create", "requestPlacement": "JSON_BODY"}
             },
         }
-        request = PlaybookToolTaskRequest.model_validate(payload)
+        request = ResolvedToolNode.model_validate(payload)
 
         with patch(
             "agentyard_agent_runtime.tooling._load_runtime_integration_account",
@@ -282,11 +283,11 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
             },
         ):
             with self.assertRaisesRegex(ValueError, "is not ENABLED"):
-                execute_playbook_tool_task(request)
+                _execute_resolved_tool_node(request)
 
     def test_mcp_connector_should_not_send_internal_auth_by_default(self) -> None:
         payload = _request_payload()
-        tool = payload["ownerAgent"]["tools"][0]
+        tool = payload["agent"]["tools"][0]
         tool["connector"] = {
             "connectorType": "mcp",
             "accountSnapshot": None,
@@ -300,11 +301,11 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
             },
             "operationMappings": {"create_ticket": {"tool": "ticket.create"}},
         }
-        request = PlaybookToolTaskRequest.model_validate(payload)
+        request = ResolvedToolNode.model_validate(payload)
         request_log: list[dict] = []
 
         with patch("agentyard_agent_runtime.http_clients.httpx.Client", side_effect=lambda *args, **kwargs: _FakeClient(request_log)):
-            result = execute_playbook_tool_task(request)
+            result = _execute_resolved_tool_node(request)
 
         self.assertEqual(result.routeKey, "success")
         self.assertEqual(request_log[0]["url"], "https://mcp.example/invoke")
@@ -312,7 +313,7 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
 
     def test_mcp_connector_should_send_internal_auth_when_explicitly_enabled(self) -> None:
         payload = _request_payload()
-        tool = payload["ownerAgent"]["tools"][0]
+        tool = payload["agent"]["tools"][0]
         tool["connector"] = {
             "connectorType": "mcp",
             "accountSnapshot": None,
@@ -327,11 +328,11 @@ class PlaybookToolTaskExecutionTest(unittest.TestCase):
             },
             "operationMappings": {"create_ticket": {"tool": "ticket.create"}},
         }
-        request = PlaybookToolTaskRequest.model_validate(payload)
+        request = ResolvedToolNode.model_validate(payload)
         request_log: list[dict] = []
 
         with patch("agentyard_agent_runtime.http_clients.httpx.Client", side_effect=lambda *args, **kwargs: _FakeClient(request_log)):
-            result = execute_playbook_tool_task(request)
+            result = _execute_resolved_tool_node(request)
 
         self.assertEqual(result.routeKey, "success")
         self.assertEqual(request_log[0]["headers"], {"Authorization": "Bearer test-internal-token"})

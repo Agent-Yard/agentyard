@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import logging
 import os
+import httpx
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
-from .task_execution import TaskRunRequest, execute_task
-from .models import AgentTurnExecutionOutcome
+from .models import ActivationOutcome
 
 from agentyard_common import (
     ReadinessCheck,
@@ -24,18 +24,20 @@ from .descriptor_provider import default_descriptor_provider
 from .extension_registration import load_extension_registration
 from .extension_registry import load_tool_connector_registry, validate_tool_connector_registry
 from .http_clients import reset_shared_http_client_registry
-from .models import AgentTurnRequest, AgentTurnStreamFrame, PlaybookToolTaskRequest, PlaybookToolTaskResult
+from .models import ActivationStart, ActivationStreamFrame, ToolRunNodeRequest, PlaybookToolTaskResult
+from .control_plane import activation_runtime, publish_frame
+from starlette.concurrency import run_in_threadpool
 from .redis_support import RedisSettings, create_redis_client
-from .streaming import stream_agent_turn
+from .streaming import stream_activation
 from .tool_connectors import reset_default_tool_connector_registry, set_default_tool_connector_registry
-from .tooling import execute_playbook_tool_task
-from .transcript_store import DEFAULT_SCHEMA_NAME, TranscriptStoreSettings, create_transcript_cache, create_transcript_store
+from .tooling import execute_tool_run_node, ToolRunExecutionPaused
+from .transcript_store import DEFAULT_SCHEMA_NAME, TranscriptStoreSettings, TurnExecutionContext, create_transcript_cache, create_transcript_store
 
 LOGGER = logging.getLogger("agentyard-agent-runtime")
 INSTANCE_ID = (os.getenv("AGENTYARD_INSTANCE_ID") or "agentyard-agent-runtime").strip() or "agentyard-agent-runtime"
 
 
-async def _serialize_ndjson_frames(frames: AsyncIterator[AgentTurnStreamFrame]) -> AsyncIterator[str]:
+async def _serialize_ndjson_frames(frames: AsyncIterator[ActivationStreamFrame]) -> AsyncIterator[str]:
     async for frame in frames:
         yield frame.model_dump_json() + "\n"
 
@@ -99,8 +101,8 @@ async def lifespan(app: FastAPI):
             "instanceId": INSTANCE_ID,
             "databaseSchema": DEFAULT_SCHEMA_NAME,
             "retentionSweepResult": retention_sweep_result,
-            "turnExecutionRetentionSeconds": transcript_store.settings.turn_execution_retention_seconds,
-            "transcriptEntryRetentionSeconds": transcript_store.settings.transcript_entry_retention_seconds,
+            "activationLeaseSeconds": transcript_store.settings.activation_lease_seconds,
+            "contextWindowMessages": transcript_store.settings.context_window_messages,
             "retentionSweepLimit": transcript_store.settings.retention_sweep_limit,
             "transcriptCacheTtlSeconds": transcript_store.settings.transcript_cache_ttl_seconds,
         },
@@ -193,47 +195,79 @@ async def tool_connector_registry_validation(
     return JSONResponse(status_code=status_code, content=result)
 
 
-@app.post("/task-executions/execute", response_model=AgentTurnExecutionOutcome)
-async def execute_task_execution(request: TaskRunRequest, _: None = Depends(require_internal_bearer)) -> AgentTurnExecutionOutcome:
-    return await execute_task(request)
+def _require_transcript_store():
+    store = getattr(app.state, "transcript_store", None)
+    if store is None:
+        raise HTTPException(status_code=503, detail="durable context store is not initialized")
+    return store
 
 
-@app.post("/agent-turns/execute-stream")
-async def execute_turn_stream(
-    request: AgentTurnRequest,
-    _: None = Depends(require_internal_bearer),
-) -> StreamingResponse:
-    bind_log_context(
-        sessionId=request.sessionId,
-        customerId=str(request.trigger.payload.get("customerId") or ""),
-    )
-    transcript_store = getattr(app.state, "transcript_store", None)
-    frames = stream_agent_turn(request, transcript_store=transcript_store)
-    return StreamingResponse(_serialize_ndjson_frames(frames), media_type="application/x-ndjson")
+async def _published_activation_frames(runtime, store):
+    # One producer for both transports. The API resolves the channel and principal
+    # from the activation; the Worker must never relay the same frames a second time.
+    frames = stream_activation(runtime, transcript_store=store)
+    try:
+        async for frame in frames:
+            try:
+                await run_in_threadpool(publish_frame, frame)
+            except httpx.HTTPError as error:
+                # Presentation transport must not turn a completed external write
+                # into a failed activation. Durable transcript and final Message
+                # delivery have their own authoritative persistence paths.
+                LOGGER.warning("activation presentation delivery unavailable", extra={
+                    "activationId": frame.activationId, "frameId": frame.frameId,
+                    "errorType": type(error).__name__})
+            yield frame
+    finally:
+        await frames.aclose()
 
 
-@app.post("/playbook-tool-tasks/execute", response_model=PlaybookToolTaskResult)
-async def execute_playbook_tool(
-    request: PlaybookToolTaskRequest,
-    _: None = Depends(require_internal_bearer),
-) -> PlaybookToolTaskResult:
-    bind_log_context(
-        sessionId=request.sessionId,
-        playbookRunId=request.playbookRunId,
-        nodeKey=request.nodeKey,
-    )
-    result = execute_playbook_tool_task(request)
-    LOGGER.info(
-        "playbook tool task executed",
-        extra={
-            "instanceId": INSTANCE_ID,
-            "sessionId": request.sessionId,
-            "playbookRunId": request.playbookRunId,
-            "playbookId": request.playbookId,
-            "nodeKey": request.nodeKey,
-            "toolId": request.toolId,
-            "toolOperation": request.toolOperation,
-            "terminalStatus": result.terminalStatus,
-        },
-    )
-    return result
+@app.post("/activations/execute", response_model=ActivationOutcome)
+async def execute_activation(request: ActivationStart, _: None = Depends(require_internal_bearer)) -> ActivationOutcome:
+    store = _require_transcript_store()
+    runtime = await run_in_threadpool(activation_runtime, request.activationId)
+    bind_log_context(sessionId=runtime.sessionId, participantId=runtime.participantId, activationId=runtime.activationId)
+    async for frame in _published_activation_frames(runtime, store):
+        if frame.kind == "FINAL_OUTCOME":
+            return ActivationOutcome.model_validate(frame.payload["outcome"])
+    return ActivationOutcome(success=False, failureReason="activation ended without a durable outcome")
+
+
+@app.post("/activations/execute-stream")
+async def execute_activation_stream(request: ActivationStart, _: None = Depends(require_internal_bearer)) -> StreamingResponse:
+    store = _require_transcript_store()
+    runtime = await run_in_threadpool(activation_runtime, request.activationId)
+    bind_log_context(sessionId=runtime.sessionId, participantId=runtime.participantId, activationId=runtime.activationId)
+    return StreamingResponse(_serialize_ndjson_frames(_published_activation_frames(runtime, store)),
+        media_type="application/x-ndjson")
+
+
+@app.post("/tool-run-nodes/execute", response_model=PlaybookToolTaskResult)
+async def execute_tool_node(request: ToolRunNodeRequest, _: None = Depends(require_internal_bearer)) -> PlaybookToolTaskResult:
+    store = _require_transcript_store()
+    bind_log_context(toolRunId=request.toolRunId, nodeKey=request.nodeKey)
+    try:
+        return await run_in_threadpool(execute_tool_run_node, request, store)
+    except ToolRunExecutionPaused as error:
+        raise HTTPException(status_code=423, detail="EXECUTION_PAUSED") from error
+
+
+@app.get("/sessions/{session_id}/history")
+async def read_session_history(session_id: str, participantId: str = Query(min_length=1),
+        after: int = Query(default=0, ge=0), limit: int = Query(default=50, ge=1, le=200),
+        query: str | None = None, _: None = Depends(require_internal_bearer)) -> dict:
+    context = TurnExecutionContext(session_id, participantId, "inspection", "inspection", "inspection")
+    try:
+        return await run_in_threadpool(_require_transcript_store().history, context, after=after, limit=limit, query=query)
+    except ValueError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+
+
+@app.get("/sessions/{session_id}/summary")
+async def read_session_summary(session_id: str, participantId: str = Query(min_length=1),
+        _: None = Depends(require_internal_bearer)) -> dict:
+    context = TurnExecutionContext(session_id, participantId, "inspection", "inspection", "inspection")
+    try:
+        return await run_in_threadpool(_require_transcript_store().memory, context)
+    except ValueError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error

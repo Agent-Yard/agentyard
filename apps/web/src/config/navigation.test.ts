@@ -1,24 +1,3 @@
-import { describe, expect, it } from 'vitest';
-import { pagePathByKey, resolvePageKeyFromPath } from './navigation';
-
-describe('navigation routing helpers', () => {
-  it('maps page keys to stable console paths', () => {
-    expect(pagePathByKey.domain).toBe('/console/domains');
-    expect(pagePathByKey['knowledge-library']).toBe('/console/knowledge');
-    expect(pagePathByKey['resource-library']).toBe('/console/resources');
-    expect(pagePathByKey['playbook-editor']).toBe('/console/playbooks/editor');
-    expect(pagePathByKey.runtime).toBe('/console/runtime');
-  });
-
-  it('resolves page keys from console paths', () => {
-    expect(resolvePageKeyFromPath('/console/domains')).toBe('domain');
-    expect(resolvePageKeyFromPath('/console/knowledge')).toBe('knowledge-library');
-    expect(resolvePageKeyFromPath('/console/resources')).toBe('resource-library');
-    expect(resolvePageKeyFromPath('/console/playbooks/editor')).toBe('playbook-editor');
-    expect(resolvePageKeyFromPath('/console/runtime/')).toBe('runtime');
-  });
-
-  it('falls back to the default page for unknown paths', () => {
-    expect(resolvePageKeyFromPath('/unknown')).toBe('tasks');
-  });
-});
+import {describe,it,expect} from 'vitest';
+import {pageMeta,resolvePageKeyFromPath} from './navigation';
+describe('continuous reception navigation',()=>{it('defaults to reception and separates configuration',()=>{expect(resolvePageKeyFromPath('/console')).toBe('reception');expect(pageMeta.reception.section).toBe('work');expect(pageMeta.entries.section).toBe('configuration');});it('provides no domain or assistant hierarchy',()=>{expect(Object.keys(pageMeta)).not.toContain('assistant');expect(Object.keys(pageMeta)).not.toContain('domain');});});

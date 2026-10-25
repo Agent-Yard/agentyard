@@ -1,7 +1,7 @@
 package com.agentyard.channel.gateway.channel;
 
 import com.agentyard.channel.gateway.extension.ExtensionRegistrationService;
-import com.agentyard.contracts.channel.ChannelContracts.ChannelAssistantBinding;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelEntryBinding;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelConversationBinding;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelConversationBindingStatus;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelGatewayProfile;
@@ -45,7 +45,7 @@ public class NormalizedChannelTurnIngestService {
         validateHeaders(turn, headers);
         validateTurn(turn);
         ChannelGatewayProfile profile = requireProfile(turn);
-        ChannelAssistantBinding assistantBinding = requireAssistantBinding(profile);
+        ChannelEntryBinding entryBinding = requireEntryBinding(profile);
 
         ChannelInboundTurnAudit existing = repository.findInboundTurnByDedupKey(turn.dedupKey()).orElse(null);
         if (existing != null) {
@@ -90,7 +90,7 @@ public class NormalizedChannelTurnIngestService {
             } else {
                 throw new IllegalStateException("normalized turn dedupKey was claimed concurrently; retry");
             }
-            return createOrUpdateConversationBinding(transactionalRepository, profile, assistantBinding, turn, now);
+            return createOrUpdateConversationBinding(transactionalRepository, profile, entryBinding, turn, now);
         });
         ChannelInboundTurnAudit persisted = repository.findInboundTurnByDedupKey(turn.dedupKey())
             .orElseThrow(() -> new IllegalStateException("normalized turn was not persisted: " + turn.dedupKey()));
@@ -203,12 +203,12 @@ public class NormalizedChannelTurnIngestService {
         return profile;
     }
 
-    private static ChannelAssistantBinding requireAssistantBinding(ChannelGatewayProfile profile) {
-        ChannelAssistantBinding assistantBinding = profile.assistantBinding();
-        if (assistantBinding == null || !NormalizedChannelEventValidator.hasText(assistantBinding.assistantId())) {
-            throw new IllegalArgumentException("channel profile assistantBinding.assistantId is required for inbound message turns");
+    private static ChannelEntryBinding requireEntryBinding(ChannelGatewayProfile profile) {
+        ChannelEntryBinding entryBinding = profile.entryBinding();
+        if (entryBinding == null || !NormalizedChannelEventValidator.hasText(entryBinding.entryId())) {
+            throw new IllegalArgumentException("channel profile entryBinding.entryId is required for inbound message turns");
         }
-        return assistantBinding;
+        return entryBinding;
     }
 
     private static void requireSameTurnSurface(ChannelInboundTurnAudit existing, NormalizedChannelInboundTurn turn) {
@@ -267,27 +267,27 @@ public class NormalizedChannelTurnIngestService {
     private static ChannelConversationBinding createOrUpdateConversationBinding(
         ChannelAdminRepository repository,
         ChannelGatewayProfile profile,
-        ChannelAssistantBinding assistantBinding,
+        ChannelEntryBinding entryBinding,
         NormalizedChannelInboundTurn turn,
         Instant now
     ) {
+        String externalUserId = NormalizedChannelEventValidator.hasText(turn.externalUserId()) ? turn.externalUserId()
+            : turn.sender() != null ? turn.sender().senderId() : turn.messages().getFirst().sender().senderId();
+        NormalizedChannelEventValidator.requireText(externalUserId, "normalizedTurn.externalUserId");
         ChannelConversationBinding existing = repository.findBindingByProfileAndExternalConversation(
             profile.id(),
-            turn.externalConversationId()
+            turn.externalConversationId(),
+            externalUserId
         ).orElse(null);
-        String customerId = NormalizedChannelEventValidator.hasText(turn.externalUserId())
-            ? turn.externalUserId()
-            : turn.externalConversationId();
         boolean canReuseSession = existing != null
-            && Objects.equals(existing.assistantId(), assistantBinding.assistantId())
-            && Objects.equals(existing.customerId(), customerId);
+            && Objects.equals(existing.entryId(), entryBinding.entryId());
         ChannelConversationBinding binding = new ChannelConversationBinding(
             existing == null ? nextId("channel-binding") : existing.id(),
             profile.id(),
             turn.externalConversationId(),
-            turn.externalUserId(),
-            assistantBinding.assistantId(),
-            customerId,
+            externalUserId,
+            entryBinding.entryId(),
+            canReuseSession ? existing.participantId() : null,
             canReuseSession ? existing.sessionId() : null,
             ChannelConversationBindingStatus.ACTIVE,
             Map.of(),

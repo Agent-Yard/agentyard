@@ -1,1836 +1,477 @@
+import asyncio
 import json
-import os
-import unittest
-from contextlib import contextmanager
-from unittest.mock import patch
-
-from fastapi.testclient import TestClient
-
-os.environ.setdefault("AGENTYARD_INTERNAL_AUTH_TOKEN", "test-internal-token")
-
-from agentyard_agent_runtime.main import app
-from agentyard_agent_runtime.models import (
-    AgentDecision,
-    AgentTurnExecutionOutcome,
-    AgentTurnRequest,
-    AgentTurnResult,
-    SessionMessageInput,
-)
-from agentyard_agent_runtime.openai_compatible import OpenAiCompatibleStreamEvent, OpenAiCompatibleStreamMalformedError
-from agentyard_agent_runtime.privacy_contracts import PrivacyMappingTelemetry
-from agentyard_agent_runtime.streaming import _StreamingOutcomeAccumulator
-from agentyard_agent_runtime.tooling import (
-    OUTCOME_TOOL_KINDS,
-    RuntimeToolKind,
-    execute_tool_call,
-    runtime_tool_specs,
-)
-from agentyard_agent_runtime.transcript_store import (
-    CommittedTranscriptEntry,
-    TranscriptEntry,
-)
-
-from runtime_fixtures import request_payload
-
-
-class FakeRedisClient:
-    async def ping(self) -> bool:
-        return True
-
-    async def aclose(self) -> None:
-        return None
-
-
-class FakeTranscriptStore:
-    settings = type(
-        "Settings",
-        (),
-        {
-            "database_url": "postgresql+psycopg://test",
-            "turn_execution_retention_seconds": 60,
-            "transcript_entry_retention_seconds": 60,
-            "retention_sweep_limit": 50,
-            "transcript_cache_ttl_seconds": 60,
-        },
-    )()
-
-    def __init__(
-        self,
-        *,
-        cached_outcome: AgentTurnExecutionOutcome | None = None,
-        committed_entries_by_context: dict[tuple[str, str, int], list[CommittedTranscriptEntry]] | None = None,
-    ) -> None:
-        self.cached_outcome = cached_outcome
-        self.committed_entries_by_context = committed_entries_by_context or {}
-        self.begin_contexts: list[object] = []
-        self.load_contexts: list[object] = []
-        self.reset_contexts: list[tuple[object, str]] = []
-        self.pending_entries: list[tuple[object, list[TranscriptEntry]]] = []
-        self.committed_successes: list[tuple[object, AgentTurnExecutionOutcome, list[TranscriptEntry]]] = []
-        self.failed: list[tuple[object, str]] = []
-        self.sweep_results: list[dict[str, int]] = []
-
-    def initialize(self) -> None:
-        return None
-
-    def sweep_expired(self, *, now=None, limit=None) -> dict[str, int]:  # noqa: ANN001
-        result = {
-            "turnExecutionsAborted": 0,
-            "turnExecutionsDeleted": 0,
-            "transcriptEntriesAborted": 0,
-            "transcriptEntriesDeleted": 0,
-        }
-        self.sweep_results.append(result)
-        return result
-
-    def begin_execution(self, context):  # noqa: ANN001
-        self.begin_contexts.append(context)
-        return self.cached_outcome
-
-    def load_committed_provider_messages(self, context, provider_type: str = "OPENAI_COMPATIBLE"):  # noqa: ANN001
-        self.load_contexts.append(context)
-        entries = self.committed_entries_by_context.get(
-            (context.session_id, context.owner_agent_id, context.ownership_epoch),
-            [],
-        )
-        return [dict(entry.content_json) for entry in entries if entry.provider_type == provider_type]
-
-    def reset_committed_provider_transcript_for_bootstrap(self, context, provider_type: str = "OPENAI_COMPATIBLE"):  # noqa: ANN001
-        self.reset_contexts.append((context, provider_type))
-
-    def append_pending_entries(self, context, entries):  # noqa: ANN001
-        self.pending_entries.append((context, list(entries)))
-
-    def commit_success(self, context, outcome, entries):  # noqa: ANN001
-        self.committed_successes.append((context, outcome, list(entries)))
-
-    def mark_failed(self, context, reason):  # noqa: ANN001
-        self.failed.append((context, reason))
-
-    def check_database(self) -> dict[str, object]:
-        return {"backend": "postgresql", "schema": "public"}
-
-    def close(self) -> None:
-        return None
-
-
-@contextmanager
-def agent_runtime_client(transcript_store: FakeTranscriptStore | None = None):
-    store = transcript_store or FakeTranscriptStore()
-    with patch("agentyard_agent_runtime.main.create_redis_client", return_value=FakeRedisClient()):
-        with patch("agentyard_agent_runtime.main.create_transcript_store", return_value=store):
-            with TestClient(app) as client:
-                yield client
-
-
-class AgentTurnStreamingTest(unittest.TestCase):
-    def test_should_build_streaming_runtime_tool_registry_with_stable_kinds(self) -> None:
-        request = AgentTurnRequest.model_validate(request_payload())
-
-        definitions = [spec.definition for spec in runtime_tool_specs(request)]
-        tool_names = [definition.name for definition in definitions]
-
-        self.assertEqual("get_owner_capabilities", tool_names[0])
-        self.assertEqual("knowledge_search", tool_names[1])
-        self.assertEqual("knowledge_read", tool_names[2])
-        self.assertIn("read_skill", tool_names)
-        self.assertNotIn("append_text_block", tool_names)
-        self.assertIn("update_shared_state", tool_names)
-        self.assertIn("run_playbook", tool_names)
-        self.assertNotIn("switch_owner", tool_names)
-        self.assertNotIn("human_handoff", tool_names)
-        self.assertIn("security_block", tool_names)
-        self.assertIn("create_ticket", tool_names)
-        definitions_by_name = {definition.name: definition for definition in definitions}
-        read_skill_schema = definitions_by_name["read_skill"].input_schema
-        self.assertEqual(["skill-ver-1"], read_skill_schema["properties"]["skillId"]["enum"])
-        self.assertIn("skill-ver-1 = Refund Policy", read_skill_schema["properties"]["skillId"]["description"])
-        run_playbook_schema = definitions_by_name["run_playbook"].input_schema
-        self.assertEqual(["pb-1"], run_playbook_schema["properties"]["playbookId"]["enum"])
-        self.assertIn("pb-1 = Playbook 1 - refund flow", run_playbook_schema["properties"]["playbookId"]["description"])
-        self.assertNotIn("blockId", definitions_by_name["append_image_block"].output_schema["properties"])
-        self.assertNotIn("blockId", definitions_by_name["append_rich_text_block"].output_schema["properties"])
-        self.assertNotIn("blockId", definitions_by_name["append_card_block"].output_schema["properties"])
-        specs_by_name = {spec.name: spec for spec in runtime_tool_specs(request)}
-        self.assertEqual(RuntimeToolKind.CONTEXT_TOOL, specs_by_name["knowledge_search"].kind)
-        self.assertEqual(RuntimeToolKind.CONTEXT_TOOL, specs_by_name["read_skill"].kind)
-        self.assertEqual(RuntimeToolKind.STATE_TOOL, specs_by_name["update_shared_state"].kind)
-        self.assertEqual(RuntimeToolKind.LIFECYCLE_ACTION_TOOL, specs_by_name["run_playbook"].kind)
-        self.assertNotIn("switch_owner", specs_by_name)
-        self.assertNotIn("human_handoff", specs_by_name)
-        self.assertEqual(RuntimeToolKind.CONTEXT_TOOL, specs_by_name["create_ticket"].kind)
-
-    def test_should_wire_every_runtime_tool_spec_to_its_executor(self) -> None:
-        payload = request_payload()
-        payload["currentOwner"]["allowedActions"] = ["SWITCH_OWNER", "RUN_PLAYBOOK", "SESSION_HUMAN_HANDOFF"]
-        payload["currentOwner"]["switchableOwnerAgentIds"] = ["agent-b"]
-        request = AgentTurnRequest.model_validate(payload)
-
-        specs = runtime_tool_specs(request)
-
-        context_tools_without_handler = [
-            spec.name
-            for spec in specs
-            if spec.kind == RuntimeToolKind.CONTEXT_TOOL and spec.handler is None
-        ]
-        outcome_tool_kinds = {
-            spec.name: spec.kind
-            for spec in specs
-            if spec.kind != RuntimeToolKind.CONTEXT_TOOL
-        }
-        accumulator = _StreamingOutcomeAccumulator(request)
-
-        self.assertEqual([], context_tools_without_handler)
-        self.assertEqual(OUTCOME_TOOL_KINDS, outcome_tool_kinds)
-        self.assertEqual(outcome_tool_kinds, accumulator.handled_outcome_tool_kinds())
-
-    def test_should_describe_switch_owner_targets_in_tool_schema(self) -> None:
-        payload = request_payload()
-        payload["currentOwner"]["allowedActions"] = ["SWITCH_OWNER"]
-        payload["currentOwner"]["switchableOwnerAgentIds"] = ["agent-b"]
-        request = AgentTurnRequest.model_validate(payload)
-
-        definitions_by_name = {
-            spec.definition.name: spec.definition
-            for spec in runtime_tool_specs(request)
-        }
-
-        self.assertIn("switch_owner", definitions_by_name)
-        self.assertNotIn("run_playbook", definitions_by_name)
-        target_schema = definitions_by_name["switch_owner"].input_schema["properties"]["targetAgentId"]
-        self.assertEqual(["agent-b"], target_schema["enum"])
-        self.assertIn("agent-b = Agent B, ops - handle escalations", target_schema["description"])
-
-    def test_should_describe_human_handoff_operator_reason_and_lifecycle_contract(self) -> None:
-        payload = request_payload()
-        payload["currentOwner"]["allowedActions"] = ["SESSION_HUMAN_HANDOFF"]
-        request = AgentTurnRequest.model_validate(payload)
-
-        definitions_by_name = {
-            spec.definition.name: spec.definition
-            for spec in runtime_tool_specs(request)
-        }
-
-        handoff_tool = definitions_by_name["human_handoff"]
-        self.assertIn("terminal lifecycle action", handoff_tool.description)
-        self.assertIn("agent turn stops", handoff_tool.description)
-        self.assertIn("customer-visible assistant reply before calling", handoff_tool.description)
-        self.assertIn("operatorReason is not customer-visible", handoff_tool.description)
-        self.assertIn("operatorReason", handoff_tool.input_schema["properties"])
-        self.assertNotIn("reason", handoff_tool.input_schema["properties"])
-        self.assertFalse(handoff_tool.input_schema["additionalProperties"])
-
-    def test_should_hide_connector_type_from_resource_tool_description_fallback(self) -> None:
-        payload = request_payload()
-        payload["currentOwner"]["tools"][0]["operations"][0]["description"] = ""
-        request = AgentTurnRequest.model_validate(payload)
-
-        specs_by_name = {spec.name: spec for spec in runtime_tool_specs(request)}
-
-        description = specs_by_name["create_ticket"].definition.description
-        self.assertEqual("Invoke Ticket Tool.create_ticket.", description)
-        self.assertNotIn("simple-http", description)
-        self.assertNotIn("connector", description)
-
-    def test_should_read_shared_owner_capability_directory(self) -> None:
-        request = AgentTurnRequest.model_validate(request_payload())
-
-        specs_by_name = {spec.name: spec for spec in runtime_tool_specs(request)}
-        capabilities = execute_tool_call(request, specs_by_name["get_owner_capabilities"], {})
-
-        self.assertEqual("agent-a", capabilities["ownerAgentId"])
-        self.assertEqual(["REPLY", "RUN_PLAYBOOK", "SECURITY_BLOCK"], capabilities["allowedActions"])
-        self.assertEqual(["pb-1"], capabilities["playbookIds"])
-        self.assertEqual(
-            [
-                {
-                    "skillId": "skill-ver-1",
-                    "skillName": "Refund Policy",
-                    "skillDesc": "Read refund constraints before answering.",
-                }
-            ],
-            capabilities["skills"],
-        )
-        self.assertEqual("snapshot-1", capabilities["knowledgeBinding"]["snapshotId"])
-        self.assertEqual(
-            {
-                "name": "create_ticket",
-                "description": "Create a service ticket.",
-            },
-            capabilities["functions"][0],
-        )
-        self.assertNotIn("connectorType", capabilities["functions"][0])
-        self.assertNotIn("resourceVersionId", capabilities["functions"][0])
-        self.assertNotIn("resourceName", capabilities["functions"][0])
-        self.assertNotIn("inputSchema", capabilities["functions"][0])
-
-    def test_should_exclude_outcome_tools_from_context_only_runtime_specs(self) -> None:
-        request = AgentTurnRequest.model_validate(request_payload())
-
-        tool_names = {
-            spec.definition.name
-            for spec in runtime_tool_specs(request, include_outcome_tools=False)
-        }
-
-        self.assertIn("get_owner_capabilities", tool_names)
-        self.assertIn("knowledge_search", tool_names)
-        self.assertIn("read_skill", tool_names)
-        self.assertIn("create_ticket", tool_names)
-        self.assertNotIn("append_text_block", tool_names)
-        self.assertNotIn("update_shared_state", tool_names)
-        self.assertNotIn("run_playbook", tool_names)
-
-    def test_should_exclude_knowledge_tools_without_effective_binding(self) -> None:
-        payload = request_payload()
-        payload["currentOwner"]["knowledgeEnabled"] = False
-        request = AgentTurnRequest.model_validate(payload)
-
-        tool_names = {spec.definition.name for spec in runtime_tool_specs(request)}
-
-        self.assertNotIn("knowledge_search", tool_names)
-        self.assertNotIn("knowledge_read", tool_names)
-
-    def test_should_fail_execute_stream_when_provider_streaming_is_unavailable(self) -> None:
-        os.environ.pop("TEST_OPENAI_COMPATIBLE_API_KEY", None)
-        request = request_payload()
-        request["turnId"] = "turn-1"
-        request["turnExecutionId"] = "exec-1"
-        request["ownershipEpoch"] = 3
-        transcript_store = FakeTranscriptStore()
-
-        with agent_runtime_client(transcript_store) as client:
-            response = client.post(
-                "/agent-turns/execute-stream",
-                json=request,
-                headers={"Authorization": "Bearer test-internal-token"},
-            )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.headers["content-type"].split(";")[0], "application/x-ndjson")
-        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
-        self.assertGreaterEqual(len(frames), 3)
-        for index, frame in enumerate(frames, start=1):
-            self.assertEqual(frame["seq"], index)
-            self.assertEqual(frame["frameId"], f"exec-1:{index}")
-            self.assertEqual(frame["turnId"], "turn-1")
-            self.assertEqual(frame["turnExecutionId"], "exec-1")
-            self.assertEqual(frame["ownershipEpoch"], 3)
-
-        final_frames = [frame for frame in frames if frame["kind"] == "FINAL_OUTCOME"]
-        self.assertEqual(1, len(final_frames))
-        self.assertFalse(final_frames[0]["payload"]["outcome"]["success"])
-        self.assertIn("configured streaming model provider", final_frames[0]["payload"]["outcome"]["failureReason"])
-        self.assertEqual("PROVIDER_STREAM_UNAVAILABLE", frames[-2]["payload"]["code"])
-        self.assertEqual("session-message-reply-1", frames[-2]["payload"]["replyMessageId"])
-        self.assertEqual("PROVIDER_STREAM", frames[-2]["payload"]["stage"])
-        self.assertFalse(frames[-2]["payload"]["retryable"])
-        self.assertEqual([], [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_DELTA"])
-        self.assertEqual(1, len(transcript_store.failed))
-
-    def test_should_stream_provider_text_delta_before_final_outcome(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-1"
-        request["turnExecutionId"] = "exec-1"
-        transcript_store = FakeTranscriptStore()
-
-        events = iter(
-            [
-                OpenAiCompatibleStreamEvent(event_type="content_delta", delta="已查到"),
-                OpenAiCompatibleStreamEvent(event_type="content_delta", delta="订单。"),
-                OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
-                OpenAiCompatibleStreamEvent(
-                    event_type="usage",
-                    usage={"prompt_tokens": 7, "completion_tokens": 3, "total_tokens": 10},
-                ),
-                OpenAiCompatibleStreamEvent(event_type="done"),
-            ]
-        )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
-            with agent_runtime_client(transcript_store) as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
-        self.assertEqual([], [frame for frame in frames if frame["kind"] == "USER_NOTICE"])
-        self.assertEqual([], [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_STARTED"])
-        self.assertEqual([], [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_SNAPSHOT"])
-        delta_frames = [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_DELTA"]
-        self.assertEqual(["已查到", "订单。"], [frame["payload"]["delta"] for frame in delta_frames])
-        self.assertTrue(all(frame["payload"]["replyMessageId"] == "session-message-reply-1" for frame in delta_frames))
-        completed_frames = [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_COMPLETED"]
-        self.assertEqual(["session-message-reply-1"], [frame["payload"]["replyMessageId"] for frame in completed_frames])
-        final_frame = frames[-1]
-        self.assertEqual("FINAL_OUTCOME", final_frame["kind"])
-        outcome = final_frame["payload"]["outcome"]
-        self.assertTrue(outcome["success"])
-        final_text = outcome["result"]["decision"]["replyMessage"]["blocks"][0]["text"]
-        self.assertEqual("".join(frame["payload"]["delta"] for frame in delta_frames), final_text)
-        self.assertEqual(1, len([frame for frame in frames if frame["kind"] == "FINAL_OUTCOME"]))
-        self.assertEqual(1, len(transcript_store.committed_successes))
-        committed_entries = transcript_store.committed_successes[0][2]
-        self.assertEqual("assistant", committed_entries[-1].role)
-        self.assertEqual("OPENAI_COMPATIBLE", committed_entries[-1].provider_type)
-        self.assertEqual({"role": "assistant", "content": "已查到订单。"}, committed_entries[-1].content_json)
-
-    def test_should_allocate_reply_block_per_visible_model_round(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-multi-block"
-        request["turnExecutionId"] = "exec-multi-block"
-        transcript_store = FakeTranscriptStore()
-        captured_payloads: list[dict] = []
-
-        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
-            captured_payloads.append(payload)
-            if len(captured_payloads) == 1:
-                return iter(
-                    [
-                        OpenAiCompatibleStreamEvent(event_type="content_delta", delta="先查一下。"),
-                        OpenAiCompatibleStreamEvent(
-                            event_type="tool_call_delta",
-                            tool_call_index=0,
-                            tool_call_id="call-skill-1",
-                            tool_name="read_skill",
-                            arguments_delta=json.dumps({"skillId": "skill-ver-1"}, ensure_ascii=False),
-                        ),
-                        OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
-                        OpenAiCompatibleStreamEvent(event_type="done"),
-                    ]
-                )
-            if len(captured_payloads) == 2:
-                return iter(
-                    [
-                        OpenAiCompatibleStreamEvent(
-                            event_type="tool_call_delta",
-                            tool_call_index=0,
-                            tool_call_id="call-skill-2",
-                            tool_name="read_skill",
-                            arguments_delta=json.dumps({"skillId": "skill-ver-1"}, ensure_ascii=False),
-                        ),
-                        OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
-                        OpenAiCompatibleStreamEvent(event_type="done"),
-                    ]
-                )
-            return iter(
-                [
-                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="最终答复。"),
-                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
-                    OpenAiCompatibleStreamEvent(event_type="done"),
-                ]
-            )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
-            with agent_runtime_client(transcript_store) as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(3, len(captured_payloads))
-        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
-        delta_frames = [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_DELTA"]
-        self.assertEqual(["reply-block-1", "reply-block-2"], [frame["payload"]["blockId"] for frame in delta_frames])
-        self.assertEqual(["先查一下。", "最终答复。"], [frame["payload"]["delta"] for frame in delta_frames])
-        completed_frames = [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_COMPLETED"]
-        self.assertEqual(["reply-block-1", "reply-block-2"], [frame["payload"]["blockId"] for frame in completed_frames])
-        self.assertEqual(["先查一下。", "最终答复。"], [frame["payload"]["block"]["text"] for frame in completed_frames])
-
-        outcome = frames[-1]["payload"]["outcome"]
-        self.assertTrue(outcome["success"])
-        self.assertEqual(
-            ["先查一下。", "最终答复。"],
-            [block["text"] for block in outcome["result"]["decision"]["replyMessage"]["blocks"]],
-        )
-
-    def test_should_return_cached_successful_final_outcome_without_calling_provider(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-1"
-        request["turnExecutionId"] = "exec-1"
-        reply = SessionMessageInput.model_validate({"blocks": [{"type": "TEXT", "text": "cached"}], "metadata": {}})
-        cached_outcome = AgentTurnExecutionOutcome(
-            success=True,
-            result=AgentTurnResult(
-                decision=AgentDecision(action="REPLY", replyMessage=reply),
-                sharedState={"from": "cache"},
-            ),
-        )
-        transcript_store = FakeTranscriptStore(cached_outcome=cached_outcome)
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events") as provider:
-            with agent_runtime_client(transcript_store) as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        provider.assert_not_called()
-        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
-        self.assertEqual(["FINAL_OUTCOME"], [frame["kind"] for frame in frames])
-        outcome = frames[0]["payload"]["outcome"]
-        self.assertTrue(outcome["success"])
-        self.assertEqual("cached", outcome["result"]["decision"]["replyMessage"]["blocks"][0]["text"])
-        self.assertEqual([], transcript_store.committed_successes)
-
-    def test_should_not_call_provider_when_turn_execution_is_already_running(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-1"
-        request["turnExecutionId"] = "exec-1"
-        running_conflict = AgentTurnExecutionOutcome(
-            success=False,
-            failureReason="turn execution is already RUNNING for this turnExecutionId; retry later",
-        )
-        transcript_store = FakeTranscriptStore(cached_outcome=running_conflict)
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events") as provider:
-            with agent_runtime_client(transcript_store) as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        provider.assert_not_called()
-        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
-        self.assertEqual(["FINAL_OUTCOME"], [frame["kind"] for frame in frames])
-        self.assertFalse(frames[0]["payload"]["outcome"]["success"])
-        self.assertIn("already RUNNING", frames[0]["payload"]["outcome"]["failureReason"])
-        self.assertEqual([], transcript_store.pending_entries)
-
-    def test_should_not_reuse_failed_execution_as_success_cache(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-1"
-        request["turnExecutionId"] = "exec-1"
-        transcript_store = FakeTranscriptStore()
-        captured_payloads: list[dict] = []
-
-        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
-            captured_payloads.append(payload)
-            return iter(
-                [
-                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="fresh"),
-                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
-                    OpenAiCompatibleStreamEvent(event_type="done"),
-                ]
-            )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
-            with agent_runtime_client(transcript_store) as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(1, len(captured_payloads))
-        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
-        self.assertEqual("fresh", frames[-1]["payload"]["outcome"]["result"]["decision"]["replyMessage"]["blocks"][0]["text"])
-
-    def test_should_stream_provider_when_privacy_mapping_is_enabled(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-privacy"
-        request["turnExecutionId"] = "exec-privacy"
-        request["effectivePrivacyMappingEnabled"] = True
-        transcript_store = FakeTranscriptStore()
-        captured_payloads: list[dict] = []
-
-        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
-            captured_payloads.append(payload)
-            return iter(
-                [
-                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="隐私映射开启时也继续流式。"),
-                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
-                    OpenAiCompatibleStreamEvent(event_type="done"),
-                ]
-            )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
-            with agent_runtime_client(transcript_store) as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(1, len(captured_payloads))
-        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
-        self.assertEqual([], [frame for frame in frames if frame["kind"] == "ERROR"])
-        self.assertEqual("FINAL_OUTCOME", frames[-1]["kind"])
-        self.assertTrue(frames[-1]["payload"]["outcome"]["success"])
-        self.assertEqual(1, len(transcript_store.committed_successes))
-
-    def test_should_restore_split_privacy_placeholders_before_customer_stream_and_final_outcome(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-privacy-restore"
-        request["turnExecutionId"] = "exec-privacy-restore"
-        request["effectivePrivacyMappingEnabled"] = True
-        transcript_store = FakeTranscriptStore()
-
-        class FakePrivacyPipeline:
-            enabled = True
-
-            def __init__(self) -> None:
-                self.restore_count = 0
-
-            def sanitize_prompt_instruction(self, instruction):  # noqa: ANN001
-                return instruction
-
-            def sanitize_semantic_messages(self, messages):  # noqa: ANN001
-                return messages
-
-            def restore_inbound(self, channel, payload):  # noqa: ANN001
-                self.restore_count += 1
-
-                def restore(value):  # noqa: ANN001
-                    if isinstance(value, str):
-                        return value.replace(
-                            "<<PERSON_001>>",
-                            "Alice Johnson",
-                        ).replace("<<PHONE_001>>", "13812345678")
-                    if isinstance(value, dict):
-                        return {key: restore(item) for key, item in value.items()}
-                    if isinstance(value, list):
-                        return [restore(item) for item in value]
-                    return value
-
-                return restore(payload)
-
-            def telemetry(self) -> PrivacyMappingTelemetry:
-                return PrivacyMappingTelemetry(
-                    enabled=True,
-                    restoreCountByChannel={"MODEL_FINAL_RESPONSE": self.restore_count},
-                )
-
-            def close(self) -> None:
-                return None
-
-        privacy_pipeline = FakePrivacyPipeline()
-
-        def fake_stream(_settings, _payload, *, idle_timeout_seconds):  # noqa: ANN001
-            return iter(
-                [
-                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="Hello <<PER"),
-                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="SON_001"),
-                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta=">>, your phone is <<PHONE_001"),
-                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta=">>."),
-                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
-                    OpenAiCompatibleStreamEvent(event_type="done"),
-                ]
-            )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("agentyard_agent_runtime.streaming.build_privacy_pipeline", return_value=privacy_pipeline):
-            with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
-                with agent_runtime_client(transcript_store) as client:
-                    response = client.post(
-                        "/agent-turns/execute-stream",
-                        json=request,
-                        headers={"Authorization": "Bearer test-internal-token"},
-                    )
-
-        self.assertEqual(response.status_code, 200)
-        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
-        delta_text = "".join(
-            frame["payload"]["delta"]
-            for frame in frames
-            if frame["kind"] == "REPLY_BLOCK_DELTA"
-        )
-        self.assertEqual("Hello Alice Johnson, your phone is 13812345678.", delta_text)
-        self.assertNotIn("<<PERSON_001>>", delta_text)
-        self.assertNotIn("<<PHONE_001>>", delta_text)
-        final_outcome = frames[-1]["payload"]["outcome"]
-        final_text = final_outcome["result"]["decision"]["replyMessage"]["blocks"][0]["text"]
-        self.assertEqual("Hello Alice Johnson, your phone is 13812345678.", final_text)
-        completed_frames = [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_COMPLETED"]
-        self.assertEqual(["Hello Alice Johnson, your phone is 13812345678."], [frame["payload"]["block"]["text"] for frame in completed_frames])
-        self.assertEqual(
-            {"MODEL_FINAL_RESPONSE": privacy_pipeline.restore_count},
-            final_outcome["result"]["mappingTelemetry"]["restoreCountByChannel"],
-        )
-        committed_text = transcript_store.committed_successes[0][2][-1].content_json["content"]
-        self.assertEqual("Hello <<PERSON_001>>, your phone is <<PHONE_001>>.", committed_text)
-
-    def test_should_include_committed_same_owner_epoch_transcript_in_provider_payload(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-2"
-        request["turnExecutionId"] = "exec-2"
-        transcript_store = FakeTranscriptStore(
-            committed_entries_by_context={
-                ("session-1", "agent-a", 1): [
-                    CommittedTranscriptEntry(
-                        transcript_seq=7,
-                        role="assistant",
-                        provider_type="OPENAI_COMPATIBLE",
-                        content_json={"role": "assistant", "content": "previous answer"},
-                    )
-                ]
-            }
-        )
-        captured_payloads: list[dict] = []
-
-        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
-            captured_payloads.append(payload)
-            return iter(
-                [
-                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="next answer"),
-                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
-                    OpenAiCompatibleStreamEvent(event_type="done"),
-                ]
-            )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
-            with agent_runtime_client(transcript_store) as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(
-            {"role": "assistant", "content": "previous answer"},
-            captured_payloads[0]["messages"],
-        )
-
-    def test_should_replay_prior_tool_call_tool_result_and_thinking_without_prompt_duplication(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-2"
-        request["turnExecutionId"] = "exec-2"
-        replayed_entries = [
-            CommittedTranscriptEntry(
-                transcript_seq=1,
-                role="assistant",
-                provider_type="OPENAI_COMPATIBLE",
-                content_json={
-                    "role": "assistant",
-                    "content": "",
-                    "reasoning_content": "look up order",
-                    "tool_calls": [
-                        {
-                            "id": "call-previous",
-                            "type": "function",
-                            "function": {
-                                "name": "read_skill",
-                                "arguments": '{"skillId": "skill-ver-1"}',
-                            },
-                        }
-                    ],
-                },
-            ),
-            CommittedTranscriptEntry(
-                transcript_seq=2,
-                role="tool",
-                provider_type="OPENAI_COMPATIBLE",
-                content_json={
-                    "role": "tool",
-                    "tool_call_id": "call-previous",
-                    "content": '{"accepted": true, "content": "policy"}',
-                },
-            ),
-        ]
-        transcript_store = FakeTranscriptStore(
-            committed_entries_by_context={
-                ("session-1", "agent-a", 1): replayed_entries,
-            }
-        )
-        captured_payloads: list[dict] = []
-
-        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
-            captured_payloads.append(payload)
-            return iter(
-                [
-                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="next"),
-                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
-                    OpenAiCompatibleStreamEvent(event_type="done"),
-                ]
-            )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
-            with agent_runtime_client(transcript_store) as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        messages = captured_payloads[0]["messages"]
-        expected_replay_messages = [entry.content_json for entry in replayed_entries]
-        self.assertEqual(expected_replay_messages, messages[:2])
-        appended_messages = messages[2:]
-        self.assertFalse(
-            any("You are the current session owner agent." in str(message.get("content") or "") for message in appended_messages)
-        )
-        self.assertFalse(any("Capabilities:" in str(message.get("content") or "") for message in appended_messages))
-        self.assertEqual(["user", "user"], [message["role"] for message in appended_messages])
-        self.assertIn("SHARED_STATE_SNAPSHOT", appended_messages[0]["content"])
-        self.assertEqual("帮我发起退款", appended_messages[1]["content"])
-        self.assertNotIn("Visible sharedState slice", "\n".join(str(message.get("content") or "") for message in appended_messages))
-        self.assertNotIn("Session trigger:", "\n".join(str(message.get("content") or "") for message in appended_messages))
-        replayed_assistant = messages[0]
-        self.assertEqual("", replayed_assistant["content"])
-        self.assertEqual("look up order", replayed_assistant["reasoning_content"])
-        self.assertEqual("call-previous", replayed_assistant["tool_calls"][0]["id"])
-        replayed_tool = messages[1]
-        self.assertEqual("call-previous", replayed_tool["tool_call_id"])
-        committed_entries = transcript_store.committed_successes[0][2]
-        self.assertEqual(["user", "user", "assistant"], [entry.role for entry in committed_entries])
-        self.assertEqual(appended_messages[:2], [entry.content_json for entry in committed_entries[:2]])
-
-    def test_should_reset_committed_transcript_before_bootstrap_replay(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-bootstrap"
-        request["turnExecutionId"] = "exec-bootstrap"
-        request["transcriptBootstrap"] = True
-        transcript_store = FakeTranscriptStore()
-
-        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
-            return iter(
-                [
-                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="bootstrapped"),
-                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
-                    OpenAiCompatibleStreamEvent(event_type="done"),
-                ]
-            )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
-            with agent_runtime_client(transcript_store) as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(1, len(transcript_store.begin_contexts))
-        self.assertEqual(1, len(transcript_store.reset_contexts))
-        self.assertEqual(1, len(transcript_store.load_contexts))
-        reset_context, reset_provider_type = transcript_store.reset_contexts[0]
-        self.assertEqual("exec-bootstrap", reset_context.turn_execution_id)
-        self.assertEqual("OPENAI_COMPATIBLE", reset_provider_type)
-
-    def test_should_not_include_committed_transcript_from_different_owner_or_epoch(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-2"
-        request["turnExecutionId"] = "exec-2"
-        transcript_store = FakeTranscriptStore(
-            committed_entries_by_context={
-                ("session-1", "agent-b", 1): [
-                    CommittedTranscriptEntry(
-                        transcript_seq=1,
-                        role="assistant",
-                        provider_type="OPENAI_COMPATIBLE",
-                        content_json={"role": "assistant", "content": "wrong owner"},
-                    )
-                ],
-                ("session-1", "agent-a", 2): [
-                    CommittedTranscriptEntry(
-                        transcript_seq=2,
-                        role="assistant",
-                        provider_type="OPENAI_COMPATIBLE",
-                        content_json={"role": "assistant", "content": "wrong epoch"},
-                    )
-                ],
-            }
-        )
-        captured_payloads: list[dict] = []
-
-        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
-            captured_payloads.append(payload)
-            return iter(
-                [
-                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="current"),
-                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
-                    OpenAiCompatibleStreamEvent(event_type="done"),
-                ]
-            )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
-            with agent_runtime_client(transcript_store) as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        rendered = "\n".join(str(message.get("content") or "") for message in captured_payloads[0]["messages"])
-        self.assertNotIn("wrong owner", rendered)
-        self.assertNotIn("wrong epoch", rendered)
-
-    def test_should_not_stream_or_persist_legacy_json_decision_as_reply(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-1"
-        request["turnExecutionId"] = "exec-1"
-
-        legacy_json = json.dumps(
-            {
-                "decision": {
-                    "action": "REPLY",
-                    "replyMessage": {"blocks": [{"type": "TEXT", "text": "已查到订单。"}], "metadata": {}},
-                },
-                "sharedState": {},
-                "securityAssessment": {"action": "ALLOW", "categories": []},
-            },
-            ensure_ascii=False,
-        )
-        events = iter(
-            [
-                OpenAiCompatibleStreamEvent(event_type="content_delta", delta=legacy_json[:20]),
-                OpenAiCompatibleStreamEvent(event_type="content_delta", delta=legacy_json[20:]),
-                OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
-                OpenAiCompatibleStreamEvent(event_type="done"),
-            ]
-        )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        transcript_store = FakeTranscriptStore()
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
-            with agent_runtime_client(transcript_store) as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
-        self.assertEqual([], [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_DELTA"])
-        self.assertEqual([], [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_COMPLETED"])
-        self.assertEqual("FINAL_OUTCOME", frames[-1]["kind"])
-        outcome = frames[-1]["payload"]["outcome"]
-        self.assertFalse(outcome["success"])
-        self.assertIsNone(outcome["result"])
-        self.assertIn("legacy JSON", outcome["failureReason"])
-
-    def test_should_build_streaming_provider_prompt_without_legacy_response_contract(self) -> None:
-        request = request_payload()
-        captured_payloads: list[dict] = []
-
-        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
-            captured_payloads.append(payload)
-            return iter(
-                [
-                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="已查到订单。"),
-                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
-                    OpenAiCompatibleStreamEvent(event_type="done"),
-                ]
-            )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
-            with agent_runtime_client() as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        rendered_prompt = "\n\n".join(str(message.get("content") or "") for message in captured_payloads[0]["messages"])
-        self.assertNotIn("Response contract", rendered_prompt)
-        self.assertNotIn("Final output must be JSON only", rendered_prompt)
-        self.assertNotIn("decision.replyMessage", rendered_prompt)
-        self.assertIn("For ordinary text or Markdown replies, write the reply directly as assistant content", rendered_prompt)
-        self.assertIn("Never describe tool calls, accepted tool results, state updates, message block writes", rendered_prompt)
-
-    def test_should_not_create_successful_final_message_for_malformed_provider_stream(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-1"
-        request["turnExecutionId"] = "exec-1"
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch(
-            "agentyard_agent_runtime.streaming.stream_chat_completion_events",
-            side_effect=OpenAiCompatibleStreamMalformedError("malformed openai-compatible stream JSON"),
-        ):
-            with agent_runtime_client() as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
-        self.assertEqual([], [frame for frame in frames if frame["kind"] == "REPLY_BLOCK_DELTA"])
-        self.assertEqual("ERROR", frames[-2]["kind"])
-        self.assertEqual("PROVIDER_STREAM_MALFORMED", frames[-2]["payload"]["code"])
-        self.assertEqual("FINAL_OUTCOME", frames[-1]["kind"])
-        outcome = frames[-1]["payload"]["outcome"]
-        self.assertFalse(outcome["success"])
-        self.assertIsNone(outcome["result"])
-
-    def test_should_accumulate_streamed_text_state_and_run_playbook_action(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-1"
-        request["turnExecutionId"] = "exec-1"
-        captured_payloads: list[dict] = []
-
-        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
-            captured_payloads.append(payload)
-            if len(captured_payloads) == 1:
-                return iter(
-                    [
-                        OpenAiCompatibleStreamEvent(event_type="content_delta", delta="我来处理。"),
-                        OpenAiCompatibleStreamEvent(
-                            event_type="tool_call_delta",
-                            tool_call_index=0,
-                            tool_call_id="call-2",
-                            tool_name="update_shared_state",
-                            arguments_delta=json.dumps({"patch": {"refundStatus": "REQUESTED"}}, ensure_ascii=False),
-                        ),
-                        OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
-                        OpenAiCompatibleStreamEvent(event_type="done"),
-                    ]
-                )
-            return iter(
-                [
-                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="流程已确认。"),
-                    OpenAiCompatibleStreamEvent(
-                        event_type="tool_call_delta",
-                        tool_call_index=0,
-                        tool_call_id="call-3",
-                        tool_name="run_playbook",
-                        arguments_delta=json.dumps(
-                            {"playbookId": "pb-1", "playbookInput": {"orderId": "order-1"}},
-                            ensure_ascii=False,
-                        ),
-                    ),
-                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
-                    OpenAiCompatibleStreamEvent(event_type="done"),
-                ]
-            )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        transcript_store = FakeTranscriptStore()
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
-            with agent_runtime_client(transcript_store) as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(2, len(captured_payloads))
-        second_round_tool_results = [message for message in captured_payloads[1]["messages"] if message.get("role") == "tool"]
-        self.assertTrue(any('"accepted": true' in str(message.get("content")) for message in second_round_tool_results))
-        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
-        self.assertEqual([], [frame for frame in frames if frame["kind"] == "ACTION_TOOL_ARGUMENT_DELTA"])
-        self.assertEqual([], [frame for frame in frames if "argumentsDelta" in frame["payload"]])
-        self.assertTrue(all("modelRoundId" in frame["payload"] for frame in frames if frame["kind"] == "MODEL_STARTED"))
-        self.assertTrue(all("modelRoundId" in frame["payload"] for frame in frames if frame["kind"] == "MODEL_COMPLETED"))
-        self.assertTrue(all("status" in frame["payload"] for frame in frames if frame["kind"] == "MODEL_COMPLETED"))
-        tool_started_frames = [frame for frame in frames if frame["kind"] == "ACTION_TOOL_STARTED"]
-        self.assertTrue(tool_started_frames)
-        self.assertTrue(all("modelRoundId" in frame["payload"] for frame in tool_started_frames))
-        tool_completed_frames = [frame for frame in frames if frame["kind"] == "ACTION_TOOL_COMPLETED"]
-        self.assertTrue(tool_completed_frames)
-        self.assertTrue(all(frame["payload"].get("status") in {"ACCEPTED", "REJECTED", "FAILED"} for frame in tool_completed_frames))
-        self.assertEqual([], [frame for frame in tool_completed_frames if "accepted" in frame["payload"]])
-        outcome = frames[-1]["payload"]["outcome"]
-        self.assertTrue(outcome["success"])
-        decision = outcome["result"]["decision"]
-        self.assertEqual("RUN_PLAYBOOK", decision["action"])
-        self.assertEqual("pb-1", decision["playbookId"])
-        self.assertEqual({"orderId": "order-1"}, decision["playbookInput"])
-        self.assertEqual(
-            ["我来处理。", "流程已确认。"],
-            [block["text"] for block in decision["replyMessage"]["blocks"]],
-        )
-        self.assertEqual("email", outcome["result"]["sharedState"]["knownPreference"])
-        self.assertEqual("REQUESTED", outcome["result"]["sharedState"]["refundStatus"])
-        self.assertEqual(1, len([frame for frame in frames if frame["kind"] == "FINAL_OUTCOME"]))
-        self.assertEqual(1, len(transcript_store.committed_successes))
-        committed_entries = transcript_store.committed_successes[0][2]
-        self.assertEqual(["system", "user", "user"], [entry.role for entry in committed_entries[:3]])
-        self.assertTrue(committed_entries[1].content_json["content"].startswith("<system-reminder>"))
-        self.assertIn("SHARED_STATE_SNAPSHOT", committed_entries[1].content_json["content"])
-        self.assertEqual({"role": "user", "content": "帮我发起退款"}, committed_entries[2].content_json)
-        interaction_entries = committed_entries[3:]
-        self.assertEqual(["assistant", "tool", "assistant", "tool"], [entry.role for entry in interaction_entries])
-        self.assertTrue(all(entry.provider_type == "OPENAI_COMPATIBLE" for entry in committed_entries))
-        self.assertEqual("call-2", interaction_entries[0].content_json["tool_calls"][0]["id"])
-        self.assertEqual("call-2", interaction_entries[1].content_json["tool_call_id"])
-        self.assertEqual("call-3", interaction_entries[2].content_json["tool_calls"][0]["id"])
-        self.assertEqual("call-3", interaction_entries[3].content_json["tool_call_id"])
-
-    def test_should_accumulate_human_handoff_operator_reason(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-handoff"
-        request["turnExecutionId"] = "exec-handoff"
-        request["currentOwner"]["allowedActions"] = ["SESSION_HUMAN_HANDOFF"]
-
-        events = iter(
-            [
-                OpenAiCompatibleStreamEvent(event_type="content_delta", delta="我会为你转接人工。"),
-                OpenAiCompatibleStreamEvent(
-                    event_type="tool_call_delta",
-                    tool_call_index=0,
-                    tool_call_id="call-handoff",
-                    tool_name="human_handoff",
-                    arguments_delta=json.dumps(
-                        {"operatorReason": "  billing escalation  "},
-                        ensure_ascii=False,
-                    ),
-                ),
-                OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
-                OpenAiCompatibleStreamEvent(event_type="done"),
-            ]
-        )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
-            with agent_runtime_client() as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
-        outcome = frames[-1]["payload"]["outcome"]
-        self.assertTrue(outcome["success"])
-        decision = outcome["result"]["decision"]
-        self.assertEqual("SESSION_HUMAN_HANDOFF", decision["action"])
-        self.assertEqual("billing escalation", decision["operatorReason"])
-        self.assertEqual("我会为你转接人工。", decision["replyMessage"]["blocks"][0]["text"])
-
-    def test_should_replay_same_turn_thinking_with_tool_call_as_reasoning_content(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-thinking-tool"
-        request["turnExecutionId"] = "exec-thinking-tool"
-        captured_payloads: list[dict] = []
-
-        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
-            captured_payloads.append(payload)
-            if len(captured_payloads) == 1:
-                return iter(
-                    [
-                        OpenAiCompatibleStreamEvent(event_type="thinking_delta", delta="internal lookup plan"),
-                        OpenAiCompatibleStreamEvent(
-                            event_type="tool_call_delta",
-                            tool_call_index=0,
-                            tool_call_id="call-skill-thinking",
-                            tool_name="read_skill",
-                            arguments_delta=json.dumps({"skillId": "skill-ver-1"}, ensure_ascii=False),
-                        ),
-                        OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
-                        OpenAiCompatibleStreamEvent(event_type="done"),
-                    ]
-                )
-            return iter(
-                [
-                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="已读取规则。"),
-                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
-                    OpenAiCompatibleStreamEvent(event_type="done"),
-                ]
-            )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
-            with agent_runtime_client() as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(2, len(captured_payloads))
-        replayed_assistant = next(message for message in captured_payloads[1]["messages"] if message.get("tool_calls"))
-        self.assertEqual("internal lookup plan", replayed_assistant["reasoning_content"])
-        self.assertNotIn("internal lookup plan", replayed_assistant.get("content") or "")
-
-    def test_should_fail_tool_call_with_missing_id_before_executing_tool_or_committing(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-missing-tool-id"
-        request["turnExecutionId"] = "exec-missing-tool-id"
-        transcript_store = FakeTranscriptStore()
-
-        events = iter(
-            [
-                OpenAiCompatibleStreamEvent(
-                    event_type="tool_call_delta",
-                    tool_call_index=0,
-                    tool_name="read_skill",
-                    arguments_delta=json.dumps({"skillId": "skill-ver-1"}, ensure_ascii=False),
-                ),
-                OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
-                OpenAiCompatibleStreamEvent(event_type="done"),
-            ]
-        )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
-            with patch("agentyard_agent_runtime.streaming.execute_tool_call") as execute_tool:
-                with agent_runtime_client(transcript_store) as client:
-                    response = client.post(
-                        "/agent-turns/execute-stream",
-                        json=request,
-                        headers={"Authorization": "Bearer test-internal-token"},
-                    )
-
-        self.assertEqual(response.status_code, 200)
-        execute_tool.assert_not_called()
-        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
-        self.assertEqual("FINAL_OUTCOME", frames[-1]["kind"])
-        outcome = frames[-1]["payload"]["outcome"]
-        self.assertFalse(outcome["success"])
-        self.assertIn("tool call id is required", outcome["failureReason"])
-        self.assertEqual([], transcript_store.committed_successes)
-        self.assertEqual([], transcript_store.pending_entries)
-        self.assertEqual(1, len(transcript_store.failed))
-
-    def test_should_persist_current_prompt_as_provider_transcript(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-hygiene"
-        request["turnExecutionId"] = "exec-hygiene"
-        transcript_store = FakeTranscriptStore()
-
-        events = iter(
-            [
-                OpenAiCompatibleStreamEvent(event_type="content_delta", delta="final answer"),
-                OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
-                OpenAiCompatibleStreamEvent(
-                    event_type="usage",
-                    usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-                ),
-                OpenAiCompatibleStreamEvent(event_type="done"),
-            ]
-        )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
-            with agent_runtime_client(transcript_store) as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        committed_entries = transcript_store.committed_successes[0][2]
-        self.assertEqual([], transcript_store.pending_entries)
-        self.assertEqual(["system", "user", "user", "assistant"], [entry.role for entry in committed_entries])
-        self.assertTrue(all(entry.provider_type == "OPENAI_COMPATIBLE" for entry in committed_entries))
-        self.assertIn("You are the current session owner agent.", committed_entries[0].content_json["content"])
-        self.assertIn("SHARED_STATE_SNAPSHOT", committed_entries[1].content_json["content"])
-        self.assertNotIn("Session trigger:", "\n".join(str(entry.content_json.get("content") or "") for entry in committed_entries))
-        self.assertEqual({"role": "user", "content": "帮我发起退款"}, committed_entries[2].content_json)
-        self.assertEqual({"role": "assistant", "content": "final answer"}, committed_entries[3].content_json)
-        self.assertNotIn("usage", committed_entries[3].content_json)
-        self.assertNotIn("finish_reason", committed_entries[3].content_json)
-        self.assertNotIn("model", committed_entries[3].content_json)
-
-    def test_should_accumulate_action_only_switch_owner_without_reply_message(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-switch"
-        request["turnExecutionId"] = "exec-switch"
-        request["currentOwner"]["allowedActions"] = ["SWITCH_OWNER"]
-        request["currentOwner"]["switchableOwnerAgentIds"] = ["agent-b"]
-
-        events = iter(
-            [
-                OpenAiCompatibleStreamEvent(
-                    event_type="tool_call_delta",
-                    tool_call_index=0,
-                    tool_call_id="call-switch",
-                    tool_name="switch_owner",
-                    arguments_delta=json.dumps({"targetAgentId": "agent-b"}, ensure_ascii=False),
-                ),
-                OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
-                OpenAiCompatibleStreamEvent(event_type="done"),
-            ]
-        )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        transcript_store = FakeTranscriptStore()
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
-            with agent_runtime_client(transcript_store) as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        outcome = [json.loads(line) for line in response.text.splitlines() if line.strip()][-1]["payload"]["outcome"]
-        self.assertTrue(outcome["success"])
-        self.assertEqual("SWITCH_OWNER", outcome["result"]["decision"]["action"])
-        self.assertEqual("agent-b", outcome["result"]["decision"]["targetAgentId"])
-        self.assertIsNone(outcome["result"]["decision"]["replyMessage"])
-
-    def test_should_fail_multiple_non_security_lifecycle_actions(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-conflict"
-        request["turnExecutionId"] = "exec-conflict"
-        request["currentOwner"]["allowedActions"] = ["SWITCH_OWNER", "RUN_PLAYBOOK"]
-        request["currentOwner"]["switchableOwnerAgentIds"] = ["agent-b"]
-
-        events = iter(
-            [
-                OpenAiCompatibleStreamEvent(
-                    event_type="tool_call_delta",
-                    tool_call_index=0,
-                    tool_call_id="call-switch",
-                    tool_name="switch_owner",
-                    arguments_delta=json.dumps({"targetAgentId": "agent-b"}, ensure_ascii=False),
-                ),
-                OpenAiCompatibleStreamEvent(
-                    event_type="tool_call_delta",
-                    tool_call_index=1,
-                    tool_call_id="call-playbook",
-                    tool_name="run_playbook",
-                    arguments_delta=json.dumps({"playbookId": "pb-1", "playbookInput": {}}, ensure_ascii=False),
-                ),
-                OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
-                OpenAiCompatibleStreamEvent(event_type="done"),
-            ]
-        )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        transcript_store = FakeTranscriptStore()
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
-            with agent_runtime_client(transcript_store) as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        outcome = [json.loads(line) for line in response.text.splitlines() if line.strip()][-1]["payload"]["outcome"]
-        self.assertFalse(outcome["success"])
-        self.assertIn("multiple lifecycle actions", outcome["failureReason"])
-        self.assertEqual([], transcript_store.committed_successes)
-        self.assertEqual(1, len(transcript_store.failed))
-
-    def test_should_emit_error_before_failed_final_outcome_after_customer_draft(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-conflict-draft"
-        request["turnExecutionId"] = "exec-conflict-draft"
-        request["currentOwner"]["allowedActions"] = ["SWITCH_OWNER", "RUN_PLAYBOOK"]
-        request["currentOwner"]["switchableOwnerAgentIds"] = ["agent-b"]
-
-        events = iter(
-            [
-                OpenAiCompatibleStreamEvent(event_type="content_delta", delta="我先准备回复。"),
-                OpenAiCompatibleStreamEvent(
-                    event_type="tool_call_delta",
-                    tool_call_index=0,
-                    tool_call_id="call-switch",
-                    tool_name="switch_owner",
-                    arguments_delta=json.dumps({"targetAgentId": "agent-b"}, ensure_ascii=False),
-                ),
-                OpenAiCompatibleStreamEvent(
-                    event_type="tool_call_delta",
-                    tool_call_index=1,
-                    tool_call_id="call-playbook",
-                    tool_name="run_playbook",
-                    arguments_delta=json.dumps({"playbookId": "pb-1", "playbookInput": {}}, ensure_ascii=False),
-                ),
-                OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
-                OpenAiCompatibleStreamEvent(event_type="done"),
-            ]
-        )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        transcript_store = FakeTranscriptStore()
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
-            with agent_runtime_client(transcript_store) as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
-        self.assertTrue(any(frame["kind"] == "REPLY_BLOCK_DELTA" for frame in frames))
-        self.assertEqual("ERROR", frames[-2]["kind"])
-        self.assertEqual("FINAL_OUTCOME_REJECTED", frames[-2]["payload"]["code"])
-        self.assertEqual("FINAL_OUTCOME_BUILD", frames[-2]["payload"]["stage"])
-        self.assertFalse(frames[-2]["payload"]["retryable"])
-        self.assertEqual("FINAL_OUTCOME", frames[-1]["kind"])
-        self.assertFalse(frames[-1]["payload"]["outcome"]["success"])
-        self.assertIn("multiple lifecycle actions", frames[-2]["payload"]["message"])
-        self.assertEqual([], transcript_store.committed_successes)
-        self.assertEqual(1, len(transcript_store.failed))
-
-    def test_should_prioritize_security_block_over_other_lifecycle_actions_with_reply(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-security"
-        request["turnExecutionId"] = "exec-security"
-        request["currentOwner"]["allowedActions"] = ["SWITCH_OWNER"]
-        request["currentOwner"]["switchableOwnerAgentIds"] = ["agent-b"]
-
-        events = iter(
-            [
-                OpenAiCompatibleStreamEvent(event_type="content_delta", delta="我需要阻断这个请求。"),
-                OpenAiCompatibleStreamEvent(
-                    event_type="tool_call_delta",
-                    tool_call_index=0,
-                    tool_call_id="call-switch",
-                    tool_name="switch_owner",
-                    arguments_delta=json.dumps({"targetAgentId": "agent-b"}, ensure_ascii=False),
-                ),
-                OpenAiCompatibleStreamEvent(
-                    event_type="tool_call_delta",
-                    tool_call_index=1,
-                    tool_call_id="call-security",
-                    tool_name="security_block",
-                    arguments_delta=json.dumps(
-                        {"categories": ["PROMPT_INJECTION"], "reason": "prompt_injection", "confidence": 0.95},
-                        ensure_ascii=False,
-                    ),
-                ),
-                OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
-                OpenAiCompatibleStreamEvent(event_type="done"),
-            ]
-        )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
-            with agent_runtime_client() as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        outcome = [json.loads(line) for line in response.text.splitlines() if line.strip()][-1]["payload"]["outcome"]
-        self.assertTrue(outcome["success"])
-        self.assertEqual("SECURITY_BLOCK", outcome["result"]["decision"]["action"])
-        self.assertEqual("我需要阻断这个请求。", outcome["result"]["decision"]["replyMessage"]["blocks"][0]["text"])
-        self.assertEqual("BLOCK", outcome["result"]["securityAssessment"]["action"])
-        self.assertEqual(["PROMPT_INJECTION"], outcome["result"]["securityAssessment"]["categories"])
-
-    def test_should_prioritize_security_block_over_invalid_lifecycle_actions(self) -> None:
-        cases = [
-            ("switch_owner", {"targetAgentId": "agent-x"}),
-            ("run_playbook", {"playbookId": "pb-x", "playbookInput": {}}),
-        ]
-
-        for index, (tool_name, arguments) in enumerate(cases, start=1):
-            request = request_payload()
-            request["turnId"] = f"turn-security-invalid-{index}"
-            request["turnExecutionId"] = f"exec-security-invalid-{index}"
-            request["currentOwner"]["allowedActions"] = ["SWITCH_OWNER", "RUN_PLAYBOOK"]
-            request["currentOwner"]["switchableOwnerAgentIds"] = ["agent-b"]
-            events = iter(
-                [
-                    OpenAiCompatibleStreamEvent(
-                        event_type="tool_call_delta",
-                        tool_call_index=0,
-                        tool_call_id=f"call-invalid-{index}",
-                        tool_name=tool_name,
-                        arguments_delta=json.dumps(arguments, ensure_ascii=False),
-                    ),
-                    OpenAiCompatibleStreamEvent(
-                        event_type="tool_call_delta",
-                        tool_call_index=1,
-                        tool_call_id=f"call-security-{index}",
-                        tool_name="security_block",
-                        arguments_delta=json.dumps(
-                            {"categories": ["PROMPT_INJECTION"], "reason": "prompt_injection", "confidence": 0.97},
-                            ensure_ascii=False,
-                        ),
-                    ),
-                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
-                    OpenAiCompatibleStreamEvent(event_type="done"),
-                ]
-            )
-
-            os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-            with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
-                with agent_runtime_client() as client:
-                    response = client.post(
-                        "/agent-turns/execute-stream",
-                        json=request,
-                        headers={"Authorization": "Bearer test-internal-token"},
-                    )
-
-            self.assertEqual(response.status_code, 200)
-            outcome = [json.loads(line) for line in response.text.splitlines() if line.strip()][-1]["payload"]["outcome"]
-            self.assertTrue(outcome["success"])
-            self.assertEqual("SECURITY_BLOCK", outcome["result"]["decision"]["action"])
-            self.assertEqual(["PROMPT_INJECTION"], outcome["result"]["securityAssessment"]["categories"])
-
-    def test_should_fail_multiple_same_lifecycle_actions_without_security_block(self) -> None:
-        cases = [
-            (
-                [
-                    ("call-switch-1", "switch_owner", {"targetAgentId": "agent-b"}),
-                    ("call-switch-2", "switch_owner", {"targetAgentId": "agent-b"}),
-                ],
-                "multiple lifecycle actions",
-            ),
-            (
-                [
-                    ("call-playbook-1", "run_playbook", {"playbookId": "pb-1", "playbookInput": {"step": 1}}),
-                    ("call-playbook-2", "run_playbook", {"playbookId": "pb-1", "playbookInput": {"step": 2}}),
-                ],
-                "multiple lifecycle actions",
-            ),
-        ]
-
-        for index, (tool_calls, expected_reason) in enumerate(cases, start=1):
-            request = request_payload()
-            request["turnId"] = f"turn-same-action-{index}"
-            request["turnExecutionId"] = f"exec-same-action-{index}"
-            request["currentOwner"]["allowedActions"] = ["SWITCH_OWNER", "RUN_PLAYBOOK"]
-            request["currentOwner"]["switchableOwnerAgentIds"] = ["agent-b"]
-            events = [
-                OpenAiCompatibleStreamEvent(
-                    event_type="tool_call_delta",
-                    tool_call_index=tool_index,
-                    tool_call_id=tool_call_id,
-                    tool_name=tool_name,
-                    arguments_delta=json.dumps(arguments, ensure_ascii=False),
-                )
-                for tool_index, (tool_call_id, tool_name, arguments) in enumerate(tool_calls)
-            ]
-            events.extend(
-                [
-                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
-                    OpenAiCompatibleStreamEvent(event_type="done"),
-                ]
-            )
-
-            os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-            with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=iter(events)):
-                with agent_runtime_client() as client:
-                    response = client.post(
-                        "/agent-turns/execute-stream",
-                        json=request,
-                        headers={"Authorization": "Bearer test-internal-token"},
-                    )
-
-            self.assertEqual(response.status_code, 200)
-            outcome = [json.loads(line) for line in response.text.splitlines() if line.strip()][-1]["payload"]["outcome"]
-            self.assertFalse(outcome["success"])
-            self.assertIn(expected_reason, outcome["failureReason"])
-
-    def test_should_merge_update_shared_state_patch_into_final_snapshot(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-state"
-        request["turnExecutionId"] = "exec-state"
-        request["currentOwner"]["allowedActions"] = ["NO_OP"]
-        captured_payloads: list[dict] = []
-
-        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
-            captured_payloads.append(payload)
-            if len(captured_payloads) == 1:
-                return iter(
-                    [
-                        OpenAiCompatibleStreamEvent(
-                            event_type="tool_call_delta",
-                            tool_call_index=0,
-                            tool_call_id="call-state",
-                            tool_name="update_shared_state",
-                            arguments_delta=json.dumps({"patch": {"nested": {"value": 1}}}, ensure_ascii=False),
-                        ),
-                        OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
-                        OpenAiCompatibleStreamEvent(event_type="done"),
-                    ]
-                )
-            return iter(
-                [
-                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
-                    OpenAiCompatibleStreamEvent(event_type="done"),
-                ]
-            )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
-            with agent_runtime_client() as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(2, len(captured_payloads))
-        outcome = [json.loads(line) for line in response.text.splitlines() if line.strip()][-1]["payload"]["outcome"]
-        self.assertTrue(outcome["success"])
-        self.assertEqual("NO_OP", outcome["result"]["decision"]["action"])
-        self.assertEqual({"knownPreference": "email", "nested": {"value": 1}}, outcome["result"]["sharedState"])
-
-    def test_should_hide_message_block_tool_block_id_from_model_context(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-message-block"
-        request["turnExecutionId"] = "exec-message-block"
-        captured_payloads: list[dict] = []
-
-        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
-            captured_payloads.append(payload)
-            if len(captured_payloads) == 1:
-                return iter(
-                    [
-                        OpenAiCompatibleStreamEvent(
-                            event_type="tool_call_delta",
-                            tool_call_index=0,
-                            tool_call_id="call-block",
-                            tool_name="append_rich_text_block",
-                            arguments_delta=json.dumps(
-                                {"format": "MARKDOWN", "content": "**refund details**"},
-                                ensure_ascii=False,
-                            ),
-                        ),
-                        OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
-                        OpenAiCompatibleStreamEvent(event_type="done"),
-                    ]
-                )
-            return iter(
-                [
-                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
-                    OpenAiCompatibleStreamEvent(event_type="done"),
-                ]
-            )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
-            with agent_runtime_client() as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        append_tool = next(
-            tool
-            for tool in captured_payloads[0]["tools"]
-            if tool["function"]["name"] == "append_rich_text_block"
-        )
-        self.assertNotIn("blockId", append_tool["function"]["description"])
-        tool_result_messages = [
-            message for message in captured_payloads[1]["messages"] if message.get("role") == "tool"
-        ]
-        self.assertEqual(1, len(tool_result_messages))
-        self.assertIn('"accepted": true', tool_result_messages[0]["content"])
-        self.assertNotIn("blockId", tool_result_messages[0]["content"])
-        frames = [json.loads(line) for line in response.text.splitlines() if line.strip()]
-        completed_frame = next(
-            frame
-            for frame in frames
-            if frame["kind"] == "ACTION_TOOL_COMPLETED"
-            and frame["payload"]["toolName"] == "append_rich_text_block"
-        )
-        self.assertEqual({"messageBlockId": "tool-block-1"}, completed_frame["payload"]["produced"])
-
-    def test_should_return_read_skill_result_to_next_streaming_model_round(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-skill"
-        request["turnExecutionId"] = "exec-skill"
-        captured_payloads: list[dict] = []
-
-        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
-            captured_payloads.append(payload)
-            if len(captured_payloads) == 1:
-                return iter(
-                    [
-                        OpenAiCompatibleStreamEvent(
-                            event_type="tool_call_delta",
-                            tool_call_index=0,
-                            tool_call_id="call-skill",
-                            tool_name="read_skill",
-                            arguments_delta=json.dumps({"skillId": "skill-ver-1"}, ensure_ascii=False),
-                        ),
-                        OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
-                        OpenAiCompatibleStreamEvent(event_type="done"),
-                    ]
-                )
-            return iter(
-                [
-                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="已读取退款规则。"),
-                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
-                    OpenAiCompatibleStreamEvent(event_type="done"),
-                ]
-            )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
-            with agent_runtime_client() as client:
-                response = client.post(
-                    "/agent-turns/execute-stream",
-                    json=request,
-                    headers={"Authorization": "Bearer test-internal-token"},
-                )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(2, len(captured_payloads))
-        tool_names = {
-            tool["function"]["name"]
-            for tool in captured_payloads[0]["tools"]
-            if tool.get("type") == "function" and isinstance(tool.get("function"), dict)
-        }
-        self.assertTrue(
-            {
-                "read_skill",
-                "append_image_block",
-                "append_rich_text_block",
-                "append_card_block",
-                "update_shared_state",
-                "run_playbook",
-                "security_block",
-            }.issubset(tool_names)
-        )
-        self.assertNotIn("switch_owner", tool_names)
-        self.assertNotIn("human_handoff", tool_names)
-        tool_result_messages = [message for message in captured_payloads[1]["messages"] if message.get("role") == "tool"]
-        self.assertTrue(any("退款时必须先确认订单状态" in str(message.get("content")) for message in tool_result_messages))
-        outcome = [json.loads(line) for line in response.text.splitlines() if line.strip()][-1]["payload"]["outcome"]
-        self.assertTrue(outcome["success"])
-        self.assertEqual("REPLY", outcome["result"]["decision"]["action"])
-        self.assertEqual("已读取退款规则。", outcome["result"]["decision"]["replyMessage"]["blocks"][0]["text"])
-
-    def test_should_persist_sanitized_tool_result_provider_message(self) -> None:
-        request = request_payload()
-        request["turnId"] = "turn-sanitized-tool"
-        request["turnExecutionId"] = "exec-sanitized-tool"
-        captured_payloads: list[dict] = []
-        transcript_store = FakeTranscriptStore()
-
-        class FakePrivacyPipeline:
-            enabled = True
-
-            def __init__(self) -> None:
-                self.sanitized_payloads: list[tuple[str, dict]] = []
-
-            def sanitize_prompt_instruction(self, instruction):  # noqa: ANN001
-                return instruction
-
-            def sanitize_semantic_messages(self, messages):  # noqa: ANN001
-                return messages
-
-            def sanitize_outbound(self, channel, payload):  # noqa: ANN001
-                self.sanitized_payloads.append((channel, payload))
-                if channel == "TOOL_RESULT":
-                    return {"accepted": payload.get("accepted"), "content": "sanitized skill content"}
-                return payload
-
-            def telemetry(self) -> None:
-                return None
-
-            def close(self) -> None:
-                return None
-
-        privacy_pipeline = FakePrivacyPipeline()
-
-        def fake_stream(_settings, payload, *, idle_timeout_seconds):  # noqa: ANN001
-            captured_payloads.append(payload)
-            if len(captured_payloads) == 1:
-                return iter(
-                    [
-                        OpenAiCompatibleStreamEvent(
-                            event_type="tool_call_delta",
-                            tool_call_index=0,
-                            tool_call_id="call-skill",
-                            tool_name="read_skill",
-                            arguments_delta=json.dumps({"skillId": "skill-ver-1"}, ensure_ascii=False),
-                        ),
-                        OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
-                        OpenAiCompatibleStreamEvent(event_type="done"),
-                    ]
-                )
-            return iter(
-                [
-                    OpenAiCompatibleStreamEvent(event_type="content_delta", delta="done"),
-                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop"),
-                    OpenAiCompatibleStreamEvent(event_type="done"),
-                ]
-            )
-
-        os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-        with patch("agentyard_agent_runtime.streaming.build_privacy_pipeline", return_value=privacy_pipeline):
-            with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", side_effect=fake_stream):
-                with agent_runtime_client(transcript_store) as client:
-                    response = client.post(
-                        "/agent-turns/execute-stream",
-                        json=request,
-                        headers={"Authorization": "Bearer test-internal-token"},
-                    )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual("TOOL_RESULT", privacy_pipeline.sanitized_payloads[0][0])
-        tool_messages = [message for message in captured_payloads[1]["messages"] if message.get("role") == "tool"]
-        self.assertEqual(1, len(tool_messages))
-        self.assertIn("sanitized skill content", tool_messages[0]["content"])
-        self.assertNotIn("退款时必须先确认订单状态", tool_messages[0]["content"])
-        committed_tool_entries = [
-            entry for entry in transcript_store.committed_successes[0][2] if entry.role == "tool"
-        ]
-        self.assertEqual(tool_messages, [entry.content_json for entry in committed_tool_entries])
-
-    def test_should_reject_invalid_native_lifecycle_tool_arguments(self) -> None:
-        cases = [
-            ("switch_owner", {"targetAgentId": "agent-x"}, "switch_owner targetAgentId is not allowed"),
-            ("run_playbook", {"playbookId": "pb-x", "playbookInput": {}}, "run_playbook playbookId is not allowed"),
-            ("human_handoff", {"operatorReason": "billing"}, "unsupported streaming tool call: human_handoff"),
-        ]
-
-        for index, (tool_name, arguments, expected_reason) in enumerate(cases, start=1):
-            request = request_payload()
-            request["turnId"] = f"turn-invalid-{index}"
-            request["turnExecutionId"] = f"exec-invalid-{index}"
-            request["currentOwner"]["allowedActions"] = ["SWITCH_OWNER", "RUN_PLAYBOOK"]
-            request["currentOwner"]["switchableOwnerAgentIds"] = ["agent-b"]
-            events = iter(
-                [
-                    OpenAiCompatibleStreamEvent(
-                        event_type="tool_call_delta",
-                        tool_call_index=0,
-                        tool_call_id=f"call-invalid-{index}",
-                        tool_name=tool_name,
-                        arguments_delta=json.dumps(arguments, ensure_ascii=False),
-                    ),
-                    OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls"),
-                    OpenAiCompatibleStreamEvent(event_type="done"),
-                ]
-            )
-
-            os.environ["TEST_OPENAI_COMPATIBLE_API_KEY"] = "secret"
-            with patch("agentyard_agent_runtime.streaming.stream_chat_completion_events", return_value=events):
-                with agent_runtime_client() as client:
-                    response = client.post(
-                        "/agent-turns/execute-stream",
-                        json=request,
-                        headers={"Authorization": "Bearer test-internal-token"},
-                    )
-
-            self.assertEqual(response.status_code, 200)
-            outcome = [json.loads(line) for line in response.text.splitlines() if line.strip()][-1]["payload"]["outcome"]
-            self.assertFalse(outcome["success"])
-            self.assertIn(expected_reason, outcome["failureReason"])
-
-    def test_should_protect_stream_endpoint_with_internal_auth(self) -> None:
-        with agent_runtime_client() as client:
-            response = client.post("/agent-turns/execute-stream", json={})
-
-        self.assertEqual(response.status_code, 401)
+from dataclasses import replace
+
+import httpx
+import pytest
+
+from agentyard_agent_runtime import control_plane
+from agentyard_agent_runtime.models import ActivationRuntime, ActivationOutcome
+from agentyard_agent_runtime.openai_compatible import OpenAiCompatibleStreamEvent
+from agentyard_agent_runtime.streaming import stream_activation
+from agentyard_agent_runtime.transcript_store import TurnExecutionContext
+from agentyard_agent_runtime.tooling import runtime_tool_registry
+
+from runtime_fixtures import request_payload, runtime_client, sqlite_transcript_store
+
+
+@pytest.fixture(autouse=True)
+def runtime_environment(monkeypatch):
+    monkeypatch.setenv("TEST_OPENAI_COMPATIBLE_API_KEY", "unit-test-key")
+    monkeypatch.setenv("AGENTYARD_INTERNAL_AUTH_TOKEN", "test-internal-token")
+
+
+def text_events(text):
+    for part in [text[:max(1, len(text)//2)], text[max(1, len(text)//2):]]:
+        if part:
+            yield OpenAiCompatibleStreamEvent(event_type="content_delta", delta=part)
+    yield OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="stop")
+    yield OpenAiCompatibleStreamEvent(event_type="usage", usage={"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18})
+
+
+def tool_events(name, arguments, call_id="call-1"):
+    yield OpenAiCompatibleStreamEvent(event_type="tool_call_delta", tool_call_index=0,
+        tool_call_id=call_id, tool_name=name, arguments_delta=json.dumps(arguments, ensure_ascii=False))
+    yield OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="tool_calls")
+
+
+def finish_events(text, status="COMPLETED", **extra):
+    yield from tool_events("activation_finish", {"status": status, "summary": "Contribution checked", "reply": text, **extra}, f"finish-{status}")
+    yield OpenAiCompatibleStreamEvent(event_type="usage", usage={"prompt_tokens": 11, "completion_tokens": 7, "total_tokens": 18})
+
+
+def model_script(monkeypatch, rounds):
+    requests = []
+    remaining = iter(rounds)
+    def stream(_settings, payload, **_):
+        requests.append(json.loads(json.dumps(payload)))
+        result = next(remaining)
+        if isinstance(result, Exception):
+            raise result
+        return iter(result)
+    monkeypatch.setattr("agentyard_agent_runtime.streaming.stream_chat_completion_events", stream)
+    return requests
+
+
+def run(store=None, payload=None):
+    store = store or sqlite_transcript_store()
+    request = ActivationRuntime.model_validate(payload or request_payload())
+    async def collect():
+        return [frame async for frame in stream_activation(request, store)]
+    frames = asyncio.run(collect())
+    return frames, frames[-1].payload["outcome"], store
+
+
+def ctx(payload=None):
+    p = payload or request_payload()
+    return TurnExecutionContext(p["sessionId"], p["participantId"], p["trigger"]["id"], p["activationId"], "read-only")
+
+
+def test_plain_reply_has_real_durable_transcript_and_usage(monkeypatch):
+    calls = model_script(monkeypatch, [finish_events("已经收到，我来帮你梳理。")])
+    frames, outcome, store = run()
+    assert outcome["success"]
+    assert outcome["replyMessage"]["blocks"][0]["text"] == "已经收到，我来帮你梳理。"
+    assert outcome["llmUsage"][0]["sourceType"] == "AGENT_MODEL"
+    assert any(f.kind == "REPLY_BLOCK_COMPLETED" for f in frames)
+    history = store.history(ctx())
+    assert len(history["entries"]) == 4
+    assert all(e["status"] == "COMMITTED" for e in history["entries"])
+    assert all("ownerAgentId" not in f.model_dump() and "ownershipEpoch" not in f.model_dump() for f in frames)
+    assert "human-1" in calls[0]["messages"][-1]["content"]
+
+
+def test_skill_body_requires_live_authorization_and_uses_its_descriptor(monkeypatch):
+    calls = model_script(monkeypatch, [tool_events("read_skill", {"skillId": "skill-ver-1"}), finish_events("Skill checked")])
+    authorized = request_payload()["agent"]["skills"][0] | {"skillPrompt": "CURRENT_AUTHORIZED_SKILL"}
+    monkeypatch.setattr(control_plane, "authorize_resource", lambda *a: {"success": True, "result": {"descriptor": authorized}})
+    _, outcome, _ = run()
+    assert outcome["success"]
+    assert "CURRENT_AUTHORIZED_SKILL" not in json.dumps(calls[0])
+    assert "退款时必须" not in json.dumps(calls[0], ensure_ascii=False)
+    assert "CURRENT_AUTHORIZED_SKILL" in calls[1]["messages"][-1]["content"]
+
+
+def test_stream_presentation_outage_keeps_durable_success(monkeypatch):
+    model_script(monkeypatch, [finish_events("Finished despite presentation outage")])
+    store = sqlite_transcript_store()
+    with runtime_client(store) as client:
+        def unavailable(frame):
+            raise httpx.ConnectError("presentation service unavailable")
+        monkeypatch.setattr("agentyard_agent_runtime.main.publish_frame", unavailable)
+        response = client.post("/activations/execute", json={"activationId": "activation-1"},
+            headers={"Authorization": "Bearer test-internal-token"})
+        assert response.status_code == 200
+        assert response.json()["success"]
+        assert len(store.history(ctx())["entries"]) == 4
+
+
+def test_report_schema_rejects_string_body_before_api_and_explains_field(monkeypatch):
+    calls = model_script(monkeypatch, [tool_events("task_command", {
+        "taskId": "task-1", "expectedRevision": 1, "kind": "PUT_CONTEXT",
+        "data": {"kind": "ARTIFACT", "title": "Report", "body": "Use a structured markdown object"}}), finish_events("Correcting the report")])
+    invoked = []
+    monkeypatch.setattr(control_plane, "invoke_tool", lambda *a: invoked.append(a))
+    _, outcome, _ = run()
+    assert outcome["success"] and not invoked
+    assert "body" in calls[1]["messages"][-1]["content"]
+    assert "INVALID_ARGUMENTS" in calls[1]["messages"][-1]["content"]
+
+
+def test_authorized_cross_session_history_uses_server_identity(monkeypatch):
+    calls = model_script(monkeypatch, [finish_events("authorized source evidence"),
+        tool_events("resource_read", {"reference": {"kind": "SESSION_HISTORY", "resourceId": "session-1"}}),
+        finish_events("Evidence read with explicit grant")])
+    _, _, store = run()
+    payload = request_payload()
+    payload.update(activationId="reader-activation", sessionId="reader-session", participantId="reader")
+    payload["trigger"]["recipientId"] = "reader"
+    monkeypatch.setattr(control_plane, "invoke_tool", lambda *a: {"success": True, "result": {
+        "descriptor": {"sessionId": "session-1", "participantId": "participant-agent-1"}}})
+    _, outcome, _ = run(store, payload)
+    assert outcome["success"]
+    assert "authorized source evidence" in calls[2]["messages"][-1]["content"]
+    assert "authorized source evidence" not in str(calls[1]["messages"][:-1])
+
+
+def test_activation_result_replayed_without_another_model_call(monkeypatch):
+    calls = model_script(monkeypatch, [finish_events("done")])
+    _, outcome, store = run()
+    _, replay, _ = run(store)
+    assert replay == outcome
+    assert len(calls) == 1
+    assert len(store.history(ctx())["entries"]) == 4
+
+
+def test_session_history_continues_after_runtime_restart(tmp_path, monkeypatch):
+    path = str(tmp_path / "runtime.sqlite")
+    store = sqlite_transcript_store(path)
+    calls = model_script(monkeypatch, [finish_events("项目一正在进行。"), finish_events("继续项目一。")])
+    run(store)
+    store.close()
+    restored = sqlite_transcript_store(path)
+    payload = request_payload()
+    payload["activationId"] = "activation-2"
+    payload["trigger"]["id"] = "message-2"
+    payload["trigger"]["body"]["text"] = "继续昨天的那个"
+    _, outcome, _ = run(restored, payload)
+    assert outcome["success"]
+    assert any("项目一正在进行" in str(m) for m in calls[1]["messages"])
+    assert len(restored.history(ctx(payload))["entries"]) == 8
+
+
+def test_same_template_instances_do_not_share_context(monkeypatch):
+    calls = model_script(monkeypatch, [finish_events("私有材料 A"), finish_events("另一个实例")])
+    _, _, store = run()
+    payload = request_payload()
+    payload.update(activationId="activation-other", sessionId="session-other", participantId="participant-other")
+    payload["trigger"]["recipientId"] = "participant-other"
+    _, outcome, _ = run(store, payload)
+    assert outcome["success"]
+    assert not any("私有材料 A" in str(m.get("content")) for m in calls[1]["messages"])
+
+
+def test_collaboration_tools_use_trusted_activation_and_model_call_id(monkeypatch):
+    calls = model_script(monkeypatch, [tool_events("task_create", {"title": "采购调研", "goal": "比較供应商", "sourceMessageId": "message-1"}), finish_events("已安排调研。")])
+    invoked = []
+    def tool(request, call_id, name, arguments):
+        invoked.append((request.activationId, request.participantId, call_id, name, arguments))
+        return {"success": True, "result": {"taskId": "task-1"}}
+    monkeypatch.setattr(control_plane, "invoke_tool", tool)
+    _, outcome, store = run()
+    assert outcome["success"]
+    assert invoked[0][:4] == ("activation-1", "participant-agent-1", "call-1", "task_create")
+    assert invoked[0][4]["sourceMessageId"] == "message-1"
+    assert "task-1" in calls[1]["messages"][-1]["content"]
+    assert any(e["message"]["role"] == "tool" for e in store.history(ctx())["entries"])
+
+
+def test_model_cannot_forge_principal_in_tool_arguments(monkeypatch):
+    calls = model_script(monkeypatch, [tool_events("task_create", {"title": "x", "goal": "y", "participantId": "admin"}), finish_events("需要按合法身份处理。")])
+    invoked = []
+    monkeypatch.setattr(control_plane, "invoke_tool", lambda *a: invoked.append(a))
+    _, outcome, _ = run()
+    assert outcome["success"]
+    assert invoked == []
+    assert "INVALID_ARGUMENTS" in calls[1]["messages"][-1]["content"]
+
+
+def test_current_permission_denial_prevents_external_connector_call(monkeypatch):
+    calls = model_script(monkeypatch, [tool_events("create_ticket", {"subject": "support"}), finish_events("当前无权执行。")])
+    monkeypatch.setattr(control_plane, "authorize_resource", lambda *a: {"success": False, "code": "FORBIDDEN", "message": "grant revoked"})
+    external = []
+    monkeypatch.setattr("agentyard_agent_runtime.tooling._call_connector_tool", lambda *a, **kw: external.append(a))
+    _, outcome, _ = run()
+    assert outcome["success"] and external == []
+    assert "FORBIDDEN" in calls[1]["messages"][-1]["content"]
+
+
+def test_resource_descriptor_is_authorized_and_call_scoped_idempotency_used(monkeypatch):
+    model_script(monkeypatch, [tool_events("create_ticket", {"subject": "support"}), finish_events("已创建。")])
+    descriptor = request_payload()["agent"]["tools"][0]
+    seen = []
+    monkeypatch.setattr(control_plane, "authorize_resource", lambda *a: {"success": True, "result": {"descriptor": descriptor, "idempotencyKey": "activation-1:call-1"}})
+    monkeypatch.setattr("agentyard_agent_runtime.tooling._call_connector_tool",
+        lambda d, op, args, **kw: seen.append((d, op, args, kw)) or {"ticketId": "t-1", "status": "created"})
+    _, outcome, _ = run()
+    assert outcome["success"]
+    assert seen[0][3]["idempotency_key"] == "activation-1:call-1"
+
+
+def test_failed_external_write_is_not_blindly_replayed_after_restart(tmp_path, monkeypatch):
+    path = str(tmp_path / "restart.sqlite")
+    store = sqlite_transcript_store(path)
+    first_calls = model_script(monkeypatch, [tool_events("create_ticket", {"subject": "support"})])
+    descriptor = request_payload()["agent"]["tools"][0]
+    monkeypatch.setattr(control_plane, "authorize_resource", lambda *a: {"success": True, "result": {"descriptor": descriptor}})
+    external = []
+    def uncertain(*a, **kw):
+        external.append(1)
+        raise ConnectionError("connection lost after request was sent")
+    monkeypatch.setattr("agentyard_agent_runtime.tooling._call_connector_tool", uncertain)
+    _, failed, _ = run(store)
+    assert not failed["success"] and external == [1]
+    store.close()
+    restored = sqlite_transcript_store(path)
+    calls = model_script(monkeypatch, [finish_events("调用结果不明，需要核对回执后再继续。")])
+    _, recovered, _ = run(restored)
+    assert recovered["success"] and external == [1]
+    assert any("TOOL_OUTCOME_UNKNOWN" in str(m.get("content")) for m in calls[0]["messages"])
+    assert len(first_calls) == 1
+
+
+def test_completed_receipt_recovers_crash_before_tool_message_without_duplicate_side_effect(monkeypatch):
+    store = sqlite_transcript_store()
+    descriptor = request_payload()["agent"]["tools"][0]
+    monkeypatch.setattr(control_plane, "authorize_resource", lambda *a: {"success": True, "result": {"descriptor": descriptor}})
+    writes = []
+    monkeypatch.setattr("agentyard_agent_runtime.tooling._call_connector_tool",
+        lambda *a, **kw: writes.append(1) or {"ticketId": "t-1", "status": "created"})
+    append = store.append_pending_entries
+    crashed = False
+    def append_or_crash(context, entries):
+        nonlocal crashed
+        if entries and entries[0].role == "tool" and not crashed:
+            crashed = True
+            raise RuntimeError("crash after durable side-effect receipt")
+        append(context, entries)
+    monkeypatch.setattr(store, "append_pending_entries", append_or_crash)
+    model_script(monkeypatch, [tool_events("create_ticket", {"subject": "support"})])
+    _, failed, _ = run(store)
+    assert not failed["success"] and writes == [1]
+    calls = model_script(monkeypatch, [finish_events("已恢复原来的处理结果。")])
+    _, outcome, _ = run(store)
+    assert outcome["success"] and writes == [1]
+    assert any("t-1" in str(m.get("content")) for m in calls[0]["messages"])
+
+
+def test_security_block_is_recorded_and_cannot_claim_human_handoff(monkeypatch):
+    model_script(monkeypatch, [tool_events("security_block", {"categories": ["credential_extraction"], "reason": "requests secrets", "confidence": 1})])
+    _, outcome, _ = run()
+    assert outcome["success"]
+    assert outcome["securityAssessment"]["action"] == "BLOCK"
+    assert outcome["replyMessage"] is None
+    names = runtime_tool_registry(ActivationRuntime.model_validate(request_payload()))
+    assert not {"human_handoff", "switch_owner", "run_playbook", "task_contribute"} & set(names)
+
+
+def test_work_memory_output_is_patch_and_does_not_overwrite_tool_update(monkeypatch):
+    calls = model_script(monkeypatch, [tool_events("session_memory", {"patch": {"waiting": "supplier-1"}}), finish_events("继续跟进。")])
+    monkeypatch.setattr(control_plane, "invoke_tool", lambda *a: {"success": True, "result": {"knownPreference": "email", "waiting": "supplier-1"}})
+    _, outcome, _ = run()
+    assert outcome["workMemory"] == {}
+    assert "supplier-1" in calls[1]["messages"][-1]["content"]
+
+
+def test_runtime_rejects_missing_durable_store(monkeypatch):
+    request = ActivationRuntime.model_validate(request_payload())
+    async def collect():
+        return [frame async for frame in stream_activation(request, None)]
+    with pytest.raises(RuntimeError, match="durable"):
+        asyncio.run(collect())
+
+
+def test_http_entry_accepts_only_activation_identity_and_uses_control_plane_context(monkeypatch):
+    model_script(monkeypatch, [finish_events("ok")])
+    with runtime_client() as client:
+        headers = {"Authorization": "Bearer test-internal-token"}
+        rejected = client.post("/activations/execute", json={"activationId": "activation-1", "participantId": "admin"}, headers=headers)
+        assert rejected.status_code == 422
+        response = client.post("/activations/execute", json={"activationId": "activation-1"}, headers=headers)
+        assert response.status_code == 200
+        assert response.json()["success"]
+        assert client.post("/task-executions/execute", json={}, headers=headers).status_code == 404
+        assert client.post("/agent-turns/execute-stream", json={}, headers=headers).status_code == 404
+
+
+def test_model_limit_failure_preserves_durable_tool_history(monkeypatch):
+    payload = request_payload()
+    payload["maxToolSteps"] = 1
+    model_script(monkeypatch, [tool_events("task_list", {}, "c1"), tool_events("task_list", {}, "c2")])
+    monkeypatch.setattr(control_plane, "invoke_tool", lambda *a: {"success": True, "result": []})
+    _, outcome, store = run(payload=payload)
+    assert not outcome["success"]
+    assert "step budget" in outcome["failureReason"]
+    assert len([e for e in store.history(ctx())["entries"] if e["message"]["role"] == "tool"]) == 2
+
+
+def test_invalid_model_decision_json_is_not_delivered_as_reply(monkeypatch):
+    model_script(monkeypatch, [text_events('{"action":"SWITCH_OWNER","targetAgentId":"other"}')])
+    frames, outcome, _ = run()
+    assert not outcome["success"]
+    assert not any(f.kind == "REPLY_BLOCK_DELTA" for f in frames)
+
+
+def test_large_tool_output_can_be_read_in_pages_without_repeating_external_action(monkeypatch):
+    full = {"report": "evidence-" * 5000 + "TAIL_VERIFIED"}
+    calls = model_script(monkeypatch, [tool_events("task_read", {"taskId": "task-1"}, "large-report"),
+        tool_events("tool_result_read", {"activationId": "activation-1", "callId": "large-report", "offset": 44000, "limit": 8000}, "page"),
+        finish_events("已阅读完整来源中的最后一段。")])
+    lookups = []
+    monkeypatch.setattr(control_plane, "invoke_tool", lambda *a: lookups.append(a) or full)
+    monkeypatch.setattr(control_plane, "authorize_resource", lambda *a: {"success": True, "result": {"descriptor": {"sessionId": "session-1", "participantId": "participant-agent-1"}}})
+    _, outcome, store = run()
+    assert outcome["success"] and len(lookups) == 1
+    bounded = json.loads(calls[1]["messages"][-1]["content"])
+    assert bounded["truncated"] and bounded["source"] == {"activationId": "activation-1", "callId": "large-report"}
+    assert "TAIL_VERIFIED" in calls[2]["messages"][-1]["content"]
+    assert store.tool_result_page(ctx(), activation_id="activation-1", call_id="large-report", offset=44000)["content"].endswith('TAIL_VERIFIED"}')
+
+
+def malformed_tool_events():
+    yield OpenAiCompatibleStreamEvent(event_type="tool_call_delta", tool_call_index=0,
+        tool_call_id="malformed", tool_name="create_ticket", arguments_delta='{"subject":"unfinished')
+    yield OpenAiCompatibleStreamEvent(event_type="finish_reason", finish_reason="length")
+
+
+@pytest.mark.parametrize("crash_after_arguments", [False, True])
+def test_malformed_tool_arguments_are_durable_repairable_and_never_execute(monkeypatch, crash_after_arguments):
+    store = sqlite_transcript_store()
+    descriptor = request_payload()["agent"]["tools"][0]
+    monkeypatch.setattr(control_plane, "authorize_resource", lambda *a: {"success": True, "result": {"descriptor": descriptor}})
+    writes = []
+    monkeypatch.setattr("agentyard_agent_runtime.tooling._call_connector_tool",
+        lambda *a, **kw: writes.append(1) or {"ticketId": "t-1", "status": "created"})
+    if crash_after_arguments:
+        append = store.append_pending_entries
+        def interrupted(context, entries):
+            if entries and entries[0].role == "tool":
+                raise RuntimeError("crash after recording malformed arguments")
+            append(context, entries)
+        monkeypatch.setattr(store, "append_pending_entries", interrupted)
+        model_script(monkeypatch, [malformed_tool_events()])
+        _, outcome, _ = run(store)
+        assert not outcome["success"] and not writes
+        monkeypatch.setattr(store, "append_pending_entries", append)
+    requests = model_script(monkeypatch, ([] if crash_after_arguments else [malformed_tool_events()]) + [
+        tool_events("create_ticket", {"subject": "valid correction"}, "valid"), finish_events("已处理。")])
+    _, outcome, _ = run(store)
+    assert outcome["success"] and writes == [1]
+    assert any("INVALID_TOOL_ARGUMENTS" in str(m.get("content")) for r in requests for m in r["messages"])
+    history = store.history(ctx())["entries"]
+    assert any(c["function"]["arguments"] == '{"subject":"unfinished' for e in history for c in e["message"].get("tool_calls", []))
+    with pytest.raises(ValueError, match="receipt is not available"):
+        store.tool_result_page(ctx(), activation_id="activation-1", call_id="malformed")
+
+
+def test_progress_only_stop_is_continued_until_real_work_and_explicit_finish(monkeypatch):
+    calls = model_script(monkeypatch, [text_events("我现在开始修订。"),
+        tool_events("task_command", {"taskId": "task-1", "expectedRevision": 1, "kind": "PUT_CONTEXT",
+            "data": {"kind": "ARTIFACT", "title": "修订稿", "body": {"markdown": "实际修订"}}}),
+        finish_events("修订稿已保存，请审阅。")])
+    writes = []
+    monkeypatch.setattr(control_plane, "invoke_tool", lambda *a: writes.append(a) or {"success": True, "result": {"revision": 2}})
+    frames, outcome, _ = run()
+    assert outcome["success"] and outcome["completion"] == "COMPLETED" and len(writes) == 1
+    assert "Execution is not complete" in calls[1]["messages"][-1]["content"]
+    assert outcome["replyMessage"]["blocks"] == [{"type": "TEXT", "text": "修订稿已保存，请审阅。"}]
+    assert "我现在开始" not in str([f.payload for f in frames if f.visibility == "CUSTOMER"])
+
+
+def test_rich_reply_and_model_echo_produce_only_one_customer_answer(monkeypatch):
+    model_script(monkeypatch, [tool_events("append_rich_text_block", {"content": "**已完成**"}),
+        text_events("已完成"), tool_events("activation_finish", {"status": "COMPLETED", "summary": "saved"}, "finish")])
+    frames, outcome, _ = run()
+    assert len(outcome["replyMessage"]["blocks"]) == 1
+    assert outcome["replyMessage"]["blocks"][0]["content"] == "**已完成**"
+    assert len([f for f in frames if f.kind == "REPLY_BLOCK_COMPLETED"]) == 1
+
+
+def test_explicit_result_already_sent_suppresses_automatic_reply_and_stream(monkeypatch):
+    payload = request_payload(); payload["context"]["replyRecipientId"] = "human-1"
+    model_script(monkeypatch, [tool_events("message_send", {"recipientId": "human-1", "kind": "RESULT", "body": {"text": "结果"}}), finish_events("再次复述结果")])
+    monkeypatch.setattr(control_plane, "invoke_tool", lambda *a: {"success": True, "result": {"id": "sent", "recipientId": "human-1", "kind": "RESULT"}})
+    frames, outcome, _ = run(payload=payload)
+    assert outcome["success"] and outcome["replyMessage"] is None
+    assert not any(f.visibility == "CUSTOMER" for f in frames)
+
+
+def test_wait_requires_concrete_dependency_and_stops_without_continuation(monkeypatch):
+    calls = model_script(monkeypatch, [tool_events("activation_finish", {"status": "WAITING", "summary": "need date"}, "invalid-wait"),
+        finish_events("请确认交付日期", status="WAITING", waitingFor="用户回答交付日期")])
+    _, outcome, _ = run()
+    assert outcome["success"] and outcome["completion"] == "WAITING" and not outcome["retryable"]
+    assert "waitingFor" in calls[1]["messages"][-1]["content"]
+
+
+def test_explicit_continuation_recovers_same_activation_without_repeating_tools(monkeypatch):
+    store = sqlite_transcript_store(); writes = []
+    monkeypatch.setattr(control_plane, "invoke_tool", lambda *a: writes.append(a) or {"success": True, "result": {"id": "saved"}})
+    model_script(monkeypatch, [tool_events("task_create", {"title": "work", "goal": "goal"}),
+        finish_events("", status="CONTINUE")])
+    _, first, _ = run(store)
+    assert not first["success"] and first["retryable"] and len(writes) == 1
+    first_usage = len(first["llmUsage"])
+    calls = model_script(monkeypatch, [finish_events("已完成后续部分")])
+    _, completed, _ = run(store)
+    assert completed["success"] and len(writes) == 1
+    assert len(completed["llmUsage"]) == first_usage + 1
+    assert any("saved" in str(m) for m in calls[0]["messages"])
+
+
+def test_slice_budget_resumes_after_last_round_instead_of_exhausting_forever(monkeypatch):
+    payload = request_payload(); payload["maxToolSteps"] = 1
+    model_script(monkeypatch, [tool_events("task_list", {}, "one"), tool_events("task_list", {}, "two")])
+    monkeypatch.setattr(control_plane, "invoke_tool", lambda *a: {"success": True, "result": []})
+    _, yielded, store = run(payload=payload)
+    assert yielded["retryable"]
+    model_script(monkeypatch, [finish_events("done")])
+    _, outcome, _ = run(store, payload)
+    assert outcome["success"] and len(outcome["llmUsage"]) == 3
+
+
+def test_uncertain_external_write_cannot_be_retried_under_new_call_id(monkeypatch):
+    store = sqlite_transcript_store(); writes = []
+    descriptor = request_payload()["agent"]["tools"][0]
+    monkeypatch.setattr(control_plane, "authorize_resource", lambda *a: {"success": True, "result": {"descriptor": descriptor}})
+    def uncertain(*a, **kw):
+        writes.append(1); raise ConnectionError("response lost after write")
+    monkeypatch.setattr("agentyard_agent_runtime.tooling._call_connector_tool", uncertain)
+    model_script(monkeypatch, [tool_events("create_ticket", {"subject": "support"})])
+    _, failed, _ = run(store)
+    assert failed["retryable"]
+    calls = model_script(monkeypatch, [tool_events("create_ticket", {"subject": "support"}, "new-call"),
+        finish_events("请先核对外部回执", status="BLOCKED")])
+    _, outcome, _ = run(store)
+    assert outcome["completion"] == "BLOCKED" and writes == [1]
+    assert "TOOL_OUTCOME_UNKNOWN" in calls[1]["messages"][-1]["content"]
+
+
+def test_finish_checkpoint_survives_crash_before_commit_without_another_model_call(monkeypatch):
+    store = sqlite_transcript_store(); commit = store.commit_success
+    monkeypatch.setattr(store, "commit_success", lambda *a: (_ for _ in ()).throw(ConnectionError("commit transport lost")))
+    model_script(monkeypatch, [finish_events("唯一的结果")])
+    _, failed, _ = run(store)
+    assert failed["retryable"]
+    monkeypatch.setattr(store, "commit_success", commit)
+    calls = model_script(monkeypatch, [])
+    _, outcome, _ = run(store)
+    assert outcome["success"] and not calls
+    assert outcome["replyMessage"]["blocks"][0]["text"] == "唯一的结果"
+
+
+def test_noncompliant_model_has_bounded_failure_not_false_success(monkeypatch):
+    calls = model_script(monkeypatch, [text_events("马上开始") for _ in range(3)])
+    frames, outcome, _ = run()
+    assert len(calls) == 3 and not outcome["success"] and not outcome["retryable"]
+    assert not any(f.visibility == "CUSTOMER" for f in frames)

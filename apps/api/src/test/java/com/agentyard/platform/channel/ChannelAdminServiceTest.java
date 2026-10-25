@@ -9,7 +9,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.agentyard.contracts.channel.ChannelContracts.ChannelAssistantBinding;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelEntryBinding;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelProfile;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelProfileStatus;
@@ -86,7 +86,7 @@ class ChannelAdminServiceTest {
             ChannelProfileStatus.ACTIVE,
             true,
             Map.of(),
-            new ChannelAssistantBinding("assistant-1", null),
+            new ChannelEntryBinding("assistant-1"),
             "integration-account-1",
             true,
             1,
@@ -100,7 +100,7 @@ class ChannelAdminServiceTest {
             ChannelProfileStatus.ACTIVE,
             true,
             Map.of(),
-            new ChannelAssistantBinding("assistant-1", null),
+            new ChannelEntryBinding("assistant-1"),
             "integration-account-1"
         ));
 
@@ -138,7 +138,7 @@ class ChannelAdminServiceTest {
             ChannelProfileStatus.ACTIVE,
             true,
             Map.of(),
-            null,
+            new ChannelEntryBinding("entry-1"),
             "integration-account-1"
         )));
         verifyNoInteractions(gatewayClient);

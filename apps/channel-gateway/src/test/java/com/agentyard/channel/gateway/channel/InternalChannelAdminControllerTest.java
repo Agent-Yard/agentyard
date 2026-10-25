@@ -162,7 +162,7 @@ class InternalChannelAdminControllerTest {
             .thenReturn(new ChannelTemplateBinding(
                 binding.id(),
                 binding.channelProfileId(),
-                binding.assistantId(),
+                binding.entryId(),
                 binding.messageType(),
                 binding.messageSubtype(),
                 binding.messageVersion(),

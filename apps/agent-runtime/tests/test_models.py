@@ -1,86 +1,12 @@
 import unittest
-
+import pytest
 from pydantic import ValidationError
 
-from agentyard_agent_runtime.models import AgentDecision, AgentTurnRequest, ToolDescriptor
+from agentyard_agent_runtime.models import ActivationRuntime, ActivationStart, ActivationOutcome, AgentProfile, ToolDescriptor, ToolRunNodeRequest
+from runtime_fixtures import request_payload, _retry_policy
 
 
-def _text_message_input(text: str) -> dict:
-    return {
-        "blocks": [{"type": "TEXT", "text": text}],
-        "metadata": {},
-    }
-
-
-class AgentDecisionModelTest(unittest.TestCase):
-    def test_run_playbook_requires_playbook_input(self) -> None:
-        with self.assertRaises(ValidationError):
-            AgentDecision.model_validate(
-                {
-                    "action": "RUN_PLAYBOOK",
-                    "playbookId": "pb-1",
-                }
-            )
-
-    def test_switch_owner_rejects_playbook_fields(self) -> None:
-        decision = AgentDecision.model_validate(
-            {
-                "action": "SWITCH_OWNER",
-                "targetAgentId": "agent-b",
-                "playbookInput": {"unexpected": True},
-            }
-        )
-        self.assertEqual(decision.action, "SWITCH_OWNER")
-        self.assertEqual(decision.playbookInput, {"unexpected": True})
-
-    def test_no_op_allows_empty_reply(self) -> None:
-        decision = AgentDecision.model_validate(
-            {
-                "action": "NO_OP",
-            }
-        )
-        self.assertEqual(decision.action, "NO_OP")
-
-    def test_rejects_removed_accompanying_message(self) -> None:
-        with self.assertRaises(ValidationError):
-            AgentDecision.model_validate(
-                {
-                    "action": "REPLY",
-                    "replyMessage": _text_message_input("hello"),
-                    "accompanyingMessage": _text_message_input("removed"),
-                }
-            )
-
-    def test_security_block_action_is_valid(self) -> None:
-        decision = AgentDecision.model_validate({"action": "SECURITY_BLOCK"})
-        self.assertEqual(decision.action, "SECURITY_BLOCK")
-
-    def test_human_handoff_operator_reason_is_trimmed_and_action_scoped(self) -> None:
-        decision = AgentDecision.model_validate(
-            {
-                "action": "SESSION_HUMAN_HANDOFF",
-                "operatorReason": "  billing escalation  ",
-            }
-        )
-        self.assertEqual("billing escalation", decision.operatorReason)
-
-        blank_reason = AgentDecision.model_validate(
-            {
-                "action": "SESSION_HUMAN_HANDOFF",
-                "operatorReason": "  ",
-            }
-        )
-        self.assertIsNone(blank_reason.operatorReason)
-
-        with self.assertRaises(ValidationError):
-            AgentDecision.model_validate(
-                {
-                    "action": "REPLY",
-                    "replyMessage": _text_message_input("hello"),
-                    "operatorReason": "billing escalation",
-                }
-            )
-
+class ConnectorModelTest(unittest.TestCase):
     def test_tool_connector_release_shape_reads_account_snapshot(self) -> None:
         tool = ToolDescriptor.model_validate(
             {
@@ -167,120 +93,39 @@ class AgentDecisionModelTest(unittest.TestCase):
                 }
             )
 
-    def test_agent_turn_request_accepts_delta_contract(self) -> None:
-        request = AgentTurnRequest.model_validate(
-            {
-                "sessionId": "session-1",
-                "turnId": "turn-1",
-                "turnExecutionId": "turn-1:exec-1",
-                "replyMessageId": "session-message-reply-1",
-                "ownershipEpoch": 1,
-                "assistantId": "assistant-1",
-                "assistantReleaseVersion": "1.0.0",
-                "currentOwner": _agent_config("agent-1"),
-                "availableAgents": [_agent_config("agent-1")],
-                "availablePlaybooks": [],
-                "sharedState": {},
-                "effectivePrivacyMappingEnabled": False,
-                "trigger": {
-                    "triggerType": "USER_MESSAGE",
-                    "turnId": "turn-1",
-                    "eventId": "event-1",
-                    "payload": {},
-                },
-                "messages": [_session_message("msg-1", 1, "turn-1", 0, "hello")],
-                "contextEntries": [
-                    {
-                        "entryId": "event-1",
-                        "entryType": "SESSION_EVENT",
-                        "revision": 1,
-                        "occurredAt": "2026-05-01T00:00:00Z",
-                        "data": {"eventType": "HUMAN_RESUME_RECEIVED"},
-                    }
-                ],
-                "transcriptBootstrap": True,
-            }
-        )
-
-        self.assertEqual("turn-1", request.turnId)
-        self.assertEqual("session-message-reply-1", request.replyMessageId)
-        self.assertEqual(["msg-1"], [message.messageId for message in request.messages])
-        self.assertEqual("SESSION_EVENT", request.contextEntries[0].entryType)
-        self.assertTrue(request.transcriptBootstrap)
-
-    def test_agent_turn_request_rejects_removed_recent_window_fields(self) -> None:
-        payload = {
-            "sessionId": "session-1",
-            "turnId": "turn-1",
-            "turnExecutionId": "turn-1:exec-1",
-            "replyMessageId": "session-message-reply-1",
-            "assistantId": "assistant-1",
-            "assistantReleaseVersion": "1.0.0",
-            "currentOwner": _agent_config("agent-1"),
-            "trigger": {
-                "triggerType": "USER_MESSAGE",
-                "eventId": "event-1",
-                "triggerMessageId": "msg-1",
-            },
-            "recentMessages": [_session_message("msg-1", 1, "turn-1", 0, "hello")],
-            "recentEvents": [],
-        }
-
-        with self.assertRaises(ValidationError) as failure:
-            AgentTurnRequest.model_validate(payload)
-
-        errors = failure.exception.errors()
-        self.assertTrue(any(error["loc"] == ("recentMessages",) and error["type"] == "extra_forbidden" for error in errors))
-        self.assertTrue(any(error["loc"] == ("recentEvents",) and error["type"] == "extra_forbidden" for error in errors))
-        self.assertTrue(
-            any(error["loc"] == ("trigger", "triggerMessageId") and error["type"] == "extra_forbidden" for error in errors)
-        )
 
 
-def _retry_policy() -> dict:
-    return {
-        "mode": "NONE",
-        "maxAttempts": 1,
-        "initialDelayMs": 0,
-        "maxDelayMs": 0,
-        "backoffMultiplier": 1.0,
-        "retryableCategories": [],
-        "retryableErrorCodes": [],
-    }
+@pytest.mark.parametrize("field", ["ownershipEpoch", "currentOwner", "assistantId", "assistantReleaseVersion", "taskExecutionId", "transcriptBootstrap"])
+def test_activation_rejects_removed_execution_dimensions(field):
+    payload = request_payload()
+    payload[field] = "forged"
+    with pytest.raises(ValidationError):
+        ActivationRuntime.model_validate(payload)
 
 
-def _agent_config(agent_id: str) -> dict:
-    return {
-        "agentId": agent_id,
-        "name": "Owner Agent",
-        "role": "support",
-        "responsibility": "Handle the session",
-    }
+def test_profile_is_configuration_and_has_no_instance_identity_or_permissions():
+    profile = request_payload()["agent"]
+    for field in ["agentId", "allowedActions", "switchableOwnerAgentIds", "canOwnSession"]:
+        with pytest.raises(ValidationError):
+            AgentProfile.model_validate({**profile, field: "forged"})
 
 
-def _session_message(message_id: str, sequence: int, turn_id: str, turn_index: int, text: str) -> dict:
-    return {
-        "messageId": message_id,
-        "sessionId": "session-1",
-        "sequence": sequence,
-        "turnId": turn_id,
-        "turnIndex": turn_index,
-        "producerType": "EXTERNAL",
-        "externalMessageId": None,
-        "clientMessageId": f"client-{message_id}",
-        "occurredAt": "2026-05-01T00:00:00Z",
-        "role": "USER",
-        "sender": {
-            "senderType": "CUSTOMER",
-            "senderId": "customer-1",
-            "senderName": "Customer",
-        },
-        "status": "SENT",
-        "blocks": [{"type": "TEXT", "text": text}],
-        "metadata": {},
-        "relatedPlaybookRunId": None,
-        "relatedOwnerAgentId": None,
-        "sourceEventId": None,
-        "createdAt": "2026-05-01T00:00:01Z",
-        "updatedAt": "2026-05-01T00:00:01Z",
-    }
+def test_activation_start_cannot_supply_forged_context():
+    with pytest.raises(ValidationError):
+        ActivationStart.model_validate({"activationId": "a", "context": {"admin": True}})
+
+
+def test_outcome_has_no_lifecycle_action_and_empty_memory_means_no_patch():
+    value = ActivationOutcome(success=True, completion="COMPLETED")
+    assert value.workMemory == {}
+    with pytest.raises(ValidationError):
+        ActivationOutcome(success=True, decision={"action": "SWITCH_OWNER"})
+    with pytest.raises(ValidationError):
+        ActivationOutcome(success=False)
+
+
+def test_tool_node_request_contains_no_caller_chosen_identity_or_profile():
+    value = {"toolRunId": "run-1", "nodeKey": "node", "executionId": "run:node:1", "input": {}}
+    assert ToolRunNodeRequest.model_validate(value).executionId == "run:node:1"
+    with pytest.raises(ValidationError):
+        ToolRunNodeRequest.model_validate({**value, "agent": {"name": "admin"}})

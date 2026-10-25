@@ -15,7 +15,7 @@ public class ChannelTemplateBindingResolver {
     }
 
     public Optional<ResolvedChannelTemplate> resolve(
-        String assistantId,
+        String entryId,
         String channelProfileId,
         String messageType,
         String messageSubtype,
@@ -23,7 +23,7 @@ public class ChannelTemplateBindingResolver {
     ) {
         ChannelTemplateBindingKey key = new ChannelTemplateBindingKey(
             requireText(channelProfileId, "channelProfileId"),
-            requireText(assistantId, "assistantId"),
+            requireText(entryId, "entryId"),
             requireText(messageType, "messageType"),
             requireText(messageSubtype, "messageSubtype"),
             requireText(messageVersion, "messageVersion")

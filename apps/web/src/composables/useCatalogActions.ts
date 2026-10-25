@@ -4,24 +4,14 @@ import { api } from '../services/api';
 import { pagePathByKey } from '../config/navigation';
 import { router } from '../router';
 import type {
-  CreateAssistantPayload,
-  CreateAgentPayload,
-  CreateDomainPayload,
   CreateKnowledgeBasePayload,
-  CreatePlaybookPayload,
   CreateResourcePayload,
   CreateResourceVersionPayload,
-  CreateScenarioPayload,
   DeletionImpactPreview,
   ReferenceObjectType,
-  UpdateAgentPayload,
-  UpdateAssistantPayload,
-  UpdateDomainPayload,
   UpdateKnowledgeBasePayload,
-  UpdatePlaybookPayload,
   UpdateResourcePayload,
   UpdateResourceVersionPayload,
-  UpdateScenarioPayload,
 } from '../types';
 
 interface CatalogActionState {
@@ -92,156 +82,6 @@ export function useCatalogActions(
       return;
     }
     resetDeletionPreview();
-  }
-
-  async function handleCreateAssistant(payload: CreateAssistantPayload) {
-    try {
-      await api.createAssistant(payload);
-      await refresh();
-      void message.success('助手已创建');
-    } catch (error) {
-      void message.error(errorMessage(error, '创建助手失败'));
-    }
-  }
-
-  async function handleCreateDomain(payload: CreateDomainPayload) {
-    try {
-      await api.createDomain(payload);
-      await refresh();
-      void message.success('业务域已创建');
-    } catch (error) {
-      void message.error(errorMessage(error, '创建业务域失败'));
-    }
-  }
-
-  async function handleUpdateDomain(payload: { domainId: string; data: UpdateDomainPayload }) {
-    try {
-      await api.updateDomain(payload.domainId, payload.data);
-      await refresh();
-      void message.success('业务域已更新');
-    } catch (error) {
-      void message.error(errorMessage(error, '更新业务域失败'));
-    }
-  }
-
-  async function handleDeleteDomain(domainId: string) {
-    await openDeletionPreview({
-      objectType: 'DOMAIN',
-      objectId: domainId,
-      successMessage: '业务域已删除',
-      failureMessage: '删除业务域失败',
-      execute: () => api.deleteDomain(domainId).then(() => undefined),
-    });
-  }
-
-  async function handleCreateScenario(payload: CreateScenarioPayload) {
-    try {
-      await api.createScenario(payload);
-      await refresh();
-      void message.success('业务场景已创建');
-    } catch (error) {
-      void message.error(errorMessage(error, '创建业务场景失败'));
-    }
-  }
-
-  async function handleUpdateScenario(payload: { scenarioId: string; data: UpdateScenarioPayload }) {
-    try {
-      await api.updateScenario(payload.scenarioId, payload.data);
-      await refresh();
-      void message.success('业务场景已更新');
-    } catch (error) {
-      void message.error(errorMessage(error, '更新业务场景失败'));
-    }
-  }
-
-  async function handleDeleteScenario(scenarioId: string) {
-    await openDeletionPreview({
-      objectType: 'SCENARIO',
-      objectId: scenarioId,
-      successMessage: '业务场景已删除',
-      failureMessage: '删除业务场景失败',
-      execute: () => api.deleteScenario(scenarioId).then(() => undefined),
-    });
-  }
-
-  async function handleUpdateAssistant(payload: { assistantId: string; data: UpdateAssistantPayload }) {
-    try {
-      await api.updateAssistant(payload.assistantId, payload.data);
-      await refresh();
-      void message.success('助手已更新');
-    } catch (error) {
-      void message.error(errorMessage(error, '更新助手失败'));
-    }
-  }
-
-  async function handleDeleteAssistant(assistantId: string) {
-    await openDeletionPreview({
-      objectType: 'ASSISTANT',
-      objectId: assistantId,
-      successMessage: '助手已删除',
-      failureMessage: '删除助手失败',
-      execute: () => api.deleteAssistant(assistantId).then(() => undefined),
-    });
-  }
-
-  async function handleCreateAgent(payload: CreateAgentPayload) {
-    try {
-      await api.createAgent(payload);
-      await refresh();
-      void message.success('智能体已创建');
-    } catch (error) {
-      void message.error(errorMessage(error, '创建智能体失败'));
-    }
-  }
-
-  async function handleDeleteAgent(agentId: string) {
-    await openDeletionPreview({
-      objectType: 'AGENT',
-      objectId: agentId,
-      successMessage: '智能体已删除',
-      failureMessage: '删除智能体失败',
-      execute: () => api.deleteAgent(agentId).then(() => undefined),
-    });
-  }
-
-  async function handleSaveAgent(payload: { agentId: string; agent: UpdateAgentPayload }) {
-    try {
-      await api.updateAgent(payload.agentId, payload.agent);
-      await refresh();
-      void message.success('智能体配置已保存');
-    } catch (error) {
-      void message.error(errorMessage(error, '保存智能体失败'));
-    }
-  }
-
-  async function handleCreatePlaybook(payload: CreatePlaybookPayload) {
-    try {
-      await api.createPlaybook(payload);
-      await refresh();
-      void message.success('Playbook 已创建');
-    } catch (error) {
-      void message.error(errorMessage(error, '创建 Playbook 失败'));
-    }
-  }
-
-  async function handleSavePlaybook(payload: { playbookId: string; playbook: UpdatePlaybookPayload }) {
-    try {
-      await api.updatePlaybook(payload.playbookId, payload.playbook);
-      await refresh();
-      void message.success('Playbook 已保存');
-    } catch (error) {
-      void message.error(errorMessage(error, '保存 Playbook 失败'));
-    }
-  }
-
-  async function handleDeletePlaybook(playbookId: string) {
-    await openDeletionPreview({
-      objectType: 'PLAYBOOK',
-      objectId: playbookId,
-      successMessage: 'Playbook 已删除',
-      failureMessage: '删除 Playbook 失败',
-      execute: () => api.deletePlaybook(playbookId).then(() => undefined),
-    });
   }
 
   async function handleCreateKnowledgeBase(payload: CreateKnowledgeBasePayload) {
@@ -372,21 +212,6 @@ export function useCatalogActions(
     deletionPreview,
     confirmDeletionPreview,
     closeDeletionPreview,
-    handleCreateAssistant,
-    handleCreateDomain,
-    handleUpdateDomain,
-    handleDeleteDomain,
-    handleCreateScenario,
-    handleUpdateScenario,
-    handleDeleteScenario,
-    handleUpdateAssistant,
-    handleDeleteAssistant,
-    handleCreateAgent,
-    handleDeleteAgent,
-    handleSaveAgent,
-    handleCreatePlaybook,
-    handleSavePlaybook,
-    handleDeletePlaybook,
     handleCreateKnowledgeBase,
     handleUpdateKnowledgeBase,
     handleDeleteKnowledgeBase,

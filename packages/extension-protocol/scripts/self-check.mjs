@@ -647,8 +647,8 @@ function checkExamples() {
     } else if (file.includes("extension-error.")) {
       validateExtensionErrorExample(file, example);
       count += 1;
-    } else if (file.includes("assistant-binding.")) {
-      assert(typeof example.assistantId === "string", `${relative(file)} must include assistantId`);
+    } else if (file.includes("entry-binding.")) {
+      assert(typeof example.entryId === "string", `${relative(file)} must include entryId`);
       count += 1;
     } else if (file.includes("schedule-config.")) {
       assert(["INTERVAL", "CRON", "MANUAL"].includes(example.scheduleType), `${relative(file)} invalid scheduleType`);

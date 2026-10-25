@@ -788,7 +788,7 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
             return new DraftUpdateKey(
                 frame.channelProfileId(),
                 frame.sessionId(),
-                textPayload(frame, "replyMessageId").orElse(null),
+                textPayload(frame, "messageId").orElse(null),
                 textPayload(frame, "blockId").orElse(null)
             );
         }
@@ -840,11 +840,11 @@ public final class FeishuGatewayNativeChannelProviderAdapter implements GatewayN
                 first.channelProfileId() + ":" + first.sessionId() + ":" + last.sourceSeq() + ":DRAFT_UPDATE:COALESCED",
                 first.channelProfileId(),
                 first.providerType(),
-                first.assistantId(),
+                first.entryId(),
                 first.externalConversationId(),
                 first.sessionId(),
-                last.turnId(),
-                last.turnExecutionId(),
+                last.sourceMessageId(),
+                last.activationId(),
                 last.sourceSeq(),
                 null,
                 ChannelOutboundFrameKind.DRAFT_UPDATE,

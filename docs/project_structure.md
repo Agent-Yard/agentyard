@@ -1,6 +1,6 @@
-# 仓库结构与改造范围
+# 仓库结构
 
-更新：2026-10-04。本文导航现有物理目录，不把当前配置层级当作目标对象模型。核心概念见[目标架构](architecture/agent-collaboration.md)，实际行为见[代码现状](architecture/code-framework.md)。
+更新：2026-10-05。本文导航当前物理目录和模块职责。核心概念见[目标架构](architecture/agent-collaboration.md)，实际行为见[代码现状](architecture/code-framework.md)。
 
 ## 1. Monorepo
 
@@ -16,7 +16,7 @@ apps/
   knowledge-service/    Python 知识导入、索引与检索
 packages/
   contracts/            OpenAPI 与共享 TypeScript 契约源码
-  contracts-jvm/        JVM 协作、Session、Playbook 和运行契约
+  contracts-jvm/        JVM Agent、Task、能力与流程运行契约
   extension-protocol/   扩展协议 OpenAPI、schema、样例、fixtures
   extension-sdk-jvm/    JVM 扩展协议 SDK
   extension-sdk-python/ Python 扩展协议 SDK
@@ -34,8 +34,8 @@ scripts/
   dev/                  开发服务器源码启动
 docs/
   README.md             文档入口与维护约定
-  architecture/         目标架构、代码现状、接入说明
-  todo/                 待实施工作包与验收计划
+  architecture/         架构、实现、验收基线与接入说明
+  todo/                 尚待实施的详细计划
   doing/                仅限当前执行记录，完成自查后清理
   develop_record/       历史记录；本轮不修改
 demo/                   演示素材，不作为代码或产品目标依据
@@ -56,19 +56,18 @@ gradle/wrapper/         Gradle wrapper
 
 ## 3. 从概念定位代码
 
-| 目标能力 | 现有主要入口 | 跨模块影响 |
-| --- | --- | --- |
-| 人与 Agent 实例身份、独立角色模板 | API catalog / task / security、contracts、persistence | 移除目录 Agent 充当运行主体；重构发布与资源归属 |
-| 持久 Session 与接待关系 | API session、Worker session、Runtime streaming / transcript_store | 生命周期、渠道路由、隐私、上下文分页和恢复 |
-| Agent 激活与后台运行 | API task dispatcher、Worker task / session、Runtime task_execution | 合并现有两条 Agent 路径，更新事件和测试 |
-| Task 共享信息与参与者决定 | API task、TaskStore、TaskContracts、Web Task 组件 | 内容版本、来源、成果引用、自然语言代理决定 |
-| 工具授权与委派 | API 授权/协作服务、Runtime tooling / tool_connectors | 内置工具、流程子工具、自动上下文读取和凭证使用 |
-| 消息、等待、唤醒 | API/Worker session、Channel Gateway、共享 Redis/持久层 | 持久投递、订阅、定时、SSE 和外部回调 |
-| 长运行流程工具 | Worker Playbook、SandboxGateway、Runtime tool task | ToolRun 关联、等待恢复、当前授权和结果回原实例 |
-| 日常入口与管理配置 | Web router / navigation / pages / services、Site | 持续交流首页，移除旧配置前置与“开始新工作”入口 |
-| 知识与资源 | Knowledge Service、API knowledge/catalog、Extension 协议 | 归属与权限更新，保持真实导入、读取和引用能力 |
-
-这是重构导航，不要求按概念新增同名模块或服务。具体类名可随目标调整；共享逻辑应进入适当共享模块，不复制多套路径。
+| 能力 | 当前代码入口 |
+| --- | --- |
+| 独立角色、版本和接待入口 | API `catalog`、`CatalogRuntimeMapper`、Web 管理页 |
+| 人和 Agent 实例身份 | API `agent` / `task`、`AgentContracts` / `TaskContracts` |
+| 持久实例和消息、定时、订阅 | `AgentService`、`AgentDispatcher`、`AgentStore` |
+| 模型运行与长上下文 | Worker `agent/ActivationWorkflowImpl`；Runtime `main.py`、`streaming.py`、`transcript_store.py` |
+| Task 共享信息与决定 | `CollaborationService`、`TaskCommandService`、`TaskStore` |
+| 授权与协作工具 | `AgentAuthorization`、`CapabilityAccess`、`AgentToolService`；Runtime `collaboration_tools.py`、`tooling.py` |
+| 流程、等待和外部回调 | `ToolRunService`、Worker `ToolRunWorkflowImpl` / `NodeActivitiesImpl`、`SandboxGateway` |
+| 日常交流 | Web `ReceptionPage.vue`、`services/agent.ts`，持久收件箱与SSE |
+| 渠道身份与交付 | API `channel`、Channel Gateway、Extension 协议/SDK |
+| 知识与外部资料 | Knowledge Service、API `knowledge`、Runtime 连接器和知识工具 |
 
 ## 4. 变更需要同步的材料
 
@@ -76,4 +75,4 @@ gradle/wrapper/         Gradle wrapper
 
 环境变量与服务职责变化同步根目录环境示例、启动脚本、deploy 模板和 CI。产品形态变化同步根 README、Site 与当前架构文档。
 
-详细工作顺序、模块清单和完成证据见[实施与验收计划](todo/agent-collaboration-refactor.md)。历史记录不承担新的规范职责。
+详细工作顺序、模块清单和完成证据见[实施与验收基线](architecture/collaboration-acceptance.md)。历史记录不承担新的规范职责。

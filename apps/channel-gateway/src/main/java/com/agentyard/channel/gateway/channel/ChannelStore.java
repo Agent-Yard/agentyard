@@ -2,7 +2,7 @@ package com.agentyard.channel.gateway.channel;
 
 import com.agentyard.channel.gateway.jooqsupport.JooqJsonbSupport;
 import com.agentyard.channel.gateway.jooqsupport.JooqTimeSupport;
-import com.agentyard.contracts.channel.ChannelContracts.ChannelAssistantBinding;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelEntryBinding;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelProfileStatus;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelConversationBinding;
@@ -88,7 +88,7 @@ final class ChannelStore {
             .set(CHANNEL_PROFILE.STATUS, profile.status().name())
             .set(CHANNEL_PROFILE.INBOUND_ENABLED, profile.inboundEnabled())
             .set(CHANNEL_PROFILE.CONFIG, jsonbSupport.toJsonb(profile.config() == null ? Map.of() : profile.config()))
-            .set(CHANNEL_PROFILE.ASSISTANT_BINDING, jsonbSupport.toJsonb(profile.assistantBinding() == null ? Map.of() : profile.assistantBinding()))
+            .set(CHANNEL_PROFILE.ENTRY_BINDING, jsonbSupport.toJsonb(profile.entryBinding() == null ? Map.of() : profile.entryBinding()))
             .set(CHANNEL_PROFILE.INTEGRATION_ACCOUNT_ID, profile.accountId())
             .set(CHANNEL_PROFILE.EXTERNAL_SECRET_REF, externalSecretRef)
             .set(CHANNEL_PROFILE.REVISION, profile.revision())
@@ -104,7 +104,7 @@ final class ChannelStore {
             .set(CHANNEL_PROFILE.STATUS, profile.status().name())
             .set(CHANNEL_PROFILE.INBOUND_ENABLED, profile.inboundEnabled())
             .set(CHANNEL_PROFILE.CONFIG, jsonbSupport.toJsonb(profile.config() == null ? Map.of() : profile.config()))
-            .set(CHANNEL_PROFILE.ASSISTANT_BINDING, jsonbSupport.toJsonb(profile.assistantBinding() == null ? Map.of() : profile.assistantBinding()))
+            .set(CHANNEL_PROFILE.ENTRY_BINDING, jsonbSupport.toJsonb(profile.entryBinding() == null ? Map.of() : profile.entryBinding()))
             .set(CHANNEL_PROFILE.INTEGRATION_ACCOUNT_ID, profile.accountId())
             .set(CHANNEL_PROFILE.EXTERNAL_SECRET_REF, externalSecretRef)
             .set(CHANNEL_PROFILE.REVISION, profile.revision())
@@ -153,8 +153,8 @@ final class ChannelStore {
                 CHANNEL_PROFILE.PROVIDER_TYPE,
                 CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID,
                 CHANNEL_CONVERSATION_BINDING.EXTERNAL_USER_ID,
-                CHANNEL_CONVERSATION_BINDING.ASSISTANT_ID,
-                CHANNEL_CONVERSATION_BINDING.CUSTOMER_ID,
+                CHANNEL_CONVERSATION_BINDING.ENTRY_ID,
+                CHANNEL_CONVERSATION_BINDING.PARTICIPANT_ID,
                 CHANNEL_CONVERSATION_BINDING.STATUS,
                 CHANNEL_PROFILE.STATUS,
                 CHANNEL_PROFILE.REVISION,
@@ -186,8 +186,8 @@ final class ChannelStore {
                 CHANNEL_PROFILE.PROVIDER_TYPE,
                 CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID,
                 CHANNEL_CONVERSATION_BINDING.EXTERNAL_USER_ID,
-                CHANNEL_CONVERSATION_BINDING.ASSISTANT_ID,
-                CHANNEL_CONVERSATION_BINDING.CUSTOMER_ID,
+                CHANNEL_CONVERSATION_BINDING.ENTRY_ID,
+                CHANNEL_CONVERSATION_BINDING.PARTICIPANT_ID,
                 CHANNEL_CONVERSATION_BINDING.STATUS,
                 CHANNEL_PROFILE.STATUS,
                 CHANNEL_PROFILE.REVISION,
@@ -205,11 +205,13 @@ final class ChannelStore {
 
     Optional<ChannelConversationBinding> findBindingByProfileAndExternalConversation(
         String channelProfileId,
-        String externalConversationId
+        String externalConversationId,
+        String externalUserId
     ) {
         return dsl.selectFrom(CHANNEL_CONVERSATION_BINDING)
             .where(CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID.eq(channelProfileId))
             .and(CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID.eq(externalConversationId))
+            .and(CHANNEL_CONVERSATION_BINDING.EXTERNAL_USER_ID.eq(externalUserId))
             .fetchOptional(this::mapBinding);
     }
 
@@ -230,8 +232,8 @@ final class ChannelStore {
                 CHANNEL_PROFILE.PROVIDER_TYPE,
                 CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID,
                 CHANNEL_CONVERSATION_BINDING.EXTERNAL_USER_ID,
-                CHANNEL_CONVERSATION_BINDING.ASSISTANT_ID,
-                CHANNEL_CONVERSATION_BINDING.CUSTOMER_ID,
+                CHANNEL_CONVERSATION_BINDING.ENTRY_ID,
+                CHANNEL_CONVERSATION_BINDING.PARTICIPANT_ID,
                 CHANNEL_CONVERSATION_BINDING.STATUS,
                 CHANNEL_PROFILE.STATUS,
                 CHANNEL_PROFILE.REVISION,
@@ -256,8 +258,8 @@ final class ChannelStore {
             .set(CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID, binding.channelProfileId())
             .set(CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID, binding.externalConversationId())
             .set(CHANNEL_CONVERSATION_BINDING.EXTERNAL_USER_ID, binding.externalUserId())
-            .set(CHANNEL_CONVERSATION_BINDING.ASSISTANT_ID, binding.assistantId())
-            .set(CHANNEL_CONVERSATION_BINDING.CUSTOMER_ID, binding.customerId())
+            .set(CHANNEL_CONVERSATION_BINDING.ENTRY_ID, binding.entryId())
+            .set(CHANNEL_CONVERSATION_BINDING.PARTICIPANT_ID, binding.participantId())
             .set(CHANNEL_CONVERSATION_BINDING.SESSION_ID, binding.sessionId())
             .set(CHANNEL_CONVERSATION_BINDING.STATUS, binding.status().name())
             .set(CHANNEL_CONVERSATION_BINDING.METADATA, jsonbSupport.toJsonb(binding.metadata() == null ? Map.of() : binding.metadata()))
@@ -268,8 +270,8 @@ final class ChannelStore {
             .set(CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID, binding.channelProfileId())
             .set(CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID, binding.externalConversationId())
             .set(CHANNEL_CONVERSATION_BINDING.EXTERNAL_USER_ID, binding.externalUserId())
-            .set(CHANNEL_CONVERSATION_BINDING.ASSISTANT_ID, binding.assistantId())
-            .set(CHANNEL_CONVERSATION_BINDING.CUSTOMER_ID, binding.customerId())
+            .set(CHANNEL_CONVERSATION_BINDING.ENTRY_ID, binding.entryId())
+            .set(CHANNEL_CONVERSATION_BINDING.PARTICIPANT_ID, binding.participantId())
             .set(CHANNEL_CONVERSATION_BINDING.SESSION_ID, binding.sessionId())
             .set(CHANNEL_CONVERSATION_BINDING.STATUS, binding.status().name())
             .set(CHANNEL_CONVERSATION_BINDING.METADATA, jsonbSupport.toJsonb(binding.metadata() == null ? Map.of() : binding.metadata()))
@@ -284,18 +286,19 @@ final class ChannelStore {
             .set(CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID, binding.channelProfileId())
             .set(CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID, binding.externalConversationId())
             .set(CHANNEL_CONVERSATION_BINDING.EXTERNAL_USER_ID, binding.externalUserId())
-            .set(CHANNEL_CONVERSATION_BINDING.ASSISTANT_ID, binding.assistantId())
-            .set(CHANNEL_CONVERSATION_BINDING.CUSTOMER_ID, binding.customerId())
+            .set(CHANNEL_CONVERSATION_BINDING.ENTRY_ID, binding.entryId())
+            .set(CHANNEL_CONVERSATION_BINDING.PARTICIPANT_ID, binding.participantId())
             .set(CHANNEL_CONVERSATION_BINDING.SESSION_ID, binding.sessionId())
             .set(CHANNEL_CONVERSATION_BINDING.STATUS, binding.status().name())
             .set(CHANNEL_CONVERSATION_BINDING.METADATA, jsonbSupport.toJsonb(binding.metadata() == null ? Map.of() : binding.metadata()))
             .set(CHANNEL_CONVERSATION_BINDING.CREATED_AT, JooqTimeSupport.toOffsetDateTime(binding.createdAt()))
             .set(CHANNEL_CONVERSATION_BINDING.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(binding.updatedAt()))
-            .onConflict(CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID, CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID)
+            .onConflict(CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID, CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID, CHANNEL_CONVERSATION_BINDING.EXTERNAL_USER_ID)
             .doUpdate()
             .set(CHANNEL_CONVERSATION_BINDING.EXTERNAL_USER_ID, binding.externalUserId())
-            .set(CHANNEL_CONVERSATION_BINDING.ASSISTANT_ID, binding.assistantId())
-            .set(CHANNEL_CONVERSATION_BINDING.CUSTOMER_ID, binding.customerId())
+            .set(CHANNEL_CONVERSATION_BINDING.ENTRY_ID, binding.entryId())
+            .set(CHANNEL_CONVERSATION_BINDING.PARTICIPANT_ID, binding.participantId())
+            .set(CHANNEL_CONVERSATION_BINDING.SESSION_ID, binding.sessionId())
             .set(CHANNEL_CONVERSATION_BINDING.STATUS, binding.status().name())
             .set(CHANNEL_CONVERSATION_BINDING.METADATA, jsonbSupport.toJsonb(binding.metadata() == null ? Map.of() : binding.metadata()))
             .set(CHANNEL_CONVERSATION_BINDING.UPDATED_AT, JooqTimeSupport.toOffsetDateTime(binding.updatedAt()))
@@ -600,7 +603,7 @@ final class ChannelStore {
             .where(CHANNEL_PROFILE_TEMPLATE_BINDING.CHANNEL_PROFILE_ID.eq(channelProfileId))
             .orderBy(
                 CHANNEL_PROFILE_TEMPLATE_BINDING.UPDATED_AT.desc(),
-                CHANNEL_PROFILE_TEMPLATE_BINDING.ASSISTANT_ID.asc(),
+                CHANNEL_PROFILE_TEMPLATE_BINDING.ENTRY_ID.asc(),
                 CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_TYPE.asc(),
                 CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_SUBTYPE.asc(),
                 CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_VERSION.asc()
@@ -611,7 +614,7 @@ final class ChannelStore {
     Optional<ChannelTemplateBinding> findTemplateBinding(ChannelTemplateBindingKey key) {
         return dsl.selectFrom(CHANNEL_PROFILE_TEMPLATE_BINDING)
             .where(CHANNEL_PROFILE_TEMPLATE_BINDING.CHANNEL_PROFILE_ID.eq(key.channelProfileId()))
-            .and(CHANNEL_PROFILE_TEMPLATE_BINDING.ASSISTANT_ID.eq(key.assistantId()))
+            .and(CHANNEL_PROFILE_TEMPLATE_BINDING.ENTRY_ID.eq(key.entryId()))
             .and(CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_TYPE.eq(key.messageType()))
             .and(CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_SUBTYPE.eq(key.messageSubtype()))
             .and(CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_VERSION.eq(key.messageVersion()))
@@ -622,7 +625,7 @@ final class ChannelStore {
         dsl.insertInto(CHANNEL_PROFILE_TEMPLATE_BINDING)
             .set(CHANNEL_PROFILE_TEMPLATE_BINDING.ID, binding.id())
             .set(CHANNEL_PROFILE_TEMPLATE_BINDING.CHANNEL_PROFILE_ID, binding.channelProfileId())
-            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.ASSISTANT_ID, binding.assistantId())
+            .set(CHANNEL_PROFILE_TEMPLATE_BINDING.ENTRY_ID, binding.entryId())
             .set(CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_TYPE, binding.messageType())
             .set(CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_SUBTYPE, binding.messageSubtype())
             .set(CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_VERSION, binding.messageVersion())
@@ -928,7 +931,7 @@ final class ChannelStore {
             ChannelProfileStatus.valueOf(record.get(CHANNEL_PROFILE.STATUS)),
             record.get(CHANNEL_PROFILE.INBOUND_ENABLED),
             jsonbSupport.readObjectMap(record.get(CHANNEL_PROFILE.CONFIG)),
-            readAssistantBinding(record),
+            readEntryBinding(record),
             record.get(CHANNEL_PROFILE.INTEGRATION_ACCOUNT_ID),
             externalSecretRef != null && !externalSecretRef.isBlank(),
             record.get(CHANNEL_PROFILE.REVISION),
@@ -941,14 +944,13 @@ final class ChannelStore {
         return DSL.field("{0}->>'scheduleType'", String.class, CHANNEL_PROFILE_JOB.SCHEDULE_CONFIG);
     }
 
-    private ChannelAssistantBinding readAssistantBinding(Record record) {
-        Map<String, Object> raw = jsonbSupport.readObjectMap(record.get(CHANNEL_PROFILE.ASSISTANT_BINDING));
+    private ChannelEntryBinding readEntryBinding(Record record) {
+        Map<String, Object> raw = jsonbSupport.readObjectMap(record.get(CHANNEL_PROFILE.ENTRY_BINDING));
         if (raw.isEmpty()) {
             return null;
         }
-        return new ChannelAssistantBinding(
-            raw.get("assistantId") instanceof String assistantId ? assistantId : null,
-            raw.get("scenarioId") instanceof String scenarioId ? scenarioId : null
+        return new ChannelEntryBinding(
+            raw.get("entryId") instanceof String entryId ? entryId : null
         );
     }
 
@@ -958,8 +960,8 @@ final class ChannelStore {
             record.get(CHANNEL_CONVERSATION_BINDING.CHANNEL_PROFILE_ID),
             record.get(CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID),
             record.get(CHANNEL_CONVERSATION_BINDING.EXTERNAL_USER_ID),
-            record.get(CHANNEL_CONVERSATION_BINDING.ASSISTANT_ID),
-            record.get(CHANNEL_CONVERSATION_BINDING.CUSTOMER_ID),
+            record.get(CHANNEL_CONVERSATION_BINDING.ENTRY_ID),
+            record.get(CHANNEL_CONVERSATION_BINDING.PARTICIPANT_ID),
             record.get(CHANNEL_CONVERSATION_BINDING.SESSION_ID),
             ChannelConversationBindingStatus.valueOf(record.get(CHANNEL_CONVERSATION_BINDING.STATUS)),
             jsonbSupport.readObjectMap(record.get(CHANNEL_CONVERSATION_BINDING.METADATA)),
@@ -980,8 +982,8 @@ final class ChannelStore {
             record.get(CHANNEL_PROFILE.PROVIDER_TYPE),
             record.get(CHANNEL_CONVERSATION_BINDING.EXTERNAL_CONVERSATION_ID),
             record.get(CHANNEL_CONVERSATION_BINDING.EXTERNAL_USER_ID),
-            record.get(CHANNEL_CONVERSATION_BINDING.ASSISTANT_ID),
-            record.get(CHANNEL_CONVERSATION_BINDING.CUSTOMER_ID),
+            record.get(CHANNEL_CONVERSATION_BINDING.ENTRY_ID),
+            record.get(CHANNEL_CONVERSATION_BINDING.PARTICIPANT_ID),
             record.get(CHANNEL_CONVERSATION_BINDING.STATUS),
             ChannelProfileStatus.valueOf(record.get(CHANNEL_PROFILE.STATUS)),
             record.get(CHANNEL_PROFILE.REVISION),
@@ -1110,7 +1112,7 @@ final class ChannelStore {
         return new ChannelTemplateBinding(
             record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.ID),
             record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.CHANNEL_PROFILE_ID),
-            record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.ASSISTANT_ID),
+            record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.ENTRY_ID),
             record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_TYPE),
             record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_SUBTYPE),
             record.get(CHANNEL_PROFILE_TEMPLATE_BINDING.MESSAGE_VERSION),

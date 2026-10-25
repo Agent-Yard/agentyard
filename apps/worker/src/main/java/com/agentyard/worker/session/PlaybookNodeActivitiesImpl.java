@@ -1,11 +1,16 @@
 package com.agentyard.worker.session;
 
-import com.agentyard.contracts.session.SessionContracts.PlaybookRunStatus;
-import com.agentyard.contracts.session.SessionContracts.PlaybookToolTaskRequest;
-import com.agentyard.contracts.session.SessionContracts.PlaybookToolTaskResult;
+import com.agentyard.contracts.runtime.RuntimeContracts.PlaybookRunStatus;
+import com.agentyard.contracts.agent.AgentContracts.*;
+import com.agentyard.contracts.runtime.RuntimeContracts.PlaybookNodeType;
+import com.agentyard.contracts.runtime.RuntimeContracts.PlaybookToolTaskResult;
 import com.agentyard.worker.runtime.SandboxGateway;
 import com.agentyard.worker.runtime.SandboxGateway.SandboxExecutionResult;
-import com.agentyard.worker.runtime.SessionAgentRuntimeGateway;
+import com.agentyard.worker.runtime.AgentRuntimeGateway;
+import com.agentyard.worker.runtime.ExecutionControlPlane;
+import com.agentyard.worker.runtime.ExecutionPaused;
+import com.agentyard.worker.runtime.WorkerHttpClient.WorkerHttpException;
+import com.agentyard.worker.runtime.WorkerHttpClient.WorkerTransportException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.springframework.stereotype.Component;
@@ -20,21 +25,33 @@ public class PlaybookNodeActivitiesImpl implements PlaybookNodeActivities {
     };
 
     private final SandboxGateway sandboxGateway;
-    private final SessionAgentRuntimeGateway runtimeGateway;
+    private final AgentRuntimeGateway runtimeGateway;
+    private final ExecutionControlPlane controlPlane;
     private final ObjectMapper objectMapper;
 
     public PlaybookNodeActivitiesImpl(
         SandboxGateway sandboxGateway,
-        SessionAgentRuntimeGateway runtimeGateway,
+        AgentRuntimeGateway runtimeGateway,
+        ExecutionControlPlane controlPlane,
         ObjectMapper objectMapper
     ) {
         this.sandboxGateway = sandboxGateway;
         this.runtimeGateway = runtimeGateway;
+        this.controlPlane = controlPlane;
         this.objectMapper = objectMapper;
     }
 
     @Override
-    public PlaybookNodeExecutionResult executeStep(PlaybookNodeExecutionRequest request) {
+    public PlaybookNodeExecutionResult executeStep(ToolRunNodeRequest request) {
+        try {
+            return executeAuthorizedStep(authorize(request, PlaybookNodeType.STEP));
+        } catch (RuntimeException error) {
+            ExecutionPaused.rethrowIfPaused(error);
+            return failed(error.getMessage() == null ? "playbook step authorization failed" : error.getMessage());
+        }
+    }
+
+    private PlaybookNodeExecutionResult executeAuthorizedStep(AuthorizedNode request) {
         String scriptRef = stringValue(request.scriptRef(), null);
         String scriptVersion = stringValue(request.scriptVersion(), null);
         if (scriptRef == null || scriptVersion == null) {
@@ -70,22 +87,10 @@ public class PlaybookNodeActivitiesImpl implements PlaybookNodeActivities {
     }
 
     @Override
-    public PlaybookNodeExecutionResult executeTool(PlaybookNodeExecutionRequest request) {
+    public PlaybookNodeExecutionResult executeTool(ToolRunNodeRequest request) {
         try {
-            PlaybookToolTaskResult result = runtimeGateway.executePlaybookToolTask(
-                new PlaybookToolTaskRequest(
-                    request.sessionId(),
-                    request.playbookRunId(),
-                    request.playbookId(),
-                    request.nodeKey(),
-                    request.nodeName(),
-                    request.ownerAgent(),
-                    request.toolId(),
-                    request.toolOperation(),
-                    request.input(),
-                    request.config()
-                )
-            );
+            authorize(request, PlaybookNodeType.TOOL_TASK);
+            PlaybookToolTaskResult result = runtimeGateway.executeToolNode(request);
             if (result.terminalStatus() == PlaybookRunStatus.CANCELLED) {
                 return failed("playbook tool task cannot emit CANCELLED directly");
             }
@@ -96,12 +101,17 @@ public class PlaybookNodeActivitiesImpl implements PlaybookNodeActivities {
                 result.failureReason()
             );
         } catch (RuntimeException error) {
+            ExecutionPaused.rethrowIfPaused(error);
+            if (error instanceof WorkerTransportException
+                || error instanceof WorkerHttpException http && http.statusCode() >= 500) {
+                throw error;
+            }
             return failed(error.getMessage() == null ? "playbook tool task failed" : error.getMessage());
         }
     }
 
     private PlaybookNodeExecutionResult normalizeStepResult(
-        PlaybookNodeExecutionRequest request,
+        AuthorizedNode request,
         Map<String, Object> result
     ) {
         Map<String, Object> statePatch = statePatchFromResult(request, result);
@@ -121,7 +131,7 @@ public class PlaybookNodeActivitiesImpl implements PlaybookNodeActivities {
     }
 
     private Map<String, Object> statePatchFromResult(
-        PlaybookNodeExecutionRequest request,
+        AuthorizedNode request,
         Map<String, Object> result
     ) {
         Object explicitPatch = result.get("statePatch");
@@ -135,7 +145,7 @@ public class PlaybookNodeActivitiesImpl implements PlaybookNodeActivities {
         return result;
     }
 
-    private Map<String, Object> resolveVersionedScriptConfig(PlaybookNodeExecutionRequest request) {
+    private Map<String, Object> resolveVersionedScriptConfig(AuthorizedNode request) {
         Object rawScriptVersions = request.config().get("scriptVersions");
         if (!(rawScriptVersions instanceof Map<?, ?> scriptVersions)) {
             throw new IllegalStateException("playbook step config.scriptVersions must be an object");
@@ -149,7 +159,7 @@ public class PlaybookNodeActivitiesImpl implements PlaybookNodeActivities {
         return toStringObjectMap(versionConfig);
     }
 
-    private String buildPythonScript(PlaybookNodeExecutionRequest request, Map<String, Object> scriptConfig, String code) {
+    private String buildPythonScript(AuthorizedNode request, Map<String, Object> scriptConfig, String code) {
         return """
             import json
             input_data = json.loads(%s)
@@ -171,7 +181,7 @@ public class PlaybookNodeActivitiesImpl implements PlaybookNodeActivities {
         );
     }
 
-    private String buildNodeScript(PlaybookNodeExecutionRequest request, Map<String, Object> scriptConfig, String code) {
+    private String buildNodeScript(AuthorizedNode request, Map<String, Object> scriptConfig, String code) {
         return """
             const inputData = JSON.parse(%s);
             const nodeConfig = JSON.parse(%s);
@@ -274,4 +284,19 @@ public class PlaybookNodeActivitiesImpl implements PlaybookNodeActivities {
         }
         return fallback;
     }
+
+    private AuthorizedNode authorize(ToolRunNodeRequest request, PlaybookNodeType expectedType) {
+        ToolRunRuntime runtime = controlPlane.authorizeNode(request.toolRunId(), request.nodeKey(), request.executionId());
+        if (runtime == null || !request.toolRunId().equals(runtime.run().id())
+            || runtime.run().status() != ToolRunStatus.RUNNING) {
+            throw new IllegalStateException("tool invocation is not running");
+        }
+        var node = new PlaybookDefinition(runtime.playbook()).requireNode(request.nodeKey());
+        if (node.nodeType() != expectedType) {
+            throw new IllegalStateException("tool node does not match its authorized definition");
+        }
+        return new AuthorizedNode(node.scriptRef(), node.scriptVersion(), request.input(), node.config());
+    }
+
+    private record AuthorizedNode(String scriptRef, String scriptVersion, Map<String, Object> input, Map<String, Object> config) {}
 }

@@ -91,14 +91,15 @@ public final class TaskStore {
         var r = lock ? query.forUpdate().fetchOne() : query.fetchOne();
         return r == null ? Optional.empty() : Optional.of(new Task(r.getId(), r.getOrganizationId(), r.getTitle(), r.getGoal(),
             TaskStatus.valueOf(r.getStatus()), r.getStage(), r.getRevision(), r.getContentRevision(), json.readObjectMap(r.getAttributes()),
-            json.read(r.getPolicy(), Policy.class), r.getCreatedBy(), r.getSubmittedBy(), toInstant(r.getCreatedAt()), toInstant(r.getUpdatedAt())));
+            json.read(r.getPolicy(), Policy.class), r.getInitiatedBy(), r.getCreatedBy(), r.getConfirmerId(), r.getSubmittedBy(), toInstant(r.getCreatedAt()), toInstant(r.getUpdatedAt())));
     }
-    public List<Task> tasks(String actorId, String beforeId, TaskStatus status, String organizationId, int limit) {
+    public List<Task> tasks(String actorId, String beforeId, TaskStatus status, String organizationId, String query, int limit) {
         var t = COLLABORATION_TASK; var p = COLLABORATION_PARTICIPANT;
         Condition condition = t.ID.in(db.select(p.TASK_ID).from(p).where(p.ACTOR_ID.eq(actorId)));
         if (beforeId != null) condition = condition.and(t.ID.lt(beforeId));
         if (status != null) condition = condition.and(t.STATUS.eq(status.name()));
         if (organizationId != null) condition = condition.and(t.ORGANIZATION_ID.eq(organizationId));
+        if (query != null && !query.isBlank()) condition=condition.and(t.TITLE.containsIgnoreCase(query).or(t.GOAL.containsIgnoreCase(query)));
         return db.select(t.ID).from(t).where(condition).orderBy(t.ID.desc()).limit(limit).fetch(t.ID).stream()
             .map(id -> task(id, false).orElseThrow()).toList();
     }
@@ -107,10 +108,11 @@ public final class TaskStore {
         db.insertInto(t).set(t.ID, task.id()).set(t.ORGANIZATION_ID, task.organizationId()).set(t.TITLE, task.title()).set(t.GOAL, task.goal())
             .set(t.STATUS, task.status().name()).set(t.STAGE, task.stage()).set(t.REVISION, task.revision()).set(t.CONTENT_REVISION, task.contentRevision())
             .set(t.ATTRIBUTES, json.toJsonb(task.attributes())).set(t.POLICY, json.toJsonb(task.policy())).set(t.CREATED_BY, task.createdBy())
+            .set(t.INITIATED_BY, task.initiatedBy()).set(t.CONFIRMER_ID, task.confirmerId())
             .set(t.SUBMITTED_BY, task.submittedBy()).set(t.CREATED_AT, toOffsetDateTime(task.createdAt())).set(t.UPDATED_AT, toOffsetDateTime(task.updatedAt()))
             .onConflict(t.ID).doUpdate().set(t.TITLE, task.title()).set(t.GOAL, task.goal()).set(t.STATUS, task.status().name()).set(t.STAGE, task.stage())
             .set(t.REVISION, task.revision()).set(t.CONTENT_REVISION, task.contentRevision()).set(t.ATTRIBUTES, json.toJsonb(task.attributes()))
-            .set(t.POLICY, json.toJsonb(task.policy())).set(t.SUBMITTED_BY, task.submittedBy()).set(t.UPDATED_AT, toOffsetDateTime(task.updatedAt())).execute();
+            .set(t.POLICY, json.toJsonb(task.policy())).set(t.CONFIRMER_ID, task.confirmerId()).set(t.SUBMITTED_BY, task.submittedBy()).set(t.UPDATED_AT, toOffsetDateTime(task.updatedAt())).execute();
     }
     public List<Participant> participants(String taskId) {
         var t = COLLABORATION_PARTICIPANT;
@@ -151,6 +153,11 @@ public final class TaskStore {
         return db.select(t.SNAPSHOT).from(t).where(t.ENTRY_ID.eq(entryId)).orderBy(t.REVISION.desc()).limit(limit)
             .fetch(r -> json.read(r.value1(), ContextEntry.class));
     }
+    public Optional<ContextEntry> version(String entryId,long revision) {
+        var t=COLLABORATION_CONTEXT_VERSION;
+        return db.select(t.SNAPSHOT).from(t).where(t.ENTRY_ID.eq(entryId).and(t.REVISION.eq(revision)))
+            .fetchOptional(r->json.read(r.value1(),ContextEntry.class));
+    }
     public List<Relation> relations(String taskId) {
         var t = COLLABORATION_TASK_RELATION;
         return db.selectFrom(t).where(t.TASK_ID.eq(taskId)).orderBy(t.RELATED_TASK_ID).fetch(r -> new Relation(r.getTaskId(), r.getRelatedTaskId(), RelationKind.valueOf(r.getKind())));
@@ -177,11 +184,13 @@ public final class TaskStore {
         var t = COLLABORATION_TASK_SESSION;
         return db.select(t.TASK_ID).from(t).where(t.SESSION_ID.eq(sessionId).and(t.ACTOR_ID.eq(actorId))).orderBy(t.TASK_ID).fetch(t.TASK_ID);
     }
-    public Optional<String> sessionCustomer(String sessionId) {
-        return db.select(SESSION_RUNTIME_SESSION.CUSTOMER_ID).from(SESSION_RUNTIME_SESSION).where(SESSION_RUNTIME_SESSION.ID.eq(sessionId)).fetchOptional(SESSION_RUNTIME_SESSION.CUSTOMER_ID);
+    public List<String> sessionsForParticipant(String sessionId) {
+        var t = COLLABORATION_TASK_SESSION;
+        return db.select(t.TASK_ID).from(t).where(t.SESSION_ID.eq(sessionId)).orderBy(t.TASK_ID).fetch(t.TASK_ID);
     }
-    public Optional<String> sessionOwner(String sessionId) {
-        return db.select(SESSION_RUNTIME_SESSION.CURRENT_OWNER_AGENT_ID).from(SESSION_RUNTIME_SESSION).where(SESSION_RUNTIME_SESSION.ID.eq(sessionId)).fetchOptional(SESSION_RUNTIME_SESSION.CURRENT_OWNER_AGENT_ID);
+    public Optional<String> sessionParticipant(String sessionId) {
+        return db.select(AGENT_SESSION.PARTICIPANT_ID).from(AGENT_SESSION)
+            .where(AGENT_SESSION.ID.eq(sessionId)).fetchOptional(AGENT_SESSION.PARTICIPANT_ID);
     }
     public void session(SessionLink link, boolean remove) {
         var t = COLLABORATION_TASK_SESSION;
@@ -210,75 +219,36 @@ public final class TaskStore {
         var t = COLLABORATION_TASK_COMMAND;
         db.insertInto(t).set(t.TASK_ID, taskId).set(t.ACTOR_ID, actorId).set(t.REQUEST_ID, requestId).set(t.DIGEST, digest).set(t.RESULT, json.toJsonb(result)).execute();
     }
-    public List<Review> reviews(String taskId) {
-        var t = COLLABORATION_TASK_REVIEW;
-        return db.selectFrom(t).where(t.TASK_ID.eq(taskId)).orderBy(t.CONTENT_REVISION.desc(), t.ACTOR_ID)
-            .fetch(r -> new Review(r.getTaskId(), r.getContentRevision(), r.getActorId(), r.getApproved(), r.getComment(), toInstant(r.getCreatedAt())));
+    public List<Decision> decisions(String taskId) {
+        return decisions(taskId,null,200).reversed();
     }
-    public void review(Review review) {
-        var t = COLLABORATION_TASK_REVIEW;
-        db.insertInto(t).set(t.TASK_ID, review.taskId()).set(t.CONTENT_REVISION, review.contentRevision()).set(t.ACTOR_ID, review.actorId())
-            .set(t.APPROVED, review.approved()).set(t.COMMENT, review.comment()).set(t.CREATED_AT, toOffsetDateTime(review.createdAt()))
-            .onConflict(t.TASK_ID, t.CONTENT_REVISION, t.ACTOR_ID).doUpdate().set(t.APPROVED, review.approved()).set(t.COMMENT, review.comment())
-            .set(t.CREATED_AT, toOffsetDateTime(review.createdAt())).execute();
+    public List<Decision> decisions(String taskId,String cursor,int limit) {
+        var t = COLLABORATION_DECISION;
+        var condition=t.TASK_ID.eq(taskId);
+        if(cursor!=null) {
+            var previous=db.selectFrom(t).where(t.ID.eq(cursor).and(t.TASK_ID.eq(taskId))).fetchOptional()
+                .orElseThrow(()->new IllegalArgumentException("invalid decision cursor"));
+            condition=condition.and(DSL.row(t.CREATED_AT,t.ID).lt(DSL.row(previous.getCreatedAt(),previous.getId())));
+        }
+        return db.selectFrom(t).where(condition).orderBy(t.CREATED_AT.desc(),t.ID.desc()).limit(limit)
+            .fetch(r -> new Decision(r.getId(), r.getTaskId(), r.getContentRevision(), DecisionKind.valueOf(r.getKind()),
+                r.getDecidedBy(), r.getExecutedBy(), r.getSourceMessageId(), r.getComment(), toInstant(r.getCreatedAt())));
     }
-    public Optional<Execution> execution(String id) {
-        var t = COLLABORATION_EXECUTION;
-        return db.selectFrom(t).where(t.ID.eq(id)).fetchOptional(r -> new Execution(r.getId(), r.getTaskId(), r.getActorId(), r.getRequestedBy(),
-            ExecutionKind.valueOf(r.getKind()), ExecutionStatus.valueOf(r.getStatus()), r.getInstruction(), json.readObjectMap(r.getInput()),
-            json.readObjectMap(r.getResult()), json.readObjectMap(r.getWaiting()), r.getFailureReason(), toInstant(r.getCreatedAt()), toInstant(r.getUpdatedAt())));
+    public void decision(Decision decision) {
+        var t = COLLABORATION_DECISION;
+        db.insertInto(t).set(t.ID,decision.id()).set(t.TASK_ID,decision.taskId())
+            .set(t.CONTENT_REVISION,decision.contentRevision()).set(t.KIND,decision.kind().name())
+            .set(t.DECIDED_BY,decision.decidedBy()).set(t.EXECUTED_BY,decision.executedBy())
+            .set(t.SOURCE_MESSAGE_ID,decision.sourceMessageId()).set(t.COMMENT,decision.comment())
+            .set(t.CREATED_AT,toOffsetDateTime(decision.createdAt())).execute();
     }
-    public RuntimeSnapshot runtime(String executionId) {
-        var t = COLLABORATION_EXECUTION;
-        return db.select(t.RUNTIME_SNAPSHOT).from(t).where(t.ID.eq(executionId)).fetchOptional(r -> json.read(r.value1(), RuntimeSnapshot.class)).orElseThrow();
+    public void publish(String taskId, String kind, String actorId, Map<String,Object> payload) {
+        var t = COLLABORATION_EVENT_OUTBOX;
+        db.insertInto(t).set(t.ID,java.util.UUID.randomUUID().toString()).set(t.SCOPE_KIND,"TASK")
+            .set(t.SCOPE_ID,taskId).set(t.KIND,kind).set(t.ACTOR_ID,actorId).set(t.PAYLOAD,json.toJsonb(payload))
+            .set(t.CREATED_AT,toOffsetDateTime(Instant.now())).execute();
     }
-    public List<Execution> executions(String taskId) {
-        var t = COLLABORATION_EXECUTION;
-        return db.select(t.ID).from(t).where(t.TASK_ID.eq(taskId)).orderBy(t.CREATED_AT.desc()).fetch(t.ID).stream().map(id -> execution(id).orElseThrow()).toList();
-    }
-    public void createExecution(Execution e, RuntimeSnapshot runtime) {
-        var t = COLLABORATION_EXECUTION;
-        db.insertInto(t).set(t.ID, e.id()).set(t.TASK_ID, e.taskId()).set(t.ACTOR_ID, e.actorId()).set(t.REQUESTED_BY, e.requestedBy())
-            .set(t.KIND, e.kind().name()).set(t.STATUS, e.status().name()).set(t.INSTRUCTION, e.instruction()).set(t.INPUT, json.toJsonb(e.input()))
-            .set(t.RUNTIME_SNAPSHOT, json.toJsonb(runtime)).set(t.RESULT, json.toJsonb(e.result())).set(t.WAITING, json.toJsonb(e.waiting()))
-            .set(t.CREATED_AT, toOffsetDateTime(e.createdAt())).set(t.UPDATED_AT, toOffsetDateTime(e.updatedAt())).execute();
-    }
-    public void progress(String executionId, ExecutionProgress progress) {
-        var t = COLLABORATION_EXECUTION;
-        db.update(t).set(t.STATUS, progress.status().name()).set(t.RESULT, json.toJsonb(progress.result())).set(t.WAITING, json.toJsonb(progress.waiting()))
-            .set(t.FAILURE_REASON, progress.failureReason()).set(t.UPDATED_AT, toOffsetDateTime(Instant.now())).where(t.ID.eq(executionId)).execute();
-    }
-    public List<String> pendingExecutions() {
-        var t = COLLABORATION_EXECUTION;
-        return db.select(t.ID).from(t).where(t.DISPATCHED_AT.isNull().and(t.STATUS.eq("QUEUED"))).orderBy(t.CREATED_AT).limit(50).fetch(t.ID);
-    }
-    public List<String> cancelledExecutions() {
-        var t = COLLABORATION_EXECUTION;
-        return db.select(t.ID).from(t).where(t.STATUS.eq("CANCELLED").and(t.DISPATCHED_AT.isNotNull())).orderBy(t.UPDATED_AT).limit(50).fetch(t.ID);
-    }
-    public void dispatched(String id, boolean value) {
-        var t = COLLABORATION_EXECUTION;
-        db.update(t).set(t.DISPATCHED_AT, value ? toOffsetDateTime(Instant.now()) : null).where(t.ID.eq(id)).execute();
-    }
-    public void signal(String executionId, ResumeSignal signal) {
-        var t = COLLABORATION_EXECUTION_SIGNAL;
-        db.insertInto(t).set(t.ID, signal.signalId()).set(t.EXECUTION_ID, executionId).set(t.ACTOR_ID, signal.actorId())
-            .set(t.WAITING_ID, signal.waitingId()).set(t.PAYLOAD, json.toJsonb(signal.payload())).set(t.CREATED_AT, toOffsetDateTime(Instant.now())).execute();
-    }
-    public boolean hasSignal(String executionId, String waitingId) {
-        var t = COLLABORATION_EXECUTION_SIGNAL;
-        return db.fetchExists(db.selectOne().from(t).where(t.EXECUTION_ID.eq(executionId).and(t.WAITING_ID.eq(waitingId))));
-    }
-    public record PendingSignal(String executionId, ResumeSignal signal) {}
-    public List<PendingSignal> pendingSignals() {
-        var t = COLLABORATION_EXECUTION_SIGNAL;
-        return db.selectFrom(t).where(t.DELIVERED_AT.isNull()).orderBy(t.CREATED_AT).limit(50).fetch(r -> new PendingSignal(r.getExecutionId(),
-            new ResumeSignal(r.getId(), r.getWaitingId(), r.getActorId(), json.readObjectMap(r.getPayload()))));
-    }
-    public void signalDelivered(String id) {
-        var t = COLLABORATION_EXECUTION_SIGNAL;
-        db.update(t).set(t.DELIVERED_AT, toOffsetDateTime(Instant.now())).where(t.ID.eq(id)).execute();
-    }
+    public DSLContext database() { return db; }
     private Condition visible(Field<JSONB> field, Set<String> roles) {
         return DSL.condition("jsonb_array_length({0}) = 0 or jsonb_exists_any({0}, {1})", field, DSL.val(roles.toArray(String[]::new)));
     }

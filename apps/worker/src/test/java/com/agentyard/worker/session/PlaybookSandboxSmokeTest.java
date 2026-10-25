@@ -2,10 +2,13 @@ package com.agentyard.worker.session;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
-import com.agentyard.contracts.session.SessionContracts.PlaybookRunStatus;
+import com.agentyard.contracts.runtime.RuntimeContracts.PlaybookRunStatus;
 import com.agentyard.worker.runtime.SandboxGateway;
-import com.agentyard.worker.runtime.SessionAgentRuntimeGateway;
+import com.agentyard.worker.runtime.AgentRuntimeGateway;
+import com.agentyard.worker.runtime.ExecutionControlPlane;
+import com.agentyard.contracts.agent.AgentContracts.ToolRunNodeRequest;
 import java.util.Map;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -15,9 +18,11 @@ import tools.jackson.databind.ObjectMapper;
 @EnabledIfEnvironmentVariable(named = "AGENTYARD_SANDBOX_SMOKE_URL", matches = ".+")
 class PlaybookSandboxSmokeTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ExecutionControlPlane control = mock(ExecutionControlPlane.class);
     private final PlaybookNodeActivitiesImpl activities = new PlaybookNodeActivitiesImpl(
         new SandboxGateway.HttpSandboxGateway(System.getenv("AGENTYARD_SANDBOX_SMOKE_URL"), objectMapper),
-        mock(SessionAgentRuntimeGateway.class),
+        mock(AgentRuntimeGateway.class),
+        control,
         objectMapper
     );
 
@@ -58,12 +63,11 @@ class PlaybookSandboxSmokeTest {
         assertThat(result.statePatch()).isEmpty();
     }
 
-    private PlaybookNodeActivities.PlaybookNodeExecutionRequest request(String runtime, String code) {
-        return new PlaybookNodeActivities.PlaybookNodeExecutionRequest(
-            "sandbox-smoke-session", "sandbox-smoke-run", "refund", "normalize", "Normalize refund",
-            null, "refund.normalize", "2026.10.04", null, null,
-            Map.of("amount", 21, "label", "退款审核"),
-            Map.of("scriptVersions", Map.of("2026.10.04", Map.of("runtime", runtime, "code", code)))
-        );
+    private ToolRunNodeRequest request(String runtime, String code) {
+        var node = ToolRunFixtures.script("normalize", "refund.normalize", "2026.10.04",
+            Map.of("scriptVersions", Map.of("2026.10.04", Map.of("runtime", runtime, "code", code))));
+        when(control.authorizeNode("run-1", "normalize", "run-1:normalize:1"))
+            .thenReturn(ToolRunFixtures.runtime(ToolRunFixtures.flow(node)));
+        return new ToolRunNodeRequest("run-1", "normalize", "run-1:normalize:1", Map.of("amount", 21, "label", "退款审核"));
     }
 }

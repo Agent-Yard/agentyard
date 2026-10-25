@@ -2,13 +2,13 @@
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { message } from 'ant-design-vue';
 import { useRouter } from 'vue-router';
+import { api } from '../services/api';
 import { pageMeta } from '../config/navigation';
 import type {
-  Assistant,
+  Playbook,
   PlaybookEdge,
   PlaybookExecutionPolicy,
   PlaybookNodeType,
-  UpdatePlaybookPayload,
 } from '../types';
 import {
   createEdgeDraft,
@@ -22,17 +22,13 @@ import {
 } from './playbookEditor';
 
 const props = defineProps<{
-  assistants: Assistant[];
+  playbooks: Playbook[];
   catalogRevision: number;
   canManageGovernance: boolean;
-  preferredAssistantId?: string | null;
   preferredPlaybookId?: string | null;
 }>();
 
-const emit = defineEmits<{
-  savePlaybook: [payload: { playbookId: string; playbook: UpdatePlaybookPayload }];
-  deletePlaybook: [playbookId: string];
-}>();
+const emit = defineEmits<{ refreshCatalog: [] }>();
 
 const router = useRouter();
 
@@ -67,7 +63,6 @@ const nodeTypeLabel: Record<PlaybookNodeType, string> = {
   END: 'END',
 };
 
-const selectedAssistantId = ref('');
 const selectedPlaybookId = ref('');
 const importModalOpen = ref(false);
 const exportModalOpen = ref(false);
@@ -107,20 +102,12 @@ const viewport = reactive({
   y: 36,
 });
 
-const currentAssistant = computed(() =>
-  props.assistants.find((item) => item.id === selectedAssistantId.value) ?? props.assistants[0] ?? null,
-);
-const assistantPlaybooks = computed(() => currentAssistant.value?.playbooks ?? []);
-const assistantOptions = computed(() => props.assistants.map((item) => ({ label: item.name, value: item.id })));
-const playbookOptions = computed(() =>
-  assistantPlaybooks.value.map((item) => ({
-    label: `${item.name} · ${item.nodes.length} 节点`,
-    value: item.id,
-  })),
-);
-const currentPlaybook = computed(() =>
-  assistantPlaybooks.value.find((item) => item.id === selectedPlaybookId.value) ?? assistantPlaybooks.value[0] ?? null,
-);
+const playbookOptions = computed(() => props.playbooks.map(item => ({label:item.name, value:item.id})));
+const currentPlaybook = computed(() => {
+  const item = props.playbooks.find(item => item.id === selectedPlaybookId.value) ?? props.playbooks[0];
+  const version = item?.latestVersion ?? item?.effectiveVersion;
+  return item && version ? {...item, ...version.definition, sourceVersion:version} : null;
+});
 const selectedNode = computed(() => draftNodes.value.find((item) => item.nodeKey === selectedNodeKey.value) ?? null);
 const selectedEdge = computed(() => draftEdges.value.find((item) => item.edgeKey === selectedEdgeKey.value) ?? null);
 const nodeOptions = computed(() => draftNodes.value.map((node) => ({ label: `${node.nodeName} · ${node.nodeKey}`, value: node.nodeKey })));
@@ -172,41 +159,10 @@ const renderedEdges = computed(() => {
     .filter((item): item is NonNullable<typeof item> => item !== null);
 });
 
-watch(
-  () => props.assistants,
-  (assistants) => {
-    if (!assistants.length) {
-      selectedAssistantId.value = '';
-      return;
-    }
-    if (props.preferredAssistantId && assistants.some((item) => item.id === props.preferredAssistantId)) {
-      selectedAssistantId.value = props.preferredAssistantId;
-      return;
-    }
-    if (!assistants.some((item) => item.id === selectedAssistantId.value)) {
-      selectedAssistantId.value = assistants[0].id;
-    }
-  },
-  { immediate: true },
-);
-
-watch(
-  currentAssistant,
-  (assistant) => {
-    if (!assistant) {
-      selectedPlaybookId.value = '';
-      return;
-    }
-    if (props.preferredPlaybookId && assistant.playbooks.some((item) => item.id === props.preferredPlaybookId)) {
-      selectedPlaybookId.value = props.preferredPlaybookId;
-      return;
-    }
-    if (!assistant.playbooks.some((item) => item.id === selectedPlaybookId.value)) {
-      selectedPlaybookId.value = assistant.playbooks[0]?.id ?? '';
-    }
-  },
-  { immediate: true },
-);
+watch(() => props.playbooks, items => {
+  if(props.preferredPlaybookId && items.some(item => item.id === props.preferredPlaybookId)) selectedPlaybookId.value=props.preferredPlaybookId;
+  else if(!items.some(item => item.id === selectedPlaybookId.value)) selectedPlaybookId.value=items[0]?.id ?? '';
+}, {immediate:true});
 
 watch(
   currentPlaybook,
@@ -441,7 +397,7 @@ function validateCurrentGraph() {
   });
 }
 
-function submitSave() {
+async function submitSave() {
   if (!currentPlaybook.value) {
     return;
   }
@@ -459,23 +415,12 @@ function submitSave() {
     void message.error(validationError.value);
     return;
   }
-  emit('savePlaybook', {
-    playbookId: currentPlaybook.value.id,
-    playbook: {
-      name: editForm.name,
-      description: normalizeText(editForm.description),
-      inputSchema: normalizeText(editForm.inputSchema),
-      resultSchema: normalizeText(editForm.resultSchema),
-      executionPolicy: { ...editForm.executionPolicy },
-      allowHumanTask: editForm.allowHumanTask,
-      allowExternalInteraction: editForm.allowExternalInteraction,
-      entryNodeKey: graph.entryNodeKey,
-      nodes: graph.nodes,
-      edges: graph.edges,
-    },
-  });
-  isDirty.value = false;
-  clearValidationError();
+  try {
+    const item=currentPlaybook.value;
+    if(editForm.name !== item.name) await api.updatePlaybook(item.id,{name:editForm.name,description:item.description,ownerType:item.ownerType,ownerId:item.ownerId});
+    await api.createPlaybookVersion(item.id,{status:'DRAFT',definition:{description:editForm.description,inputSchema:editForm.inputSchema,resultSchema:editForm.resultSchema,executionPolicy:{...editForm.executionPolicy},allowHumanTask:editForm.allowHumanTask,allowExternalInteraction:editForm.allowExternalInteraction,entryNodeKey:graph.entryNodeKey,nodes:graph.nodes,edges:graph.edges}});
+    isDirty.value=false; clearValidationError(); emit('refreshCatalog'); void message.success('已保存为新草稿版本，可在列表页发布');
+  } catch(error) { void message.error(error instanceof Error?error.message:String(error)); }
 }
 
 function openImportModal() {
@@ -487,7 +432,6 @@ function openListPage(playbookId?: string) {
   void router.push({
     path: pageMeta.playbook.path,
     query: {
-      assistantId: selectedAssistantId.value,
       playbookId: playbookId ?? selectedPlaybookId.value,
     },
   });
@@ -602,21 +546,14 @@ onBeforeUnmount(() => {
         <a-button @click="exportModalOpen = true">导出 JSON</a-button>
         <a-button v-if="canManageGovernance" @click="openImportModal">导入 JSON</a-button>
         <a-button v-if="canManageGovernance" type="primary" @click="submitSave">
-          {{ isDirty ? '保存 Playbook' : '重新保存' }}
+          保存为新草稿版本
         </a-button>
-        <a-button v-if="canManageGovernance" danger ghost @click="emit('deletePlaybook', currentPlaybook.id)">删除 Playbook</a-button>
       </a-space>
     </template>
 
     <div class="playbook-workbench">
       <div class="playbook-editor-toolbar">
         <a-space wrap size="middle">
-          <a-select
-            v-model:value="selectedAssistantId"
-            class="playbook-editor-toolbar__select"
-            :options="assistantOptions"
-            placeholder="选择助手"
-          />
           <a-select
             v-model:value="selectedPlaybookId"
             class="playbook-editor-toolbar__select playbook-editor-toolbar__select--wide"
@@ -625,7 +562,7 @@ onBeforeUnmount(() => {
           />
         </a-space>
         <a-space wrap>
-          <a-tag class="console-accent-tag">{{ currentAssistant?.name ?? currentPlaybook.assistantId }}</a-tag>
+          <a-tag class="console-accent-tag">{{ currentPlaybook.sourceVersion.version }}</a-tag>
           <a-tag class="console-accent-tag">{{ draftNodes.length }} 节点</a-tag>
           <a-tag class="console-accent-tag">{{ draftEdges.length }} 连线</a-tag>
           <a-tag class="console-accent-tag">
@@ -634,6 +571,7 @@ onBeforeUnmount(() => {
         </a-space>
       </div>
 
+      <a-alert v-if="selectedNode?.nodeType === 'EXTERNAL_INTERACTION'" type="info" show-icon message="外部等待节点需在 config.externalSource 配置 subjectType（TOOL_CONNECTOR 或 CHANNEL_PROVIDER）、descriptorId 与 accountId。回调必须来自对应的有效接入账号。" />
       <div class="playbook-editor-toolbar playbook-editor-toolbar--caption">
         <a-typography-text type="secondary">
           图编排页仅保留节点、连线与 Inspector 编辑；基础属性、引用关系和操作记录请回列表页查看。
@@ -955,7 +893,7 @@ onBeforeUnmount(() => {
       </div>
   </a-card>
 
-  <a-empty v-else description="当前助手下还没有 Playbook" />
+  <a-empty v-else description="当前工作空间还没有 Playbook" />
 
   <a-modal
     :open="importModalOpen"

@@ -7,7 +7,7 @@ from typing import Any
 from .data_security.mapper import PrivacyMapper
 from .data_security.store import SessionPrivacyMapStore
 from .data_security.trace import MappingTrace
-from .models import AgentTurnRequest, LlmModelDescriptor
+from .models import ActivationRuntime, LlmModelDescriptor
 from .openai_compatible import LlmUsageTracker
 from .privacy_contracts import (
     PRIVACY_FRAGMENT_CACHE_VERSION,
@@ -194,19 +194,19 @@ class PrivacyPipeline:
 
 
 def build_privacy_pipeline(
-    request: AgentTurnRequest,
+    request: ActivationRuntime,
     usage_tracker: LlmUsageTracker | None = None,
 ) -> PrivacyPipeline:
     return PrivacyPipeline(build_privacy_policy(request), usage_tracker)
 
 
-def build_privacy_policy(request: AgentTurnRequest) -> PrivacyPolicy:
-    binding = request.effectivePrivacyModelBinding or request.currentOwner.effectivePrivacyModelBinding
-    enabled = bool(request.effectivePrivacyMappingEnabled or request.currentOwner.effectivePrivacyMappingEnabled)
+def build_privacy_policy(request: ActivationRuntime) -> PrivacyPolicy:
+    binding = request.agent.effectivePrivacyModelBinding
+    enabled = bool(request.agent.effectivePrivacyMappingEnabled)
     return PrivacyPolicy(
         session_id=request.sessionId,
-        assistant_id=request.assistantId,
-        agent_id=request.currentOwner.agentId,
+        assistant_id=request.templateVersionId,
+        agent_id=request.participantId,
         enabled=enabled and binding is not None,
         model_binding=_privacy_model_binding(binding) if binding is not None else None,
     )

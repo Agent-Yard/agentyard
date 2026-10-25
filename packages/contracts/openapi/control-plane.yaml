@@ -3,44 +3,32 @@ info:
   title: AgentYard Agent Control Plane API
   version: 1.0.0
 servers:
-  - url: http://127.0.0.1:8080/api
+- url: http://127.0.0.1:8080/api
 paths:
   /collaboration/actors/me:
-    $ref: './collaboration.yaml#/paths/~1collaboration~1actors~1me'
+    $ref: ./collaboration.yaml#/paths/~1collaboration~1actors~1me
   /collaboration/actors:
-    $ref: './collaboration.yaml#/paths/~1collaboration~1actors'
-  /collaboration/actors/agents:
-    $ref: './collaboration.yaml#/paths/~1collaboration~1actors~1agents'
+    $ref: ./collaboration.yaml#/paths/~1collaboration~1actors
   /collaboration/organizations:
-    $ref: './collaboration.yaml#/paths/~1collaboration~1organizations'
+    $ref: ./collaboration.yaml#/paths/~1collaboration~1organizations
   /collaboration/organizations/{id}:
-    $ref: './collaboration.yaml#/paths/~1collaboration~1organizations~1{id}'
+    $ref: ./collaboration.yaml#/paths/~1collaboration~1organizations~1{id}
   /collaboration/organizations/{id}/members:
-    $ref: './collaboration.yaml#/paths/~1collaboration~1organizations~1{id}~1members'
+    $ref: ./collaboration.yaml#/paths/~1collaboration~1organizations~1{id}~1members
   /collaboration/tasks:
-    $ref: './collaboration.yaml#/paths/~1collaboration~1tasks'
+    $ref: ./collaboration.yaml#/paths/~1collaboration~1tasks
   /collaboration/tasks/{id}:
-    $ref: './collaboration.yaml#/paths/~1collaboration~1tasks~1{id}'
+    $ref: ./collaboration.yaml#/paths/~1collaboration~1tasks~1{id}
   /collaboration/tasks/{id}/commands:
-    $ref: './collaboration.yaml#/paths/~1collaboration~1tasks~1{id}~1commands'
+    $ref: ./collaboration.yaml#/paths/~1collaboration~1tasks~1{id}~1commands
   /collaboration/tasks/{id}/context:
-    $ref: './collaboration.yaml#/paths/~1collaboration~1tasks~1{id}~1context'
+    $ref: ./collaboration.yaml#/paths/~1collaboration~1tasks~1{id}~1context
   /collaboration/tasks/{id}/context/{entryId}/versions:
-    $ref: './collaboration.yaml#/paths/~1collaboration~1tasks~1{id}~1context~1{entryId}~1versions'
+    $ref: ./collaboration.yaml#/paths/~1collaboration~1tasks~1{id}~1context~1{entryId}~1versions
   /collaboration/tasks/{id}/events:
-    $ref: './collaboration.yaml#/paths/~1collaboration~1tasks~1{id}~1events'
+    $ref: ./collaboration.yaml#/paths/~1collaboration~1tasks~1{id}~1events
   /collaboration/sessions/{sessionId}/tasks:
-    $ref: './collaboration.yaml#/paths/~1collaboration~1sessions~1{sessionId}~1tasks'
-  /internal/task-executions/{id}:
-    $ref: './collaboration.yaml#/paths/~1internal~1task-executions~1{id}'
-  /internal/task-executions/{id}/progress:
-    $ref: './collaboration.yaml#/paths/~1internal~1task-executions~1{id}~1progress'
-  /internal/task-executions/{id}/commands:
-    $ref: './collaboration.yaml#/paths/~1internal~1task-executions~1{id}~1commands'
-  /internal/task-sessions/{sessionId}:
-    $ref: './collaboration.yaml#/paths/~1internal~1task-sessions~1{sessionId}'
-  /internal/task-sessions/{sessionId}/tasks/{taskId}/context:
-    $ref: './collaboration.yaml#/paths/~1internal~1task-sessions~1{sessionId}~1tasks~1{taskId}~1context'
+    $ref: ./collaboration.yaml#/paths/~1collaboration~1sessions~1{sessionId}~1tasks
   /auth/login:
     get:
       summary: Start OIDC login flow
@@ -71,10 +59,18 @@ paths:
           description: Authentication required
   /catalog/summary:
     get:
-      summary: Get aggregate catalog summary
+      summary: Read configuration catalog within the current user’s ownership scope
       responses:
         '200':
-          description: Aggregate catalog state with assistants, agents, resources, and knowledge bases
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseCatalogSummary'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
   /extensions/channel-providers:
     get:
       summary: List registered channel provider definitions
@@ -102,57 +98,60 @@ paths:
   /internal/channel-outbound/frames/stream:
     get:
       summary: Stream channel outbound frames for one channel profile
-      description: >
-        Internal SSE endpoint consumed by channel-gateway. The SSE id is a short-lived streamCursor for
-        transient replay only. Last-Event-ID can resume recent transient frames when the replay buffer still
-        contains that cursor, but it is not a durable final checkpoint. Durable final replay is driven only by
-        X-AgentYard-Last-Acked-Final-Sequence, and each FINAL_DELIVERY frame data carries finalSequence.
+      description: 'Internal SSE endpoint consumed by channel-gateway. The SSE id is a short-lived streamCursor for transient
+        replay only. Last-Event-ID can resume recent transient frames when the replay buffer still contains that cursor, but
+        it is not a durable final checkpoint. Durable final replay is driven only by X-AgentYard-Last-Acked-Final-Sequence,
+        and each FINAL_DELIVERY frame data carries finalSequence.
+
+        '
       parameters:
-        - in: query
-          name: channelProfileId
-          required: true
-          schema:
-            type: string
-            minLength: 1
-        - in: header
-          name: Last-Event-ID
-          required: false
-          description: Short-lived streamCursor for transient SSE replay; can expire and must not be used as lastAckedFinalSequence.
-          schema:
-            type: string
-        - in: header
-          name: X-AgentYard-Last-Acked-Final-Sequence
-          required: false
-          description: Durable profile-consumer checkpoint. API replays FINAL_DELIVERY frames with finalSequence greater than this value.
-          schema:
-            type: integer
-            format: int64
-            minimum: 1
-        - in: header
-          name: X-AgentYard-Last-Acked-Session-Id
-          required: false
-          description: Diagnostic integrity field paired with lastAckedFinalSequence; not used as the ordering key.
-          schema:
-            type: string
-        - in: header
-          name: X-AgentYard-Last-Acked-Session-Message-Id
-          required: false
-          description: Diagnostic integrity field paired with lastAckedFinalSequence; not used as the ordering key.
-          schema:
-            type: string
-        - in: header
-          name: X-AgentYard-Max-Final-Replay-Frames
-          required: false
-          description: Gateway replay credit. API must cap the number of FINAL_DELIVERY frames emitted during this connection.
-          schema:
-            type: integer
-            minimum: 1
+      - in: query
+        name: channelProfileId
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - in: header
+        name: Last-Event-ID
+        required: false
+        description: Short-lived streamCursor for transient SSE replay; can expire and must not be used as lastAckedFinalSequence.
+        schema:
+          type: string
+      - in: header
+        name: X-AgentYard-Last-Acked-Final-Sequence
+        required: false
+        description: Durable profile-consumer checkpoint. API replays FINAL_DELIVERY frames with finalSequence greater than
+          this value.
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
+      - in: header
+        name: X-AgentYard-Last-Acked-Session-Id
+        required: false
+        description: Diagnostic integrity field paired with lastAckedFinalSequence; not used as the ordering key.
+        schema:
+          type: string
+      - in: header
+        name: X-AgentYard-Last-Acked-Session-Message-Id
+        required: false
+        description: Diagnostic integrity field paired with lastAckedFinalSequence; not used as the ordering key.
+        schema:
+          type: string
+      - in: header
+        name: X-AgentYard-Max-Final-Replay-Frames
+        required: false
+        description: Gateway replay credit. API must cap the number of FINAL_DELIVERY frames emitted during this connection.
+        schema:
+          type: integer
+          minimum: 1
       responses:
         '200':
-          description: >
-            text/event-stream. event=channel-outbound-frame data is ChannelOutboundFrame. event=final-replay-window-exhausted
-            data is ChannelOutboundFinalReplayWindowExhausted. Live idle periods may include comment-only
-            heartbeat frames; clients must ignore them for Last-Event-ID replay and final checkpoint purposes.
+          description: 'text/event-stream. event=channel-outbound-frame data is ChannelOutboundFrame. event=final-replay-window-exhausted
+            data is ChannelOutboundFinalReplayWindowExhausted. Live idle periods may include comment-only heartbeat frames;
+            clients must ignore them for Last-Event-ID replay and final checkpoint purposes.
+
+            '
           content:
             text/event-stream:
               schema:
@@ -164,9 +163,10 @@ paths:
   /internal/channel-outbound/binding-snapshot/refresh:
     post:
       summary: Request API refresh of channel binding snapshots
-      description: >
-        Internal hint from channel-gateway after binding/profile changes. The API must treat this as a trigger
+      description: 'Internal hint from channel-gateway after binding/profile changes. The API must treat this as a trigger
         to refresh from channel-gateway authoritative binding/profile APIs, not as a trusted snapshot upsert body.
+
+        '
       requestBody:
         required: true
         content:
@@ -206,18 +206,18 @@ paths:
         '400':
           description: Channel profile payload is invalid
         '422':
-          description: Integration account, assistant, scenario, or provider config is invalid
+          description: Integration account, entry, or provider config is invalid
         '503':
           description: Channel provider registry is not ready
   /channel-admin/profiles/{channelProfileId}:
     get:
       summary: Get channel profile
       parameters:
-        - in: path
-          name: channelProfileId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: channelProfileId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Channel profile with credential material redacted
@@ -230,11 +230,11 @@ paths:
     put:
       summary: Update channel profile
       parameters:
-        - in: path
-          name: channelProfileId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: channelProfileId
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -253,24 +253,24 @@ paths:
         '409':
           description: Channel profile revision conflict
         '422':
-          description: Integration account, assistant, scenario, or provider config is invalid
+          description: Integration account, entry, or provider config is invalid
         '503':
           description: Channel provider registry is not ready
     delete:
       summary: Disable channel profile
       parameters:
-        - in: path
-          name: channelProfileId
-          required: true
-          schema:
-            type: string
-        - in: query
-          name: expectedRevision
-          required: true
-          schema:
-            type: integer
-            format: int64
-            minimum: 1
+      - in: path
+        name: channelProfileId
+        required: true
+        schema:
+          type: string
+      - in: query
+        name: expectedRevision
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
       responses:
         '200':
           description: Disabled channel profile
@@ -286,11 +286,11 @@ paths:
     get:
       summary: List channel conversation bindings
       parameters:
-        - in: path
-          name: channelProfileId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: channelProfileId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Channel conversation bindings
@@ -304,11 +304,11 @@ paths:
     get:
       summary: List channel inbound events
       parameters:
-        - in: path
-          name: channelProfileId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: channelProfileId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Channel inbound events
@@ -322,11 +322,11 @@ paths:
     get:
       summary: List channel outbound final checkpoints
       parameters:
-        - in: path
-          name: channelProfileId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: channelProfileId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Channel outbound final checkpoints
@@ -340,11 +340,11 @@ paths:
     get:
       summary: List external template bindings for a channel profile
       parameters:
-        - in: path
-          name: channelProfileId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: channelProfileId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: External template bindings
@@ -354,35 +354,35 @@ paths:
                 $ref: '#/components/schemas/ApiResponseChannelTemplateBindingList'
         '404':
           description: Channel profile not found
-  /channel-admin/profiles/{channelProfileId}/template-bindings/{assistantId}/{messageType}/{messageSubtype}/{messageVersion}:
+  /channel-admin/profiles/{channelProfileId}/template-bindings/{entryId}/{messageType}/{messageSubtype}/{messageVersion}:
     put:
       summary: Create or update an external template binding
       parameters:
-        - in: path
-          name: channelProfileId
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: assistantId
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: messageType
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: messageSubtype
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: messageVersion
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: channelProfileId
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: entryId
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: messageType
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: messageSubtype
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: messageVersion
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -403,38 +403,38 @@ paths:
     delete:
       summary: Disable an external template binding
       parameters:
-        - in: path
-          name: channelProfileId
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: assistantId
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: messageType
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: messageSubtype
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: messageVersion
-          required: true
-          schema:
-            type: string
-        - in: query
-          name: expectedRevision
-          required: true
-          schema:
-            type: integer
-            format: int64
-            minimum: 1
+      - in: path
+        name: channelProfileId
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: entryId
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: messageType
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: messageSubtype
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: messageVersion
+        required: true
+        schema:
+          type: string
+      - in: query
+        name: expectedRevision
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
       responses:
         '200':
           description: Disabled external template binding
@@ -450,11 +450,11 @@ paths:
     get:
       summary: List provider jobs for a channel profile
       parameters:
-        - in: path
-          name: channelProfileId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: channelProfileId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Provider job configs
@@ -468,16 +468,16 @@ paths:
     put:
       summary: Create or update a provider job config
       parameters:
-        - in: path
-          name: channelProfileId
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: jobType
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: channelProfileId
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: jobType
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -498,23 +498,23 @@ paths:
     delete:
       summary: Disable a provider job config
       parameters:
-        - in: path
-          name: channelProfileId
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: jobType
-          required: true
-          schema:
-            type: string
-        - in: query
-          name: expectedRevision
-          required: true
-          schema:
-            type: integer
-            format: int64
-            minimum: 1
+      - in: path
+        name: channelProfileId
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: jobType
+        required: true
+        schema:
+          type: string
+      - in: query
+        name: expectedRevision
+        required: true
+        schema:
+          type: integer
+          format: int64
+          minimum: 1
       responses:
         '200':
           description: Disabled provider job config
@@ -532,16 +532,16 @@ paths:
     get:
       summary: List provider job run history
       parameters:
-        - in: path
-          name: channelProfileId
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: jobType
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: channelProfileId
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: jobType
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Provider job run history
@@ -556,16 +556,16 @@ paths:
     post:
       summary: Manually run a provider job through channel-gateway
       parameters:
-        - in: path
-          name: channelProfileId
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: jobType
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: channelProfileId
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: jobType
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Provider job run result
@@ -612,11 +612,11 @@ paths:
     get:
       summary: Get integration account
       parameters:
-        - in: path
-          name: accountId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: accountId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Integration account with credential state redacted
@@ -627,11 +627,11 @@ paths:
     put:
       summary: Update integration account
       parameters:
-        - in: path
-          name: accountId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: accountId
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -653,11 +653,11 @@ paths:
     put:
       summary: Update integration account status
       parameters:
-        - in: path
-          name: accountId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: accountId
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -675,11 +675,11 @@ paths:
     post:
       summary: Archive integration account
       parameters:
-        - in: path
-          name: accountId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: accountId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Archived integration account
@@ -691,11 +691,11 @@ paths:
     post:
       summary: Create integration account credential
       parameters:
-        - in: path
-          name: accountId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: accountId
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -717,11 +717,11 @@ paths:
     post:
       summary: Rotate integration account credential
       parameters:
-        - in: path
-          name: accountId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: accountId
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -743,11 +743,11 @@ paths:
     post:
       summary: Validate integration account credential
       parameters:
-        - in: path
-          name: accountId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: accountId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Credential state after validate, with secret material redacted
@@ -763,11 +763,11 @@ paths:
     post:
       summary: Revoke integration account credential
       parameters:
-        - in: path
-          name: accountId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: accountId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Credential state after revoke, with secret material redacted
@@ -783,11 +783,11 @@ paths:
     get:
       summary: Internal runtime credential lookup
       parameters:
-        - in: path
-          name: accountId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: accountId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Runtime credential for connector execution
@@ -795,16 +795,16 @@ paths:
     get:
       summary: Get unified object reference analysis
       parameters:
-        - in: path
-          name: objectType
-          required: true
-          schema:
-            $ref: '#/components/schemas/ReferenceObjectType'
-        - in: path
-          name: objectId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: objectType
+        required: true
+        schema:
+          $ref: '#/components/schemas/ReferenceObjectType'
+      - in: path
+        name: objectId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Unified reference analysis
@@ -816,16 +816,16 @@ paths:
     get:
       summary: Get deletion impact preview for a catalog object
       parameters:
-        - in: path
-          name: objectType
-          required: true
-          schema:
-            $ref: '#/components/schemas/ReferenceObjectType'
-        - in: path
-          name: objectId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: objectType
+        required: true
+        schema:
+          $ref: '#/components/schemas/ReferenceObjectType'
+      - in: path
+        name: objectId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Deletion impact preview
@@ -837,32 +837,32 @@ paths:
     get:
       summary: List platform audit events
       parameters:
-        - in: query
-          name: aggregateType
-          required: false
-          schema:
-            $ref: '#/components/schemas/PlatformAggregateType'
-        - in: query
-          name: aggregateId
-          required: false
-          schema:
-            type: string
-        - in: query
-          name: since
-          required: false
-          schema:
-            type: string
-            format: date-time
-        - in: query
-          name: limit
-          required: false
-          schema:
-            type: integer
-        - in: query
-          name: cursor
-          required: false
-          schema:
-            type: string
+      - in: query
+        name: aggregateType
+        required: false
+        schema:
+          $ref: '#/components/schemas/PlatformAggregateType'
+      - in: query
+        name: aggregateId
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: since
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: limit
+        required: false
+        schema:
+          type: integer
+      - in: query
+        name: cursor
+        required: false
+        schema:
+          type: string
       responses:
         '200':
           description: Platform audit events
@@ -870,100 +870,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlatformEventPage'
-  /assistants:
-    get:
-      summary: List assistants
-    post:
-      summary: Create assistant
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateAssistantRequest'
-  /assistants/{assistantId}:
-    put:
-      summary: Update assistant and optionally publish a new release
-      parameters:
-        - in: path
-          name: assistantId
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateAssistantRequest'
-  /agents:
-    get:
-      summary: List agents
-    post:
-      summary: Create agent
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateAgentRequest'
-  /agents/{agentId}:
-    get:
-      summary: Get agent detail
-      parameters:
-        - in: path
-          name: agentId
-          required: true
-          schema:
-            type: string
-    put:
-      summary: Update agent
-      parameters:
-        - in: path
-          name: agentId
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateAgentRequest'
-  /playbooks:
-    get:
-      summary: List playbooks
-    post:
-      summary: Create playbook
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreatePlaybookRequest'
-  /playbooks/{playbookId}:
-    get:
-      summary: Get playbook detail
-      parameters:
-        - in: path
-          name: playbookId
-          required: true
-          schema:
-            type: string
-    put:
-      summary: Update playbook
-      parameters:
-        - in: path
-          name: playbookId
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdatePlaybookRequest'
   /resources:
     get:
       summary: List resources
@@ -979,11 +885,11 @@ paths:
     put:
       summary: Update resource
       parameters:
-        - in: path
-          name: resourceId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: resourceId
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -994,19 +900,19 @@ paths:
     get:
       summary: List resource versions
       parameters:
-        - in: path
-          name: resourceId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: resourceId
+        required: true
+        schema:
+          type: string
     post:
       summary: Create resource version
       parameters:
-        - in: path
-          name: resourceId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: resourceId
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -1017,16 +923,16 @@ paths:
     put:
       summary: Update resource version
       parameters:
-        - in: path
-          name: resourceId
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: versionId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: resourceId
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: versionId
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -1036,30 +942,30 @@ paths:
     delete:
       summary: Delete resource version
       parameters:
-        - in: path
-          name: resourceId
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: versionId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: resourceId
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: versionId
+        required: true
+        schema:
+          type: string
   /resources/{resourceId}/versions/{versionId}/publish:
     patch:
       summary: Publish a resource version
       parameters:
-        - in: path
-          name: resourceId
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: versionId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: resourceId
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: versionId
+        required: true
+        schema:
+          type: string
   /knowledge-bases:
     get:
       summary: List knowledge bases
@@ -1091,11 +997,11 @@ paths:
     get:
       summary: Get knowledge base
       parameters:
-        - in: path
-          name: knowledgeBaseId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: knowledgeBaseId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Knowledge base detail
@@ -1106,11 +1012,11 @@ paths:
     put:
       summary: Update knowledge base
       parameters:
-        - in: path
-          name: knowledgeBaseId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: knowledgeBaseId
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -1127,20 +1033,20 @@ paths:
     delete:
       summary: Delete knowledge base
       parameters:
-        - in: path
-          name: knowledgeBaseId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: knowledgeBaseId
+        required: true
+        schema:
+          type: string
   /knowledge-bases/{knowledgeBaseId}/releases:
     get:
       summary: List knowledge releases
       parameters:
-        - in: path
-          name: knowledgeBaseId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: knowledgeBaseId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Knowledge release list
@@ -1153,11 +1059,11 @@ paths:
     post:
       summary: Create knowledge release
       parameters:
-        - in: path
-          name: knowledgeBaseId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: knowledgeBaseId
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -1175,39 +1081,39 @@ paths:
     patch:
       summary: Publish knowledge release
       parameters:
-        - in: path
-          name: knowledgeBaseId
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: releaseId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: knowledgeBaseId
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: releaseId
+        required: true
+        schema:
+          type: string
   /knowledge-bases/{knowledgeBaseId}/releases/{releaseId}:
     delete:
       summary: Delete knowledge release
       parameters:
-        - in: path
-          name: knowledgeBaseId
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: releaseId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: knowledgeBaseId
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: releaseId
+        required: true
+        schema:
+          type: string
   /knowledge-bases/{knowledgeBaseId}/references:
     get:
       summary: List knowledge references
       parameters:
-        - in: path
-          name: knowledgeBaseId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: knowledgeBaseId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Knowledge references
@@ -1221,11 +1127,11 @@ paths:
     post:
       summary: Create a knowledge upload session
       parameters:
-        - in: path
-          name: knowledgeBaseId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: knowledgeBaseId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Upload session created
@@ -1237,23 +1143,24 @@ paths:
     post:
       summary: Complete a knowledge file upload and trigger import
       parameters:
-        - in: path
-          name: knowledgeBaseId
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: uploadSessionId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: knowledgeBaseId
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: uploadSessionId
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
               type: object
-              required: [file]
+              required:
+              - file
               properties:
                 file:
                   type: string
@@ -1269,11 +1176,11 @@ paths:
     post:
       summary: Import a knowledge document from URL
       parameters:
-        - in: path
-          name: knowledgeBaseId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: knowledgeBaseId
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -1291,11 +1198,11 @@ paths:
     get:
       summary: List uploaded knowledge files
       parameters:
-        - in: path
-          name: knowledgeBaseId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: knowledgeBaseId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Knowledge file list
@@ -1309,11 +1216,11 @@ paths:
     get:
       summary: List knowledge import jobs
       parameters:
-        - in: path
-          name: knowledgeBaseId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: knowledgeBaseId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Knowledge import jobs
@@ -1327,16 +1234,16 @@ paths:
     post:
       summary: Retry a failed knowledge import job
       parameters:
-        - in: path
-          name: knowledgeBaseId
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: jobId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: knowledgeBaseId
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: jobId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Retry queued
@@ -1348,11 +1255,11 @@ paths:
     get:
       summary: List parsed knowledge documents
       parameters:
-        - in: path
-          name: knowledgeBaseId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: knowledgeBaseId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Knowledge documents
@@ -1366,11 +1273,11 @@ paths:
     get:
       summary: List knowledge index snapshots
       parameters:
-        - in: path
-          name: knowledgeBaseId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: knowledgeBaseId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Snapshot list
@@ -1383,11 +1290,11 @@ paths:
     post:
       summary: Create a knowledge index snapshot and trigger build
       parameters:
-        - in: path
-          name: knowledgeBaseId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: knowledgeBaseId
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -1405,16 +1312,16 @@ paths:
     post:
       summary: Retry a failed knowledge snapshot build
       parameters:
-        - in: path
-          name: knowledgeBaseId
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: snapshotId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: knowledgeBaseId
+        required: true
+        schema:
+          type: string
+      - in: path
+        name: snapshotId
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Snapshot retry queued
@@ -1426,11 +1333,11 @@ paths:
     post:
       summary: Preview retrieval hits against a ready knowledge snapshot
       parameters:
-        - in: path
-          name: knowledgeBaseId
-          required: true
-          schema:
-            type: string
+      - in: path
+        name: knowledgeBaseId
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -1444,261 +1351,846 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/KnowledgeRetrievalPreviewResult'
-  /session-runtime/turns:
+  /entries:
+    get:
+      summary: List governed reception entries
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseEntryList'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
     post:
-      summary: Send one public Web session turn with one or more user messages
-      parameters:
-        - in: header
-          name: Idempotency-Key
-          required: true
-          description: Must equal request body turnDedupKey.
-          schema:
-            type: string
+      summary: 'Platform administrator: deploy reception entry and initial grants'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseEntry'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SendSessionTurnRequest'
+              $ref: '#/components/schemas/EntryRequest'
+  /entries/{id}:
+    get:
+      summary: Read entry
       responses:
         '200':
-          description: Session turn accepted or idempotently replayed
+          description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SendSessionTurnResponse'
-        '400':
-          description: Invalid turn request
+                $ref: '#/components/schemas/ApiResponseEntry'
+        '403':
+          description: Not authorized for this operation or object
         '409':
-          description: Session is busy, draining, ended, or otherwise rejected before turn acceptance
-  /internal/session-runtime/import-turns:
-    post:
-      summary: Trusted import of one session turn with server-authoritative roles and senders
-      security:
-        - bearerAuth: []
+          description: Revision conflict or immutable published version
       parameters:
-        - in: header
-          name: Idempotency-Key
-          required: true
-          description: Must equal request body turnDedupKey.
-          schema:
-            type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      summary: 'Platform administrator: put reception entry'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseEntry'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/TrustedImportSessionTurnRequest'
+              $ref: '#/components/schemas/EntryRequest'
+    delete:
+      summary: 'Platform administrator: delete reception entry'
       responses:
         '200':
-          description: Import turn accepted or idempotently replayed
+          description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SendSessionTurnResponse'
-        '400':
-          description: Invalid import request
+                $ref: '#/components/schemas/ApiResponseEntry'
+        '403':
+          description: Not authorized for this operation or object
         '409':
-          description: Target session is busy, draining, ended, or otherwise rejected before turn acceptance
-  /internal/session-runtime/channel-inbound-turns:
+          description: Revision conflict or immutable published version
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /agent/entries:
+    get:
+      summary: Discover permitted reception entries
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseEntryList'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
+  /agent/reception:
     post:
-      summary: Accept a trusted channel inbound session turn from channel-gateway
-      security:
-        - bearerAuth: []
+      summary: Resume or establish the participant’s continuous reception
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseReception'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/ChannelInboundSessionTurnRequest'
+              $ref: '#/components/schemas/ReceptionRequest'
+  /agent/reception/{id}:
+    get:
+      summary: Read the authenticated participant’s authorized inbox and outbox with reception state
       responses:
         '200':
-          description: Channel inbound turn accepted or idempotently replayed
+          description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChannelInboundSessionTurnResponse'
-        '400':
-          description: Invalid channel inbound turn request
+                $ref: '#/components/schemas/ApiResponseReception'
+        '403':
+          description: Not authorized for this operation or object
         '409':
-          description: Session is busy, draining, ended, or otherwise rejected before turn acceptance
-  /session-runtime/sessions:
-    get:
-      summary: List session runtime sessions
-      responses:
-        '200':
-          description: Session list
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/SessionRuntimeSession'
-  /session-runtime/sessions/{sessionId}:
-    get:
-      summary: Get session runtime detail
+          description: Revision conflict or immutable published version
       parameters:
-        - in: path
-          name: sessionId
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Session detail
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SessionRuntimeDetail'
-  /session-runtime/sessions/{sessionId}/stream:
-    get:
-      summary: Stream session runtime updates over SSE
-      parameters:
-        - in: path
-          name: sessionId
-          required: true
-          schema:
-            type: string
-        - in: query
-          name: lastEventId
-          required: false
-          schema:
-            type: string
-          description: Replay events after this SSE event id when reconnecting.
-        - in: header
-          name: Last-Event-ID
-          required: false
-          schema:
-            type: string
-          description: Standard SSE reconnection header. Overrides the query parameter when both are present.
-      responses:
-        '200':
-          description: Server-sent event stream of session snapshots and updates
-          content:
-            text/event-stream:
-              schema:
-                $ref: '#/components/schemas/SessionRuntimeStreamEvent'
-  /internal/session-runtime/stream-frame-ingest:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: cursor
+        in: query
+        schema:
+          type: string
+      - name: before
+        in: query
+        description: Opaque previousCursor for older messages; cannot combine with cursor
+        schema:
+          type: string
+  /agent/messages:
     post:
-      summary: Accept an internal agent-turn transient frame NDJSON upload for transient SSE relay
-      security:
-        - bearerAuth: []
+      summary: Send an idempotent collaboration message
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseCollaborationMessage'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
       requestBody:
         required: true
         content:
-          application/x-ndjson:
+          application/json:
             schema:
-              type: string
-              description: Newline-delimited AgentTurnTransientFrame JSON objects for one turnExecutionId.
+              $ref: '#/components/schemas/SendMessage'
+  /agent/sessions/{id}:
+    get:
+      summary: Read authorized private Agent context
       responses:
         '200':
-          description: Frame upload accepted
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseAgentSessionDetail'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /agent/sessions/{id}/status:
+    get:
+      summary: Read execution liveness within shared work without private Session history
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: taskId
+        in: query
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Current lifecycle and execution state; history remains separately authorized
           content:
             application/json:
               schema:
                 type: object
-  /session-runtime/sessions/{sessionId}/human-resume:
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AgentExecutionStatus'
+        '403':
+          description: No shared work or private Session read permission
+  /agent/sessions/{id}/control:
     post:
-      summary: Resume a waiting playbook run with human input
-      parameters:
-        - in: path
-          name: sessionId
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/HumanResumeRequest'
+      summary: Pause, resume or close an authorized Agent instance
       responses:
         '200':
-          description: Updated session state
+          description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SessionRuntimeSession'
-  /session-runtime/sessions/{sessionId}/external-callback:
-    post:
-      summary: Resume a waiting playbook run with external callback payload
-      parameters:
-        - in: path
-          name: sessionId
-          required: true
-          schema:
-            type: string
-        - in: header
-          name: Idempotency-Key
-          required: false
-          schema:
-            type: string
-          description: Explicit key wins; when omitted, the server derives a stable key from sessionId, playbookRunId, and payload.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ExternalCallbackRequest'
-      responses:
-        '200':
-          description: Updated session state
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SessionRuntimeSession'
-  /session-runtime/sessions/{sessionId}/handoff/end:
-    post:
-      summary: End session human handoff mode
-      parameters:
-        - in: path
-          name: sessionId
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Updated session state
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SessionRuntimeSession'
-  /session-runtime/sessions/{sessionId}/human-reply:
-    post:
-      summary: Append a human operator reply during session handoff
-      parameters:
-        - in: path
-          name: sessionId
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/HumanOperatorReplyRequest'
-      responses:
-        '200':
-          description: Updated session state
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SessionRuntimeSession'
+                $ref: '#/components/schemas/ApiResponseAgentSession'
+        '403':
+          description: Not authorized for this operation or object
         '409':
-          description: Duplicate callback is already being processed
+          description: Revision conflict or immutable published version
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionControl'
+  /agent/reception/{id}/stream:
+    get:
+      summary: Stream reception snapshots; reconnect reads durable messages
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: SSE event reception, data Reception; comment keepalive
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /role-templates:
+    get:
+      summary: List owned RoleTemplate configurations
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRoleTemplateList'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
+    post:
+      summary: Create RoleTemplate
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRoleTemplate'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoleTemplateRequest'
+  /role-templates/{id}:
+    get:
+      summary: Read RoleTemplate
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRoleTemplate'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      summary: Update metadata of RoleTemplate
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRoleTemplate'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OwnedConfiguration'
+    delete:
+      summary: Delete unpublished and unreferenced RoleTemplate
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRoleTemplate'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /role-templates/{id}/versions:
+    post:
+      summary: Create immutable version of RoleTemplate
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRoleTemplateVersion'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateRoleTemplateVersionRequest'
+  /role-templates/{id}/versions/{versionId}/publish:
+    post:
+      summary: Publish independently versioned RoleTemplate
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseRoleTemplateVersion'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: versionId
+        in: path
+        required: true
+        schema:
+          type: string
+  /playbooks:
+    get:
+      summary: List owned Playbook configurations
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponsePlaybookList'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
+    post:
+      summary: Create Playbook
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponsePlaybook'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePlaybookRequest'
+  /playbooks/{id}:
+    get:
+      summary: Read Playbook
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponsePlaybook'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    put:
+      summary: Update metadata of Playbook
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponsePlaybook'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OwnedConfiguration'
+    delete:
+      summary: Delete unpublished and unreferenced Playbook
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponsePlaybook'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /playbooks/{id}/versions:
+    post:
+      summary: Create immutable version of Playbook
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponsePlaybookVersion'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePlaybookVersionRequest'
+  /playbooks/{id}/versions/{versionId}/publish:
+    post:
+      summary: Publish independently versioned Playbook
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponsePlaybookVersion'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: versionId
+        in: path
+        required: true
+        schema:
+          type: string
+  /resource-center:
+    get:
+      summary: Read authorized resources and reference projections
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseResourceCenter'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
+  /resource-blueprints:
+    get:
+      summary: List model, tool and Skill configuration forms
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiResponseResourceBlueprintList'
+        '403':
+          description: Not authorized for this operation or object
+        '409':
+          description: Revision conflict or immutable published version
+  /internal/tool-runs/{runId}/external-callback:
+    post:
+      summary: 'Trusted adapter: resume a waiting tool run from a verified external source'
+      security:
+      - bearerInternal: []
+      parameters:
+      - name: runId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToolRunExternalCallback'
+      responses:
+        '200':
+          description: Accepted idempotent resume signal; bare internal DTO
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolRunResume'
+        '403':
+          description: Source identity or account does not match the waiting node
+        '409':
+          description: Run no longer waits for this waitingId
+  /internal/activations/{id}/runtime:
+    get:
+      operationId: getActivationRuntime
+      tags:
+      - Agent internal
+      security:
+      - bearerInternal: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivationRuntime'
+        '401':
+          description: Trusted service bearer token required
+        '403':
+          description: Execution closed, capability revoked, or access denied. Do not retry as a pause.
+        '423':
+          description: 'EXECUTION_PAUSED: execution is paused before authorization for the next side effect. Wait for explicit
+            resume and obtain runtime authorization again; do not repeat unknown side effects.'
+  /internal/activations/{id}/tools:
+    post:
+      operationId: invokeActivationTool
+      tags:
+      - Agent internal
+      security:
+      - bearerInternal: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentToolResult'
+        '401':
+          description: Trusted service bearer token required
+        '403':
+          description: Execution closed, capability revoked, or access denied. Do not retry as a pause.
+        '423':
+          description: 'EXECUTION_PAUSED: execution is paused before authorization for the next side effect. Wait for explicit
+            resume and obtain runtime authorization again; do not repeat unknown side effects.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentToolInvocation'
+  /internal/activations/{id}/complete:
+    post:
+      operationId: completeActivation
+      tags:
+      - Agent internal
+      security:
+      - bearerInternal: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+        '401':
+          description: Trusted service bearer token required
+        '403':
+          description: Execution closed, capability revoked, or access denied. Do not retry as a pause.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivationOutcome'
+  /internal/tool-runs/{id}/runtime:
+    get:
+      operationId: getToolRunRuntime
+      tags:
+      - Agent internal
+      security:
+      - bearerInternal: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolRunRuntime'
+        '401':
+          description: Trusted service bearer token required
+        '403':
+          description: Execution closed, capability revoked, or access denied. Do not retry as a pause.
+        '423':
+          description: 'EXECUTION_PAUSED: execution is paused before authorization for the next side effect. Wait for explicit
+            resume and obtain runtime authorization again; do not repeat unknown side effects.'
+  /internal/tool-runs/{id}/authorize-node:
+    post:
+      operationId: authorizeToolRunNode
+      tags:
+      - Agent internal
+      security:
+      - bearerInternal: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolRunRuntime'
+        '401':
+          description: Trusted service bearer token required
+        '403':
+          description: Execution closed, capability revoked, or access denied. Do not retry as a pause.
+        '423':
+          description: 'EXECUTION_PAUSED: execution is paused before authorization for the next side effect. Wait for explicit
+            resume and obtain runtime authorization again; do not repeat unknown side effects.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToolRunNodeAuthorization'
+  /internal/tool-runs/{id}/progress:
+    post:
+      operationId: reportToolRunProgress
+      tags:
+      - Agent internal
+      security:
+      - bearerInternal: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+        '401':
+          description: Trusted service bearer token required
+        '403':
+          description: Execution closed, capability revoked, or access denied. Do not retry as a pause.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToolRunProgress'
+  /internal/tool-runs/{id}/signals/{signalId}/ack:
+    post:
+      operationId: acknowledgeToolRunSignal
+      tags:
+      - Agent internal
+      security:
+      - bearerInternal: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: signalId
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+        '401':
+          description: Trusted service bearer token required
+        '403':
+          description: Execution closed, capability revoked, or access denied. Do not retry as a pause.
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
+    bearerInternal:
+      type: http
+      scheme: bearer
+      description: Internal service credential. The trusted adapter resolves provider identity and account; browser users
+        and Agents cannot invoke this boundary.
   schemas:
     PlatformRole:
       type: string
-      enum: [PLATFORM_ADMIN, DOMAIN_ADMIN, DEVELOPER, BUSINESS_USER]
+      enum:
+      - PLATFORM_ADMIN
+      - DEVELOPER
+      - BUSINESS_USER
     UserSession:
       type: object
-      required: [userId, displayName, currentRole, availableRoles]
+      required:
+      - userId
+      - displayName
+      - currentRole
+      - availableRoles
       properties:
         userId:
           type: string
@@ -1712,7 +2204,10 @@ components:
             $ref: '#/components/schemas/PlatformRole'
     ApiResponseUserSession:
       type: object
-      required: [success, data, timestamp]
+      required:
+      - success
+      - data
+      - timestamp
       properties:
         success:
           type: boolean
@@ -1723,13 +2218,17 @@ components:
           format: date-time
     LogoutResponse:
       type: object
-      required: [postLogoutRedirectUrl]
+      required:
+      - postLogoutRedirectUrl
       properties:
         postLogoutRedirectUrl:
           type: string
     ApiResponseLogoutResponse:
       type: object
-      required: [success, data, timestamp]
+      required:
+      - success
+      - data
+      - timestamp
       properties:
         success:
           type: boolean
@@ -1740,7 +2239,10 @@ components:
           format: date-time
     ApiResponseChannelProviderDefinitionList:
       type: object
-      required: [success, data, timestamp]
+      required:
+      - success
+      - data
+      - timestamp
       properties:
         success:
           type: boolean
@@ -1753,7 +2255,10 @@ components:
           format: date-time
     ApiResponseToolConnectorDefinitionList:
       type: object
-      required: [success, data, timestamp]
+      required:
+      - success
+      - data
+      - timestamp
       properties:
         success:
           type: boolean
@@ -1772,21 +2277,26 @@ components:
       additionalProperties: true
     CredentialCapabilityMode:
       type: string
-      enum: [REMOTE_LIFECYCLE, CORE_ENCRYPTED_REFERENCE]
+      enum:
+      - REMOTE_LIFECYCLE
+      - CORE_ENCRYPTED_REFERENCE
     CredentialCapability:
       type: object
-      required: [supported, credentialUiSchema, supportsValidate]
+      required:
+      - supported
+      - credentialUiSchema
+      - supportsValidate
       properties:
         supported:
           type: boolean
         mode:
           anyOf:
-            - $ref: '#/components/schemas/CredentialCapabilityMode'
-            - type: 'null'
+          - $ref: '#/components/schemas/CredentialCapabilityMode'
+          - type: 'null'
         credentialSchema:
           anyOf:
-            - $ref: '#/components/schemas/JsonObject'
-            - type: 'null'
+          - $ref: '#/components/schemas/JsonObject'
+          - type: 'null'
         credentialUiSchema:
           type: array
           items:
@@ -1812,7 +2322,11 @@ components:
           $ref: '#/components/schemas/JsonObject'
     ChannelProviderJobDefinition:
       type: object
-      required: [jobType, title, jobConfigSchema, jobConfigUiSchema]
+      required:
+      - jobType
+      - title
+      - jobConfigSchema
+      - jobConfigUiSchema
       properties:
         jobType:
           type: string
@@ -1829,8 +2343,8 @@ components:
             $ref: '#/components/schemas/UiField'
         defaultSchedule:
           anyOf:
-            - $ref: '#/components/schemas/ChannelProviderJobDefaultSchedule'
-            - type: 'null'
+          - $ref: '#/components/schemas/ChannelProviderJobDefaultSchedule'
+          - type: 'null'
         defaultEnabled:
           type: boolean
           nullable: true
@@ -1840,16 +2354,16 @@ components:
     ChannelProviderDefinition:
       type: object
       required:
-        - providerType
-        - title
-        - definitionDigest
-        - accountConfigSchema
-        - accountConfigUiSchema
-        - credentialCapability
-        - configSchema
-        - configUiSchema
-        - defaultConfig
-        - jobDefinitions
+      - providerType
+      - title
+      - definitionDigest
+      - accountConfigSchema
+      - accountConfigUiSchema
+      - credentialCapability
+      - configSchema
+      - configUiSchema
+      - defaultConfig
+      - jobDefinitions
       properties:
         providerType:
           type: string
@@ -1860,7 +2374,7 @@ components:
           nullable: true
         definitionDigest:
           type: string
-          pattern: '^sha256:[0-9a-f]{64}$'
+          pattern: ^sha256:[0-9a-f]{64}$
         accountConfigSchema:
           $ref: '#/components/schemas/JsonObject'
         accountConfigUiSchema:
@@ -1884,16 +2398,16 @@ components:
     ToolConnectorDefinition:
       type: object
       required:
-        - connectorType
-        - title
-        - definitionDigest
-        - accountConfigSchema
-        - accountConfigUiSchema
-        - credentialCapability
-        - configSchema
-        - configUiSchema
-        - operationMappingSchema
-        - operationMappingUiSchema
+      - connectorType
+      - title
+      - definitionDigest
+      - accountConfigSchema
+      - accountConfigUiSchema
+      - credentialCapability
+      - configSchema
+      - configUiSchema
+      - operationMappingSchema
+      - operationMappingUiSchema
       properties:
         connectorType:
           type: string
@@ -1904,7 +2418,7 @@ components:
           nullable: true
         definitionDigest:
           type: string
-          pattern: '^sha256:[0-9a-f]{64}$'
+          pattern: ^sha256:[0-9a-f]{64}$
         accountConfigSchema:
           $ref: '#/components/schemas/JsonObject'
         accountConfigUiSchema:
@@ -1927,62 +2441,9 @@ components:
             $ref: '#/components/schemas/UiField'
     VersionStatus:
       type: string
-      enum: [DRAFT, PUBLISHED]
-    AssistantModelPolicy:
-      type: object
-      properties:
-        defaultModelResourceId:
-          type: string
-          nullable: true
-        enableThinking:
-          type: boolean
-          nullable: true
-        reasoningEffort:
-          type: string
-          nullable: true
-          enum: [low, medium, high, xhigh]
-    KnowledgeAccessPolicy:
-      type: object
-      properties:
-        enabled:
-          type: boolean
-        knowledgeBaseId:
-          type: string
-          nullable: true
-    MemoryPolicy:
-      type: object
-      properties:
-        enabled:
-          type: boolean
-        windowSize:
-          type: integer
-    AgentExecutionPolicy:
-      type: object
-      properties:
-        inheritAssistantDefaults:
-          type: boolean
-        modelResourceId:
-          type: string
-          nullable: true
-        systemPrompt:
-          type: string
-        knowledgeEnabled:
-          type: boolean
-        inheritAssistantKnowledge:
-          type: boolean
-        knowledgeBaseId:
-          type: string
-          nullable: true
-        memoryWindowSize:
-          type: integer
-        skillResourceIds:
-          type: array
-          items:
-            type: string
-        toolResourceIds:
-          type: array
-          items:
-            type: string
+      enum:
+      - DRAFT
+      - PUBLISHED
     PlaybookExecutionPolicy:
       type: object
       properties:
@@ -1994,7 +2455,12 @@ components:
           nullable: true
     PlaybookNodeType:
       type: string
-      enum: [STEP, TOOL_TASK, HUMAN_TASK, EXTERNAL_INTERACTION, END]
+      enum:
+      - STEP
+      - TOOL_TASK
+      - HUMAN_TASK
+      - EXTERNAL_INTERACTION
+      - END
     PlaybookNodeLayout:
       type: object
       properties:
@@ -2050,70 +2516,83 @@ components:
           type: boolean
     Playbook:
       type: object
+      required:
+      - id
+      - name
+      - description
+      - ownerType
+      - ownerId
+      - latestVersion
+      - effectiveVersion
+      - versions
       properties:
         id:
-          type: string
-        assistantId:
           type: string
         name:
           type: string
         description:
           type: string
-          nullable: true
-        inputSchema:
+        ownerType:
+          $ref: '#/components/schemas/ResourceOwnerType'
+        ownerId:
           type: string
-          nullable: true
-        resultSchema:
-          type: string
-          nullable: true
-        executionPolicy:
-          $ref: '#/components/schemas/PlaybookExecutionPolicy'
-        allowHumanTask:
-          type: boolean
-        allowExternalInteraction:
-          type: boolean
-        entryNodeKey:
-          type: string
-        nodes:
+        latestVersion:
+          anyOf:
+          - $ref: '#/components/schemas/PlaybookVersion'
+          - type: 'null'
+        effectiveVersion:
+          anyOf:
+          - $ref: '#/components/schemas/PlaybookVersion'
+          - type: 'null'
+        versions:
           type: array
           items:
-            $ref: '#/components/schemas/PlaybookNode'
-        edges:
-          type: array
-          items:
-            $ref: '#/components/schemas/PlaybookEdge'
+            $ref: '#/components/schemas/PlaybookVersion'
     ResourceType:
       type: string
-      enum: [TOOL, LLM_MODEL, SKILL]
+      enum:
+      - TOOL
+      - LLM_MODEL
+      - SKILL
     ShareScope:
       type: string
-      enum: [PRIVATE, DOMAIN_SHARED]
-    ToolKind:
-      type: string
-      enum: [RESOURCE, BUILTIN]
+      enum:
+      - PRIVATE
+      - SHARED
     IntegrationAccountSubjectType:
       type: string
-      enum: [TOOL_CONNECTOR, CHANNEL_PROVIDER]
+      enum:
+      - TOOL_CONNECTOR
+      - CHANNEL_PROVIDER
     IntegrationAccountStatus:
       type: string
-      enum: [ENABLED, DISABLED, ARCHIVED]
+      enum:
+      - ENABLED
+      - DISABLED
+      - ARCHIVED
     IntegrationAccountCredentialStatus:
       type: string
-      enum: [NOT_CONFIGURED, ACTIVE, VALIDATION_FAILED, ROTATION_REQUIRED, REVOKE_FAILED, REVOKED]
+      enum:
+      - NOT_CONFIGURED
+      - ACTIVE
+      - VALIDATION_FAILED
+      - ROTATION_REQUIRED
+      - REVOKE_FAILED
+      - REVOKED
     IntegrationAccount:
       type: object
       required:
-        - id
-        - subjectType
-        - subjectId
-        - name
-        - status
-        - config
-        - hasExternalSecretRef
-        - credentialConfigured
-        - credentialStatus
-        - createdAt
-        - updatedAt
+      - id
+      - subjectType
+      - subjectId
+      - name
+      - status
+      - config
+      - hasExternalSecretRef
+      - credentialConfigured
+      - credentialStatus
+      - createdAt
+      - updatedAt
       properties:
         id:
           type: string
@@ -2167,9 +2646,9 @@ components:
     CreateIntegrationAccountPayload:
       type: object
       required:
-        - subjectType
-        - subjectId
-        - name
+      - subjectType
+      - subjectId
+      - name
       properties:
         subjectType:
           $ref: '#/components/schemas/IntegrationAccountSubjectType'
@@ -2207,14 +2686,14 @@ components:
     UpdateIntegrationAccountStatusPayload:
       type: object
       required:
-        - status
+      - status
       properties:
         status:
           $ref: '#/components/schemas/IntegrationAccountStatus'
     CreateIntegrationAccountCredentialPayload:
       type: object
       required:
-        - credential
+      - credential
       properties:
         credential:
           type: object
@@ -2222,53 +2701,74 @@ components:
     RotateIntegrationAccountCredentialPayload:
       type: object
       required:
-        - credential
+      - credential
       properties:
         credential:
           type: object
           additionalProperties: true
     ChannelProfileStatus:
       type: string
-      enum: [ACTIVE, INACTIVE]
+      enum:
+      - ACTIVE
+      - INACTIVE
     ChannelConversationBindingStatus:
       type: string
-      enum: [ACTIVE, ARCHIVED]
+      enum:
+      - ACTIVE
+      - ARCHIVED
     ChannelInboundEventStatus:
       type: string
-      enum: [RECEIVED, REJECTED]
+      enum:
+      - RECEIVED
+      - REJECTED
     ChannelProviderJobScheduleType:
       type: string
-      enum: [INTERVAL, CRON, MANUAL]
+      enum:
+      - INTERVAL
+      - CRON
+      - MANUAL
     ChannelProviderJobStatus:
       type: string
-      enum: [ACTIVE, RUNNING, PAUSED, DISABLED]
+      enum:
+      - ACTIVE
+      - RUNNING
+      - PAUSED
+      - DISABLED
     ChannelProviderJobRunStatus:
       type: string
-      enum: [RUNNING, SUCCEEDED, FAILED, TIMED_OUT]
-    ChannelAssistantBinding:
+      enum:
+      - RUNNING
+      - SUCCEEDED
+      - FAILED
+      - TIMED_OUT
+    ChannelEntryBinding:
       type: object
       properties:
-        assistantId:
-          type: string
-          nullable: true
-        scenarioId:
+        entryId:
           type: string
           nullable: true
     IntegrationAccountAvailabilityBlock:
       type: string
-      enum: [SUBJECT_MISMATCH, ACCOUNT_STATUS_NOT_ENABLED, CREDENTIAL_REVOKE_FAILED, CREDENTIAL_REVOKED]
+      enum:
+      - SUBJECT_MISMATCH
+      - ACCOUNT_STATUS_NOT_ENABLED
+      - CREDENTIAL_REVOKE_FAILED
+      - CREDENTIAL_REVOKED
     IntegrationAccountAvailabilityRisk:
       type: string
-      enum: [CREDENTIAL_NOT_CONFIGURED, CREDENTIAL_VALIDATION_FAILED, CREDENTIAL_ROTATION_REQUIRED]
+      enum:
+      - CREDENTIAL_NOT_CONFIGURED
+      - CREDENTIAL_VALIDATION_FAILED
+      - CREDENTIAL_ROTATION_REQUIRED
     ChannelProfileIntegrationAccountSummary:
       type: object
       required:
-        - id
-        - name
-        - status
-        - credentialStatus
-        - credentialConfigured
-        - risks
+      - id
+      - name
+      - status
+      - credentialStatus
+      - credentialConfigured
+      - risks
       properties:
         id:
           type: string
@@ -2290,17 +2790,17 @@ components:
     ChannelProfile:
       type: object
       required:
-        - id
-        - providerType
-        - displayName
-        - status
-        - inboundEnabled
-        - config
-        - accountId
-        - hasExternalSecretRef
-        - revision
-        - createdAt
-        - updatedAt
+      - id
+      - providerType
+      - displayName
+      - status
+      - inboundEnabled
+      - config
+      - accountId
+      - hasExternalSecretRef
+      - revision
+      - createdAt
+      - updatedAt
       properties:
         id:
           type: string
@@ -2317,8 +2817,8 @@ components:
         config:
           type: object
           additionalProperties: true
-        assistantBinding:
-          $ref: '#/components/schemas/ChannelAssistantBinding'
+        entryBinding:
+          $ref: '#/components/schemas/ChannelEntryBinding'
           nullable: true
         accountId:
           type: string
@@ -2363,25 +2863,25 @@ components:
     ChannelTemplateBinding:
       type: object
       required:
-        - id
-        - channelProfileId
-        - assistantId
-        - messageType
-        - messageSubtype
-        - messageVersion
-        - externalTemplateId
-        - enabled
-        - variableSchema
-        - displayName
-        - revision
-        - createdAt
-        - updatedAt
+      - id
+      - channelProfileId
+      - entryId
+      - messageType
+      - messageSubtype
+      - messageVersion
+      - externalTemplateId
+      - enabled
+      - variableSchema
+      - displayName
+      - revision
+      - createdAt
+      - updatedAt
       properties:
         id:
           type: string
         channelProfileId:
           type: string
-        assistantId:
+        entryId:
           type: string
         messageType:
           type: string
@@ -2417,8 +2917,8 @@ components:
     ChannelTemplateBindingWritePayload:
       type: object
       required:
-        - externalTemplateId
-        - displayName
+      - externalTemplateId
+      - displayName
       properties:
         externalTemplateId:
           type: string
@@ -2468,9 +2968,9 @@ components:
     CreateChannelProfilePayload:
       type: object
       required:
-        - providerType
-        - displayName
-        - config
+      - providerType
+      - displayName
+      - config
       properties:
         providerType:
           type: string
@@ -2487,8 +2987,8 @@ components:
         config:
           type: object
           additionalProperties: true
-        assistantBinding:
-          $ref: '#/components/schemas/ChannelAssistantBinding'
+        entryBinding:
+          $ref: '#/components/schemas/ChannelEntryBinding'
           nullable: true
         integrationAccountId:
           type: string
@@ -2496,10 +2996,10 @@ components:
     UpdateChannelProfilePayload:
       type: object
       required:
-        - providerType
-        - displayName
-        - config
-        - expectedRevision
+      - providerType
+      - displayName
+      - config
+      - expectedRevision
       properties:
         providerType:
           type: string
@@ -2516,8 +3016,8 @@ components:
         config:
           type: object
           additionalProperties: true
-        assistantBinding:
-          $ref: '#/components/schemas/ChannelAssistantBinding'
+        entryBinding:
+          $ref: '#/components/schemas/ChannelEntryBinding'
           nullable: true
         integrationAccountId:
           type: string
@@ -2529,13 +3029,13 @@ components:
     ChannelConversationBinding:
       type: object
       required:
-        - id
-        - channelProfileId
-        - externalConversationId
-        - status
-        - metadata
-        - createdAt
-        - updatedAt
+      - id
+      - channelProfileId
+      - externalConversationId
+      - status
+      - metadata
+      - createdAt
+      - updatedAt
       properties:
         id:
           type: string
@@ -2546,10 +3046,10 @@ components:
         externalUserId:
           type: string
           nullable: true
-        assistantId:
+        entryId:
           type: string
           nullable: true
-        customerId:
+        participantId:
           type: string
           nullable: true
         sessionId:
@@ -2569,16 +3069,16 @@ components:
     ChannelInboundEvent:
       type: object
       required:
-        - eventId
-        - channelProfileId
-        - providerType
-        - eventType
-        - dedupKey
-        - rawPayload
-        - normalizedPayload
-        - status
-        - createdAt
-        - updatedAt
+      - eventId
+      - channelProfileId
+      - providerType
+      - eventType
+      - dedupKey
+      - rawPayload
+      - normalizedPayload
+      - status
+      - createdAt
+      - updatedAt
       properties:
         eventId:
           type: string
@@ -2613,127 +3113,18 @@ components:
         updatedAt:
           type: string
           format: date-time
-    ChannelOutboundFrameKind:
-      type: string
-      enum: [TYPING_START, TYPING_STOP, DRAFT_UPDATE, DRAFT_COMPLETE, DRAFT_DISCARD, FINAL_DELIVERY]
-    ChannelOutboundFrame:
-      type: object
-      required:
-        - protocol
-        - frameId
-        - channelProfileId
-        - providerType
-        - externalConversationId
-        - sessionId
-        - kind
-        - occurredAt
-        - idempotencyKey
-        - payload
-      properties:
-        protocol:
-          type: string
-          enum: [agentyard.channel-outbound-frame.v1]
-        frameId:
-          type: string
-          minLength: 1
-          description: Stable frame id and idempotency key. Replays of the same business action must keep the same frameId.
-        channelProfileId:
-          type: string
-        providerType:
-          type: string
-        assistantId:
-          type: string
-          nullable: true
-        externalConversationId:
-          type: string
-        sessionId:
-          type: string
-        turnId:
-          type: string
-          nullable: true
-          description: Required for transient frames and omitted for FINAL_DELIVERY.
-        turnExecutionId:
-          type: string
-          nullable: true
-          description: Required for transient frames and omitted for FINAL_DELIVERY.
-        sourceSeq:
-          type: integer
-          format: int64
-          minimum: 1
-          nullable: true
-          description: Runtime source sequence for transient frames only.
-        finalSequence:
-          type: integer
-          format: int64
-          minimum: 1
-          nullable: true
-          description: Durable global final message ordering key. Required only for FINAL_DELIVERY and never used as streamCursor.
-        kind:
-          $ref: '#/components/schemas/ChannelOutboundFrameKind'
-        occurredAt:
-          type: string
-          format: date-time
-        idempotencyKey:
-          type: string
-          minLength: 1
-          maxLength: 50
-          description: Stable compact idempotency key for provider delivery; frameId remains the ACK/checkpoint identity.
-        payload:
-          type: object
-          additionalProperties: true
-          description: >
-            Kind-specific payload. TYPING_* requires replyMessageId. DRAFT_UPDATE requires replyMessageId/blockId/blockType
-            and TEXT delta. DRAFT_COMPLETE requires replyMessageId/blockId/blockType/block and completes the referenced
-            draft block without stopping typing or streaming. TYPING_STOP closes transient typing/streaming state.
-            FINAL_DELIVERY requires sessionMessageId/messageSequence/messageBlocks and is the only official external send action.
-        traceContext:
-          $ref: '#/components/schemas/NormalizedChannelTraceContext'
-          nullable: true
-    ChannelOutboundFrameAck:
-      type: object
-      required:
-        - protocol
-        - channelProfileId
-        - providerType
-        - frameId
-        - finalSequence
-        - sessionId
-        - sessionMessageId
-      properties:
-        protocol:
-          type: string
-          enum: [agentyard.channel-outbound-frame-ack.v1]
-        channelProfileId:
-          type: string
-        providerType:
-          type: string
-        frameId:
-          type: string
-          description: Must match a delivered FINAL_DELIVERY frameId.
-        finalSequence:
-          type: integer
-          format: int64
-          minimum: 1
-          description: Candidate lastAckedFinalSequence. It advances durable replay and is distinct from SSE streamCursor.
-        sessionId:
-          type: string
-        sessionMessageId:
-          type: string
-        metadata:
-          type: object
-          additionalProperties: true
-          nullable: true
-          description: Sanitized diagnostics only. Raw provider response, credential, and externalSecretRef are forbidden.
     ChannelOutboundConsumerKind:
       type: string
-      enum: [REMOTE_EXTENSION, GATEWAY_NATIVE]
+      enum:
+      - REMOTE_EXTENSION
+      - GATEWAY_NATIVE
     ChannelOutboundProfileConsumer:
       type: object
       required:
-        - channelProfileId
-        - providerType
-        - consumerKind
-        - consumerId
+      - channelProfileId
+      - providerType
+      - consumerKind
+      - consumerId
       properties:
         channelProfileId:
           type: string
@@ -2750,7 +3141,7 @@ components:
     ChannelOutboundFrameCheckpoint:
       type: object
       required:
-        - consumer
+      - consumer
       properties:
         consumer:
           $ref: '#/components/schemas/ChannelOutboundProfileConsumer'
@@ -2775,23 +3166,10 @@ components:
           type: string
           format: date-time
           nullable: true
-    ChannelOutboundFinalReplayWindowExhausted:
-      type: object
-      required:
-        - emitted
-      properties:
-        emitted:
-          type: integer
-          minimum: 0
-        lastEmittedFinalSequence:
-          type: integer
-          format: int64
-          minimum: 1
-          nullable: true
     ChannelOutboundBindingSnapshotRefreshRequest:
       type: object
       required:
-        - reason
+      - reason
       properties:
         channelProfileId:
           type: string
@@ -2813,10 +3191,10 @@ components:
     ChannelProviderJobScheduleConfig:
       type: object
       required:
-        - scheduleType
-        - timezone
-        - jobTimeoutSeconds
-        - jobConfig
+      - scheduleType
+      - timezone
+      - jobTimeoutSeconds
+      - jobConfig
       properties:
         scheduleType:
           $ref: '#/components/schemas/ChannelProviderJobScheduleType'
@@ -2838,13 +3216,13 @@ components:
     ChannelProviderJobScheduleWriteConfig:
       type: object
       required:
-        - enabled
+      - enabled
       properties:
         enabled:
           type: boolean
         scheduleType:
           allOf:
-            - $ref: '#/components/schemas/ChannelProviderJobScheduleType'
+          - $ref: '#/components/schemas/ChannelProviderJobScheduleType'
           nullable: true
         intervalSeconds:
           type: integer
@@ -2867,14 +3245,14 @@ components:
     ChannelProviderJobConfig:
       type: object
       required:
-        - jobId
-        - jobType
-        - status
-        - scheduleConfig
-        - failureCount
-        - revision
-        - createdAt
-        - updatedAt
+      - jobId
+      - jobType
+      - status
+      - scheduleConfig
+      - failureCount
+      - revision
+      - createdAt
+      - updatedAt
       properties:
         jobId:
           type: string
@@ -2926,20 +3304,20 @@ components:
     ChannelProviderJobRun:
       type: object
       required:
-        - id
-        - runId
-        - jobId
-        - status
-        - scheduledAt
-        - startedAt
-        - jobTimeoutSeconds
-        - idempotencyKey
-        - attempt
-        - eventsIngested
-        - error
-        - metadata
-        - createdAt
-        - updatedAt
+      - id
+      - runId
+      - jobId
+      - status
+      - scheduledAt
+      - startedAt
+      - jobTimeoutSeconds
+      - idempotencyKey
+      - attempt
+      - eventsIngested
+      - error
+      - metadata
+      - createdAt
+      - updatedAt
       properties:
         id:
           type: string
@@ -3109,8 +3487,8 @@ components:
     ToolConnectorAccountSnapshot:
       type: object
       required:
-        - accountId
-        - hasExternalSecretRef
+      - accountId
+      - hasExternalSecretRef
       properties:
         accountId:
           type: string
@@ -3148,7 +3526,11 @@ components:
         reasoningEffort:
           type: string
           nullable: true
-          enum: [low, medium, high, xhigh]
+          enum:
+          - low
+          - medium
+          - high
+          - xhigh
     SkillConfig:
       type: object
       properties:
@@ -3165,80 +3547,19 @@ components:
           $ref: '#/components/schemas/ResourceType'
         tool:
           allOf:
-            - $ref: '#/components/schemas/ToolConfig'
+          - $ref: '#/components/schemas/ToolConfig'
           nullable: true
         llmModel:
           allOf:
-            - $ref: '#/components/schemas/LlmModelConfig'
+          - $ref: '#/components/schemas/LlmModelConfig'
           nullable: true
         skill:
           allOf:
-            - $ref: '#/components/schemas/SkillConfig'
+          - $ref: '#/components/schemas/SkillConfig'
           nullable: true
-    ResourceVersion:
-      type: object
-      properties:
-        id:
-          type: string
-        resourceId:
-          type: string
-        version:
-          type: string
-        status:
-          $ref: '#/components/schemas/VersionStatus'
-        summary:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-        publishedAt:
-          type: string
-          format: date-time
-          nullable: true
-        configuration:
-          $ref: '#/components/schemas/ResourceVersionConfiguration'
-    Resource:
-      type: object
-      properties:
-        id:
-          type: string
-        domainId:
-          type: string
-        name:
-          type: string
-        type:
-          $ref: '#/components/schemas/ResourceType'
-        shareScope:
-          $ref: '#/components/schemas/ShareScope'
-        ownerType:
-          type: string
-        ownerId:
-          type: string
-        summary:
-          type: string
-        steward:
-          type: string
-        tags:
-          type: array
-          items:
-            type: string
-        latestVersion:
-          allOf:
-            - $ref: '#/components/schemas/ResourceVersion'
-          nullable: true
-        effectiveVersion:
-          allOf:
-            - $ref: '#/components/schemas/ResourceVersion'
-          nullable: true
-        versions:
-          type: array
-          items:
-            $ref: '#/components/schemas/ResourceVersion'
     CreateResourceRequest:
       type: object
       properties:
-        domainId:
-          type: string
         name:
           type: string
         type:
@@ -3303,27 +3624,10 @@ components:
           type: integer
         retrievalMode:
           type: string
-          enum: [LEXICAL, VECTOR, HYBRID]
-        minScore:
-          type: number
-    KnowledgeBindingSnapshot:
-      type: object
-      properties:
-        knowledgeBaseId:
-          type: string
-        knowledgeBaseName:
-          type: string
-        knowledgeReleaseId:
-          type: string
-        knowledgeReleaseVersion:
-          type: string
-        snapshotId:
-          type: string
-        defaultTopK:
-          type: integer
-        retrievalMode:
-          type: string
-          enum: [LEXICAL, VECTOR, HYBRID]
+          enum:
+          - LEXICAL
+          - VECTOR
+          - HYBRID
         minScore:
           type: number
     KnowledgeRelease:
@@ -3355,8 +3659,6 @@ components:
       properties:
         id:
           type: string
-        domainId:
-          type: string
         name:
           type: string
         shareScope:
@@ -3375,11 +3677,11 @@ components:
             type: string
         latestRelease:
           allOf:
-            - $ref: '#/components/schemas/KnowledgeRelease'
+          - $ref: '#/components/schemas/KnowledgeRelease'
           nullable: true
         effectiveRelease:
           allOf:
-            - $ref: '#/components/schemas/KnowledgeRelease'
+          - $ref: '#/components/schemas/KnowledgeRelease'
           nullable: true
         releases:
           type: array
@@ -3409,23 +3711,20 @@ components:
     ReferenceObjectType:
       type: string
       enum:
-        - DOMAIN
-        - SCENARIO
-        - ASSISTANT
-        - PLAYBOOK
-        - AGENT
-        - RESOURCE
-        - KNOWLEDGE_BASE
+      - ROLE_TEMPLATE
+      - PLAYBOOK
+      - RESOURCE
+      - KNOWLEDGE_BASE
     ReferenceRelationMode:
       type: string
       enum:
-        - DIRECT
-        - INDIRECT
+      - DIRECT
+      - INDIRECT
     ReferenceImpactLevel:
       type: string
       enum:
-        - BLOCKS_DELETION
-        - ADVISORY
+      - BLOCKS_DELETION
+      - ADVISORY
     ObjectReferenceRelation:
       type: object
       properties:
@@ -3523,7 +3822,12 @@ components:
             $ref: '#/components/schemas/DeletionCascadeItem'
     PlatformAggregateType:
       type: string
-      enum: [DOMAIN, SCENARIO, ASSISTANT, AGENT, PLAYBOOK, RESOURCE, KNOWLEDGE_BASE, SESSION, PLAYBOOK_RUN]
+      enum:
+      - ROLE_TEMPLATE
+      - ENTRY
+      - PLAYBOOK
+      - RESOURCE
+      - KNOWLEDGE_BASE
     PlatformEvent:
       type: object
       properties:
@@ -3557,8 +3861,6 @@ components:
     CreateKnowledgeBaseRequest:
       type: object
       properties:
-        domainId:
-          type: string
         name:
           type: string
         shareScope:
@@ -3724,10 +4026,14 @@ components:
           type: string
         retrievalBackend:
           type: string
-          enum: [PGVECTOR]
+          enum:
+          - PGVECTOR
         retrievalMode:
           type: string
-          enum: [LEXICAL, VECTOR, HYBRID]
+          enum:
+          - LEXICAL
+          - VECTOR
+          - HYBRID
         status:
           $ref: '#/components/schemas/KnowledgeIndexSnapshotStatus'
         stage:
@@ -3768,7 +4074,9 @@ components:
           $ref: '#/components/schemas/KnowledgeImportJob'
     KnowledgeRetrievalPreviewRequest:
       type: object
-      required: [snapshotId, query]
+      required:
+      - snapshotId
+      - query
       properties:
         snapshotId:
           type: string
@@ -3781,7 +4089,10 @@ components:
           format: double
         retrievalMode:
           type: string
-          enum: [LEXICAL, VECTOR, HYBRID]
+          enum:
+          - LEXICAL
+          - VECTOR
+          - HYBRID
           nullable: true
     KnowledgeRetrievalPreviewHit:
       type: object
@@ -3815,25 +4126,52 @@ components:
           type: boolean
     KnowledgeFileStatus:
       type: string
-      enum: [UPLOADED, IMPORTING, IMPORTED, FAILED]
+      enum:
+      - UPLOADED
+      - IMPORTING
+      - IMPORTED
+      - FAILED
     KnowledgeImportJobStatus:
       type: string
-      enum: [QUEUED, RUNNING, SUCCEEDED, FAILED]
+      enum:
+      - QUEUED
+      - RUNNING
+      - SUCCEEDED
+      - FAILED
     KnowledgeImportSourceType:
       type: string
-      enum: [FILE_UPLOAD, URL]
+      enum:
+      - FILE_UPLOAD
+      - URL
     KnowledgeIndexSnapshotStatus:
       type: string
-      enum: [QUEUED, RUNNING, READY, FAILED]
+      enum:
+      - QUEUED
+      - RUNNING
+      - READY
+      - FAILED
     KnowledgeImportJobStage:
       type: string
-      enum: [QUEUED, FETCHING_SOURCE, PARSING, CHUNKING, PERSISTING, SUCCEEDED, FAILED]
+      enum:
+      - QUEUED
+      - FETCHING_SOURCE
+      - PARSING
+      - CHUNKING
+      - PERSISTING
+      - SUCCEEDED
+      - FAILED
     KnowledgeIndexSnapshotStage:
       type: string
-      enum: [QUEUED, COLLECTING_DOCUMENTS, INDEXING, READY, FAILED]
+      enum:
+      - QUEUED
+      - COLLECTING_DOCUMENTS
+      - INDEXING
+      - READY
+      - FAILED
     CreateKnowledgeUrlImportRequest:
       type: object
-      required: [url]
+      required:
+      - url
       properties:
         url:
           type: string
@@ -3847,1304 +4185,1557 @@ components:
           type: array
           items:
             type: string
-    CreateAssistantRequest:
-      type: object
-      properties:
-        scenarioId:
-          type: string
-        name:
-          type: string
-        description:
-          type: string
-        modelPolicy:
-          $ref: '#/components/schemas/AssistantModelPolicy'
-        knowledgeAccessPolicy:
-          $ref: '#/components/schemas/KnowledgeAccessPolicy'
-        memoryPolicy:
-          $ref: '#/components/schemas/MemoryPolicy'
-    UpdateAssistantRequest:
-      type: object
-      properties:
-        name:
-          type: string
-        description:
-          type: string
-        status:
-          $ref: '#/components/schemas/VersionStatus'
-        modelPolicy:
-          $ref: '#/components/schemas/AssistantModelPolicy'
-        knowledgeAccessPolicy:
-          $ref: '#/components/schemas/KnowledgeAccessPolicy'
-        memoryPolicy:
-          $ref: '#/components/schemas/MemoryPolicy'
-    CreateAgentRequest:
-      type: object
-      properties:
-        assistantId:
-          type: string
-        name:
-          type: string
-        role:
-          type: string
-        responsibility:
-          type: string
-        executionPolicy:
-          $ref: '#/components/schemas/AgentExecutionPolicy'
-    UpdateAgentRequest:
-      type: object
-      properties:
-        name:
-          type: string
-        role:
-          type: string
-        responsibility:
-          type: string
-        executionPolicy:
-          $ref: '#/components/schemas/AgentExecutionPolicy'
     CreatePlaybookRequest:
       type: object
-      properties:
-        assistantId:
-          type: string
-        name:
-          type: string
-        description:
-          type: string
-          nullable: true
-        inputSchema:
-          type: string
-          nullable: true
-        resultSchema:
-          type: string
-          nullable: true
-        executionPolicy:
-          $ref: '#/components/schemas/PlaybookExecutionPolicy'
-        allowHumanTask:
-          type: boolean
-        allowExternalInteraction:
-          type: boolean
-        entryNodeKey:
-          type: string
-        nodes:
-          type: array
-          items:
-            $ref: '#/components/schemas/PlaybookNode'
-        edges:
-          type: array
-          items:
-            $ref: '#/components/schemas/PlaybookEdge'
-    UpdatePlaybookRequest:
-      type: object
+      required:
+      - name
+      - description
+      - ownerType
+      - ownerId
       properties:
         name:
           type: string
         description:
           type: string
-          nullable: true
-        inputSchema:
+        ownerType:
+          $ref: '#/components/schemas/ResourceOwnerType'
+        ownerId:
           type: string
-          nullable: true
-        resultSchema:
-          type: string
-          nullable: true
-        executionPolicy:
-          $ref: '#/components/schemas/PlaybookExecutionPolicy'
-        allowHumanTask:
-          type: boolean
-        allowExternalInteraction:
-          type: boolean
-        entryNodeKey:
-          type: string
-        nodes:
-          type: array
-          items:
-            $ref: '#/components/schemas/PlaybookNode'
-        edges:
-          type: array
-          items:
-            $ref: '#/components/schemas/PlaybookEdge'
-    SessionRuntimeStatus:
-      type: string
-      enum: [IDLE, ACTIVE, DRAINING, ENDED]
-    SessionActorType:
-      type: string
-      enum: [CUSTOMER, AGENT, SYSTEM, HUMAN_OPERATOR, EXTERNAL_SYSTEM]
-    SessionMessageRole:
-      type: string
-      enum: [USER, ASSISTANT, HUMAN_OPERATOR, SYSTEM]
-    SessionMessageStatus:
-      type: string
-      enum: [SENT, STREAMING, DELIVERED, FAILED]
-    SessionMessageSenderType:
-      type: string
-      enum: [CUSTOMER, AGENT, HUMAN_OPERATOR, SYSTEM]
-    SessionMessageBlockType:
-      type: string
-      enum: [TEXT, IMAGE, RICH_TEXT, CARD]
-    SessionMessageProducerType:
-      type: string
-      enum: [EXTERNAL, PLATFORM]
-    RichTextFormat:
-      type: string
-      enum: [MARKDOWN]
-    CardActionType:
-      type: string
-      enum: [LINK]
-    SessionEventType:
+        initialVersion:
+          anyOf:
+          - $ref: '#/components/schemas/CreatePlaybookVersionRequest'
+          - type: 'null'
+    ResourceOwnerType:
       type: string
       enum:
-        - AGENT_DECISION_REJECTED
-        - AGENT_TURN_FAILED
-        - USER_MESSAGE_SECURITY_BLOCKED
-        - OWNER_SWITCH
-        - PLAYBOOK_STARTED
-        - PLAYBOOK_WAITING
-        - PLAYBOOK_RESUMED
-        - PLAYBOOK_COMPLETED
-        - SESSION_HUMAN_HANDOFF_STARTED
-        - SESSION_HUMAN_HANDOFF_ENDED
-        - HUMAN_RESUME_RECEIVED
-        - EXTERNAL_CALLBACK_RECEIVED
-    PlaybookRunStatus:
-      type: string
-      enum: [RUNNING, WAITING, SUCCEEDED, FAILED, CANCELLED]
-    WebSessionTurnMessageInput:
+      - PERSON
+      - ORGANIZATION
+      - PLATFORM
+    OwnedConfiguration:
       type: object
-      required: [blocks, metadata]
+      required:
+      - name
+      - description
+      - ownerType
+      - ownerId
       properties:
-        clientMessageId:
+        name:
           type: string
-          nullable: true
-        occurredAt:
+        description:
           type: string
-          format: date-time
-          nullable: true
-        blocks:
-          type: array
-          items:
-            $ref: '#/components/schemas/SessionMessageBlock'
-        metadata:
-          type: object
-          additionalProperties: true
-    SendSessionTurnRequest:
+        ownerType:
+          $ref: '#/components/schemas/ResourceOwnerType'
+        ownerId:
+          type: string
+    RoleConfiguration:
       type: object
-      required: [customerId, turnDedupKey, messages, metadata]
-      description: Public Web turn request. Clients cannot declare message role or sender; API writes USER/CUSTOMER.
+      required:
+      - role
+      - responsibility
+      - systemPrompt
+      - modelVersionId
+      - privacyModelVersionId
+      - privacyMappingEnabled
+      - knowledgeReleaseId
+      - memoryWindowSize
+      - skillVersionIds
+      - toolVersionIds
+      - playbookVersionIds
       properties:
-        sessionId:
+        role:
           type: string
-          nullable: true
-        assistantId:
+        responsibility:
           type: string
-          nullable: true
-        customerId:
+        systemPrompt:
           type: string
-        turnDedupKey:
-          type: string
-        messages:
-          type: array
-          items:
-            $ref: '#/components/schemas/WebSessionTurnMessageInput'
-        metadata:
-          type: object
-          additionalProperties: true
-    AcceptedSessionMessageAllocation:
-      type: object
-      required: [requestIndex, messageId, turnIndex]
-      properties:
-        requestIndex:
+        modelVersionId:
+          anyOf:
+          - type: string
+          - type: 'null'
+        privacyModelVersionId:
+          anyOf:
+          - type: string
+          - type: 'null'
+        privacyMappingEnabled:
+          type: boolean
+        knowledgeReleaseId:
+          anyOf:
+          - type: string
+          - type: 'null'
+        memoryWindowSize:
           type: integer
-          minimum: 0
-        clientMessageId:
-          type: string
-          nullable: true
-        messageId:
-          type: string
-        turnIndex:
-          type: integer
-          minimum: 0
-    SendSessionTurnResponse:
-      type: object
-      required: [sessionId, turnId, status, acceptedMessageIds, acceptedMessageAllocations, duplicateExternalMessageIds]
-      properties:
-        sessionId:
-          type: string
-        turnId:
-          type: string
-        status:
-          $ref: '#/components/schemas/SessionMessageDeliveryStatus'
-        acceptedMessageIds:
+          minimum: 1
+          maximum: 1000
+        skillVersionIds:
           type: array
           items:
             type: string
-        acceptedMessageAllocations:
-          type: array
-          items:
-            $ref: '#/components/schemas/AcceptedSessionMessageAllocation'
-        duplicateExternalMessageIds:
+        toolVersionIds:
           type: array
           items:
             type: string
-        reason:
-          type: string
-          nullable: true
-    ChannelInboundSessionTurnMessage:
-      type: object
-      required: [externalMessageId, role, sender, message, metadata]
-      properties:
-        externalEventId:
-          type: string
-          nullable: true
-        externalMessageId:
-          type: string
-        occurredAt:
-          type: string
-          format: date-time
-          nullable: true
-        role:
-          $ref: '#/components/schemas/SessionMessageRole'
-        sender:
-          $ref: '#/components/schemas/SessionMessageSender'
-        message:
-          $ref: '#/components/schemas/SessionMessageInput'
-        metadata:
-          type: object
-          additionalProperties: true
-    ChannelInboundSessionTurnRequest:
-      type: object
-      required: [channelProfileId, externalConversationId, dedupKey, assistantId, customerId, messages, metadata]
-      properties:
-        channelProfileId:
-          type: string
-        externalConversationId:
-          type: string
-        dedupKey:
-          type: string
-        assistantId:
-          type: string
-        customerId:
-          type: string
-        sessionId:
-          type: string
-          nullable: true
-        messages:
+        playbookVersionIds:
           type: array
           items:
-            $ref: '#/components/schemas/ChannelInboundSessionTurnMessage'
-        metadata:
-          type: object
-          additionalProperties: true
-    ChannelInboundSessionTurnResponse:
-      allOf:
-        - $ref: '#/components/schemas/SendSessionTurnResponse'
-    ImportSessionTarget:
-      oneOf:
-        - $ref: '#/components/schemas/ExistingSessionImportTarget'
-        - $ref: '#/components/schemas/WebIdentityImportTarget'
-        - $ref: '#/components/schemas/ChannelIdentityImportTarget'
-    ExistingSessionImportTarget:
+            type: string
+    RoleTemplateVersion:
       type: object
-      required: [sessionId, customerId, assistantId]
+      required:
+      - id
+      - templateId
+      - version
+      - status
+      - createdAt
+      - publishedAt
+      - configuration
       properties:
-        sessionId:
+        id:
           type: string
-        customerId:
-          type: string
-        assistantId:
-          type: string
-    WebIdentityImportTarget:
-      type: object
-      required: [customerId, assistantId]
-      properties:
-        customerId:
-          type: string
-        assistantId:
-          type: string
-    ChannelIdentityImportTarget:
-      type: object
-      required: [channelProfileId, externalConversationId, customerId, assistantId]
-      properties:
-        channelProfileId:
-          type: string
-        externalConversationId:
-          type: string
-        customerId:
-          type: string
-        assistantId:
-          type: string
-    TrustedImportSessionTurnMessage:
-      type: object
-      required: [role, sender, message, metadata]
-      properties:
-        importMessageId:
-          type: string
-          nullable: true
-        externalMessageId:
-          type: string
-          nullable: true
-        occurredAt:
-          type: string
-          format: date-time
-          nullable: true
-        role:
-          $ref: '#/components/schemas/SessionMessageRole'
-        sender:
-          $ref: '#/components/schemas/SessionMessageSender'
-        message:
-          $ref: '#/components/schemas/SessionMessageInput'
-        metadata:
-          type: object
-          additionalProperties: true
-    TrustedImportSessionTurnRequest:
-      type: object
-      required: [target, turnDedupKey, importBatchId, sourceSystem, messages, metadata]
-      properties:
-        target:
-          $ref: '#/components/schemas/ImportSessionTarget'
-        turnDedupKey:
-          type: string
-        importBatchId:
-          type: string
-        sourceSystem:
-          type: string
-        messages:
-          type: array
-          items:
-            $ref: '#/components/schemas/TrustedImportSessionTurnMessage'
-        metadata:
-          type: object
-          additionalProperties: true
-    HumanResumeRequest:
-      type: object
-      required: [playbookRunId]
-      properties:
-        playbookRunId:
-          type: string
-        payload:
-          type: object
-          additionalProperties: true
-    ExternalCallbackRequest:
-      type: object
-      required: [playbookRunId]
-      properties:
-        playbookRunId:
-          type: string
-        payload:
-          type: object
-          additionalProperties: true
-    HumanOperatorReplyRequest:
-      type: object
-      required: [message]
-      properties:
-        message:
-          $ref: '#/components/schemas/SessionMessageInput'
-        payload:
-          type: object
-          additionalProperties: true
-    SessionMessageSender:
-      type: object
-      required: [senderType, senderName]
-      properties:
-        senderType:
-          $ref: '#/components/schemas/SessionMessageSenderType'
-        senderId:
-          type: string
-          nullable: true
-        senderName:
-          type: string
-    TextMessageBlock:
-      type: object
-      required: [type, text]
-      properties:
-        type:
-          type: string
-          enum: [TEXT]
-        text:
-          type: string
-    ImageMessageBlock:
-      type: object
-      required: [type, url]
-      properties:
-        type:
-          type: string
-          enum: [IMAGE]
-        url:
-          type: string
-        mimeType:
-          type: string
-          nullable: true
-        width:
-          type: integer
-          nullable: true
-        height:
-          type: integer
-          nullable: true
-        alt:
-          type: string
-          nullable: true
-    RichTextMessageBlock:
-      type: object
-      required: [type, format, content]
-      properties:
-        type:
-          type: string
-          enum: [RICH_TEXT]
-        format:
-          $ref: '#/components/schemas/RichTextFormat'
-        content:
-          type: string
-    CardLinkAction:
-      type: object
-      required: [actionType, label, url]
-      properties:
-        actionType:
-          $ref: '#/components/schemas/CardActionType'
-        label:
-          type: string
-        url:
-          type: string
-    CardMessageBlock:
-      type: object
-      required: [type, cardType, version, data]
-      properties:
-        type:
-          type: string
-          enum: [CARD]
-        cardType:
+        templateId:
           type: string
         version:
           type: string
-        data:
-          type: object
-          additionalProperties: true
-        actions:
-          type: array
-          items:
-            $ref: '#/components/schemas/CardLinkAction'
-    SessionMessageBlock:
-      oneOf:
-        - $ref: '#/components/schemas/TextMessageBlock'
-        - $ref: '#/components/schemas/ImageMessageBlock'
-        - $ref: '#/components/schemas/RichTextMessageBlock'
-        - $ref: '#/components/schemas/CardMessageBlock'
-    SessionMessageInput:
-      type: object
-      properties:
-        blocks:
-          type: array
-          items:
-            $ref: '#/components/schemas/SessionMessageBlock'
-        metadata:
-          type: object
-          additionalProperties: true
-    SessionMessage:
-      type: object
-      properties:
-        messageId:
-          type: string
-        sessionId:
-          type: string
-        sequence:
-          type: integer
-          format: int64
-        turnId:
-          type: string
-        turnIndex:
-          type: integer
-          minimum: 0
-        producerType:
-          $ref: '#/components/schemas/SessionMessageProducerType'
-        externalMessageId:
-          type: string
-          nullable: true
-        clientMessageId:
-          type: string
-          nullable: true
-        occurredAt:
+        status:
+          $ref: '#/components/schemas/VersionStatus'
+        createdAt:
           type: string
           format: date-time
-          nullable: true
-        role:
-          $ref: '#/components/schemas/SessionMessageRole'
-        sender:
-          $ref: '#/components/schemas/SessionMessageSender'
-        status:
-          $ref: '#/components/schemas/SessionMessageStatus'
-        blocks:
+        publishedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        configuration:
+          $ref: '#/components/schemas/RoleConfiguration'
+    RoleTemplate:
+      type: object
+      required:
+      - id
+      - name
+      - description
+      - ownerType
+      - ownerId
+      - latestVersion
+      - effectiveVersion
+      - versions
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        ownerType:
+          $ref: '#/components/schemas/ResourceOwnerType'
+        ownerId:
+          type: string
+        latestVersion:
+          anyOf:
+          - $ref: '#/components/schemas/RoleTemplateVersion'
+          - type: 'null'
+        effectiveVersion:
+          anyOf:
+          - $ref: '#/components/schemas/RoleTemplateVersion'
+          - type: 'null'
+        versions:
           type: array
           items:
-            $ref: '#/components/schemas/SessionMessageBlock'
-        metadata:
+            $ref: '#/components/schemas/RoleTemplateVersion'
+    CreateRoleTemplateVersionRequest:
+      type: object
+      required:
+      - status
+      - configuration
+      properties:
+        status:
+          $ref: '#/components/schemas/VersionStatus'
+        configuration:
+          $ref: '#/components/schemas/RoleConfiguration'
+    CreateRoleTemplateRequest:
+      type: object
+      required:
+      - name
+      - description
+      - ownerType
+      - ownerId
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        ownerType:
+          $ref: '#/components/schemas/ResourceOwnerType'
+        ownerId:
+          type: string
+        initialVersion:
+          anyOf:
+          - $ref: '#/components/schemas/CreateRoleTemplateVersionRequest'
+          - type: 'null'
+    ApiResponseRoleTemplateList:
+      type: object
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoleTemplate'
+    ApiResponseRoleTemplate:
+      type: object
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/RoleTemplate'
+    ApiResponseRoleTemplateVersion:
+      type: object
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/RoleTemplateVersion'
+    PlaybookVersion:
+      type: object
+      required:
+      - id
+      - playbookId
+      - version
+      - status
+      - createdAt
+      - publishedAt
+      - definition
+      properties:
+        id:
+          type: string
+        playbookId:
+          type: string
+        version:
+          type: string
+        status:
+          $ref: '#/components/schemas/VersionStatus'
+        createdAt:
+          type: string
+          format: date-time
+        publishedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        definition:
+          $ref: '#/components/schemas/PlaybookDefinition'
+    CreatePlaybookVersionRequest:
+      type: object
+      required:
+      - status
+      - definition
+      properties:
+        status:
+          $ref: '#/components/schemas/VersionStatus'
+        definition:
+          $ref: '#/components/schemas/PlaybookDefinition'
+    ApiResponsePlaybookList:
+      type: object
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Playbook'
+    ApiResponsePlaybook:
+      type: object
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/Playbook'
+    ApiResponsePlaybookVersion:
+      type: object
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/PlaybookVersion'
+    PlaybookDefinition:
+      type: object
+      required:
+      - description
+      - inputSchema
+      - resultSchema
+      - executionPolicy
+      - allowHumanTask
+      - allowExternalInteraction
+      - entryNodeKey
+      - nodes
+      - edges
+      properties:
+        description:
+          type: string
+        inputSchema:
+          type: string
+        resultSchema:
+          type: string
+        executionPolicy:
+          $ref: '#/components/schemas/PlaybookExecutionPolicy'
+        allowHumanTask:
+          type: boolean
+        allowExternalInteraction:
+          type: boolean
+        entryNodeKey:
+          type: string
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaybookNode'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaybookEdge'
+    ScopeKind:
+      type: string
+      enum:
+      - PLATFORM
+      - ORGANIZATION
+      - TASK
+      - SESSION
+      - TEMPLATE
+      - RESOURCE
+      - PARTICIPANT
+    GrantRequest:
+      type: object
+      required:
+      - operation
+      - scopeKind
+      - scopeId
+      - delegable
+      properties:
+        operation:
+          type: string
+        scopeKind:
+          $ref: '#/components/schemas/ScopeKind'
+        scopeId:
+          type: string
+        delegable:
+          type: boolean
+        expiresAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+    EntryRequest:
+      type: object
+      required:
+      - name
+      - description
+      - ownerType
+      - ownerId
+      - shareScope
+      - receptionTemplateVersionId
+      - enabled
+      - allowedTemplateIds
+      - capabilityGrants
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        ownerType:
+          $ref: '#/components/schemas/ResourceOwnerType'
+        ownerId:
+          type: string
+        shareScope:
+          $ref: '#/components/schemas/ShareScope'
+        receptionTemplateVersionId:
+          type: string
+        enabled:
+          type: boolean
+        allowedTemplateIds:
+          type: array
+          items:
+            type: string
+        capabilityGrants:
+          type: array
+          items:
+            $ref: '#/components/schemas/GrantRequest'
+    Entry:
+      type: object
+      required:
+      - id
+      - name
+      - description
+      - ownerType
+      - ownerId
+      - shareScope
+      - receptionTemplateVersionId
+      - enabled
+      - allowedTemplateIds
+      - capabilityGrants
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        ownerType:
+          $ref: '#/components/schemas/ResourceOwnerType'
+        ownerId:
+          type: string
+        shareScope:
+          $ref: '#/components/schemas/ShareScope'
+        receptionTemplateVersionId:
+          type: string
+        enabled:
+          type: boolean
+        allowedTemplateIds:
+          type: array
+          items:
+            type: string
+        capabilityGrants:
+          type: array
+          items:
+            $ref: '#/components/schemas/GrantRequest'
+    ApiResponseEntryList:
+      type: object
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Entry'
+    ApiResponseEntry:
+      type: object
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/Entry'
+    AgentSession:
+      type: object
+      required:
+      - id
+      - participantId
+      - templateVersionId
+      - name
+      - status
+      - createdBy
+      - replyToParticipantId
+      - workMemory
+      - revision
+      - createdAt
+      - updatedAt
+      properties:
+        id:
+          type: string
+        participantId:
+          type: string
+        templateVersionId:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - PAUSED
+          - CLOSED
+        createdBy:
+          type: string
+        replyToParticipantId:
+          anyOf:
+          - type: string
+          - type: 'null'
+        workMemory:
           type: object
           additionalProperties: true
-        relatedPlaybookRunId:
-          type: string
-          nullable: true
-        relatedOwnerAgentId:
-          type: string
-          nullable: true
-        sourceEventId:
-          type: string
-          nullable: true
+        revision:
+          type: integer
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
-    SessionEvent:
+    MessageKind:
+      type: string
+      enum:
+      - MESSAGE
+      - DELEGATION
+      - RESULT
+      - QUESTION
+      - EVENT
+      - CONTROL
+    CollaborationMessage:
       type: object
+      required:
+      - id
+      - senderId
+      - recipientId
+      - taskId
+      - replyToMessageId
+      - kind
+      - body
+      - createdAt
       properties:
-        eventId:
+        id:
           type: string
-        sessionId:
+        senderId:
           type: string
-        sequence:
-          type: integer
-          format: int64
-        eventType:
-          $ref: '#/components/schemas/SessionEventType'
+        recipientId:
+          type: string
+        taskId:
+          anyOf:
+          - type: string
+          - type: 'null'
+        replyToMessageId:
+          anyOf:
+          - type: string
+          - type: 'null'
+        kind:
+          $ref: '#/components/schemas/MessageKind'
+        body:
+          type: object
+          additionalProperties: true
         createdAt:
           type: string
           format: date-time
-        actorType:
-          $ref: '#/components/schemas/SessionActorType'
-        actorId:
+    SendMessage:
+      type: object
+      required:
+      - requestId
+      - recipientId
+      - kind
+      - body
+      properties:
+        requestId:
           type: string
-          nullable: true
-        payload:
+        recipientId:
+          type: string
+        taskId:
+          anyOf:
+          - type: string
+          - type: 'null'
+        replyToMessageId:
+          anyOf:
+          - type: string
+          - type: 'null'
+        kind:
+          $ref: '#/components/schemas/MessageKind'
+        body:
           type: object
           additionalProperties: true
-        relatedMessageId:
-          type: string
-          nullable: true
-        relatedPlaybookRunId:
-          type: string
-          nullable: true
-        relatedOwnerAgentId:
-          type: string
-          nullable: true
-    PlaybookRun:
+    ReceptionRequest:
       type: object
+      required: []
       properties:
-        runId:
+        entryId:
+          anyOf:
+          - type: string
+          - type: 'null'
+    Reception:
+      type: object
+      required:
+      - session
+      - humanParticipantId
+      - messages
+      - latestActivation
+      - participants
+      - previousCursor
+      properties:
+        session:
+          $ref: '#/components/schemas/AgentSession'
+        humanParticipantId:
+          type: string
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/CollaborationMessage'
+        latestActivation:
+          anyOf:
+          - $ref: '#/components/schemas/Activation'
+          - type: 'null'
+        participants:
+          type: array
+          items:
+            $ref: ./collaboration.yaml#/components/schemas/Actor
+        previousCursor:
+          type:
+          - string
+          - 'null'
+    Activation:
+      type: object
+      required:
+      - id
+      - sessionId
+      - inputMessageId
+      - status
+      - failureReason
+      - createdAt
+      - updatedAt
+      properties:
+        completion:
+          anyOf:
+          - type: string
+            enum: [COMPLETED, WAITING, BLOCKED]
+          - type: 'null'
+        id:
           type: string
         sessionId:
           type: string
-        parentSessionEventId:
-          type: string
-        playbookId:
-          type: string
-        ownerAgentId:
+        inputMessageId:
           type: string
         status:
-          $ref: '#/components/schemas/PlaybookRunStatus'
+          type: string
+          enum:
+          - QUEUED
+          - RUNNING
+          - SUCCEEDED
+          - FAILED
+          - CANCELLED
+        failureReason:
+          anyOf:
+          - type: string
+          - type: 'null'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ToolRun:
+      type: object
+      required:
+      - id
+      - sessionId
+      - participantId
+      - activationId
+      - taskId
+      - playbookVersionId
+      - status
+      - input
+      - result
+      - waiting
+      - failureReason
+      - createdAt
+      - updatedAt
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+        participantId:
+          type: string
+        activationId:
+          type: string
+        taskId:
+          anyOf:
+          - type: string
+          - type: 'null'
+        playbookVersionId:
+          type: string
+        status:
+          type: string
+          enum:
+          - QUEUED
+          - RUNNING
+          - WAITING
+          - SUCCEEDED
+          - FAILED
+          - CANCELLED
         input:
           type: object
           additionalProperties: true
         result:
           type: object
           additionalProperties: true
+        waiting:
+          type: object
+          additionalProperties: true
         failureReason:
-          type: string
-          nullable: true
+          anyOf:
+          - type: string
+          - type: 'null'
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
           format: date-time
-        waitingReason:
-          type: string
-          nullable: true
-    SessionRuntimeSession:
+    AgentSchedule:
       type: object
+      required:
+      - id
+      - sessionId
+      - taskId
+      - dueAt
+      - instruction
+      - intervalSeconds
+      - active
+      - createdBy
+      - createdAt
       properties:
         id:
           type: string
-        scenarioId:
+        sessionId:
           type: string
-        title:
-          type: string
-        customerId:
-          type: string
-        assistantId:
-          type: string
-        assistantName:
-          type: string
-        assistantReleaseVersion:
-          type: string
-        status:
-          $ref: '#/components/schemas/SessionRuntimeStatus'
-        primaryAgentId:
-          type: string
-        currentOwnerAgentId:
-          type: string
-        activePlaybookRunId:
-          type: string
-          nullable: true
-        agentTurnActive:
-          type: boolean
-        sessionHumanHandoffActive:
-          type: boolean
-        pendingOwnerReevaluation:
-          type: boolean
-        draining:
-          type: boolean
-        sharedState:
-          type: object
-          additionalProperties: true
-        idleDeadline:
+        taskId:
+          anyOf:
+          - type: string
+          - type: 'null'
+        dueAt:
           type: string
           format: date-time
-          nullable: true
+        instruction:
+          type: string
+        intervalSeconds:
+          anyOf:
+          - type: integer
+          - type: 'null'
+        active:
+          type: boolean
+        createdBy:
+          type: string
         createdAt:
           type: string
           format: date-time
+    AgentExecutionStatus:
+      type: object
+      required: [sessionId, lifecycle, execution, updatedAt, historyReadable]
+      properties:
+        sessionId:
+          type: string
+        lifecycle:
+          type: string
+          enum: [ACTIVE, PAUSED, CLOSED]
+        execution:
+          type: string
+          enum: [IDLE, QUEUED, RUNNING, WAITING, BLOCKED, FAILED, CANCELLED]
         updatedAt:
           type: string
           format: date-time
-        endedAt:
-          type: string
-          format: date-time
-          nullable: true
-        latestMessageSequence:
-          type: integer
-          format: int64
-        latestEventSequence:
-          type: integer
-          format: int64
-    SessionRuntimeDetail:
+        historyReadable:
+          type: boolean
+    AgentSessionDetail:
       type: object
+      required:
+      - session
+      - messages
+      - activations
+      - toolRuns
+      - schedules
+      - subscriptions
       properties:
         session:
-          $ref: '#/components/schemas/SessionRuntimeSession'
+          $ref: '#/components/schemas/AgentSession'
         messages:
           type: array
           items:
-            $ref: '#/components/schemas/SessionMessage'
-        events:
+            $ref: '#/components/schemas/CollaborationMessage'
+        activations:
           type: array
           items:
-            $ref: '#/components/schemas/SessionEvent'
-        playbookRuns:
+            $ref: '#/components/schemas/Activation'
+        toolRuns:
           type: array
           items:
-            $ref: '#/components/schemas/PlaybookRun'
-    SessionRuntimeStreamEvent:
-      oneOf:
-        - $ref: '#/components/schemas/SessionRuntimeSnapshotEvent'
-        - $ref: '#/components/schemas/SessionProgressEvent'
-        - $ref: '#/components/schemas/SessionReplyDraftEvent'
-        - $ref: '#/components/schemas/SessionStreamErrorEvent'
-      discriminator:
-        propertyName: type
-    SessionRuntimeSnapshotEvent:
-      type: object
-      required: [id, type, occurredAt, sessionId, detail]
-      properties:
-        id:
-          type: string
-        type:
-          type: string
-          enum: [SESSION_SNAPSHOT, SESSION_UPDATED]
-        occurredAt:
-          type: string
-          format: date-time
-        sessionId:
-          type: string
-        detail:
-          $ref: '#/components/schemas/SessionRuntimeDetail'
-    StreamVisibility:
-      type: string
-      enum: [CUSTOMER, OPERATOR, DEVELOPER, INTERNAL]
-    SessionProgressEvent:
-      type: object
-      required: [id, type, occurredAt, sessionId, turnId, visibility, phase, status, title, detail]
-      properties:
-        id:
-          type: string
-        type:
-          type: string
-          enum: [SESSION_PROGRESS]
-        occurredAt:
-          type: string
-          format: date-time
-        sessionId:
-          type: string
-        turnId:
-          type: string
-        visibility:
-          $ref: '#/components/schemas/StreamVisibility'
-        phase:
-          type: string
-        status:
-          type: string
-        title:
-          type: string
-        detail:
-          type: object
-          additionalProperties: true
-    SessionReplyDraftEvent:
-      type: object
-      required: [id, type, occurredAt, sessionId, turnId, replyMessageId, operation, blockId, blockType]
-      properties:
-        id:
-          type: string
-        type:
-          type: string
-          enum: [SESSION_REPLY_DRAFT]
-        occurredAt:
-          type: string
-          format: date-time
-        sessionId:
-          type: string
-        turnId:
-          type: string
-        replyMessageId:
-          type: string
-        operation:
-          type: string
-          enum: [DELTA, COMPLETED, DISCARD]
-        blockId:
-          type: string
-        blockType:
-          $ref: '#/components/schemas/SessionMessageBlockType'
-        delta:
-          type: string
-          nullable: true
-        text:
-          type: string
-          nullable: true
-    SessionStreamErrorEvent:
-      type: object
-      required: [id, type, occurredAt, sessionId, turnId, code, message, retryable, detail]
-      properties:
-        id:
-          type: string
-        type:
-          type: string
-          enum: [SESSION_STREAM_ERROR]
-        occurredAt:
-          type: string
-          format: date-time
-        sessionId:
-          type: string
-        turnId:
-          type: string
-        code:
-          type: string
-        message:
-          type: string
-        retryable:
-          type: boolean
-        detail:
-          type: object
-          additionalProperties: true
-    AgentTurnStreamFrameKind:
-      type: string
-      enum:
-        - TURN_STARTED
-        - MODEL_STARTED
-        - MODEL_COMPLETED
-        - ACTION_TOOL_STARTED
-        - ACTION_TOOL_COMPLETED
-        - REPLY_BLOCK_DELTA
-        - REPLY_BLOCK_COMPLETED
-        - FINAL_OUTCOME
-        - ERROR
-    AgentTurnStreamFrame:
-      oneOf:
-        - $ref: '#/components/schemas/TurnStartedFrame'
-        - $ref: '#/components/schemas/ModelStartedFrame'
-        - $ref: '#/components/schemas/ModelCompletedFrame'
-        - $ref: '#/components/schemas/ToolStartedFrame'
-        - $ref: '#/components/schemas/ToolCompletedFrame'
-        - $ref: '#/components/schemas/ReplyBlockDeltaFrame'
-        - $ref: '#/components/schemas/ReplyBlockCompletedFrame'
-        - $ref: '#/components/schemas/FinalOutcomeFrame'
-        - $ref: '#/components/schemas/ErrorFrame'
-      discriminator:
-        propertyName: kind
-        mapping:
-          TURN_STARTED: '#/components/schemas/TurnStartedFrame'
-          MODEL_STARTED: '#/components/schemas/ModelStartedFrame'
-          MODEL_COMPLETED: '#/components/schemas/ModelCompletedFrame'
-          ACTION_TOOL_STARTED: '#/components/schemas/ToolStartedFrame'
-          ACTION_TOOL_COMPLETED: '#/components/schemas/ToolCompletedFrame'
-          REPLY_BLOCK_DELTA: '#/components/schemas/ReplyBlockDeltaFrame'
-          REPLY_BLOCK_COMPLETED: '#/components/schemas/ReplyBlockCompletedFrame'
-          FINAL_OUTCOME: '#/components/schemas/FinalOutcomeFrame'
-          ERROR: '#/components/schemas/ErrorFrame'
-    AgentTurnTransientFrameKind:
-      type: string
-      enum:
-        - TURN_STARTED
-        - MODEL_STARTED
-        - MODEL_COMPLETED
-        - ACTION_TOOL_STARTED
-        - ACTION_TOOL_COMPLETED
-        - REPLY_BLOCK_DELTA
-        - REPLY_BLOCK_COMPLETED
-        - TURN_COMPLETED
-        - ERROR
-    AgentTurnTransientFrame:
-      oneOf:
-        - $ref: '#/components/schemas/TransientTurnStartedFrame'
-        - $ref: '#/components/schemas/TransientModelStartedFrame'
-        - $ref: '#/components/schemas/TransientModelCompletedFrame'
-        - $ref: '#/components/schemas/TransientToolStartedFrame'
-        - $ref: '#/components/schemas/TransientToolCompletedFrame'
-        - $ref: '#/components/schemas/TransientReplyBlockDeltaFrame'
-        - $ref: '#/components/schemas/TransientReplyBlockCompletedFrame'
-        - $ref: '#/components/schemas/TransientTurnCompletedFrame'
-        - $ref: '#/components/schemas/TransientErrorFrame'
-      discriminator:
-        propertyName: kind
-        mapping:
-          TURN_STARTED: '#/components/schemas/TransientTurnStartedFrame'
-          MODEL_STARTED: '#/components/schemas/TransientModelStartedFrame'
-          MODEL_COMPLETED: '#/components/schemas/TransientModelCompletedFrame'
-          ACTION_TOOL_STARTED: '#/components/schemas/TransientToolStartedFrame'
-          ACTION_TOOL_COMPLETED: '#/components/schemas/TransientToolCompletedFrame'
-          REPLY_BLOCK_DELTA: '#/components/schemas/TransientReplyBlockDeltaFrame'
-          REPLY_BLOCK_COMPLETED: '#/components/schemas/TransientReplyBlockCompletedFrame'
-          TURN_COMPLETED: '#/components/schemas/TransientTurnCompletedFrame'
-          ERROR: '#/components/schemas/TransientErrorFrame'
-    AgentTurnTransientFrameBase:
+            $ref: '#/components/schemas/ToolRun'
+        schedules:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentSchedule'
+        subscriptions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgentSubscription'
+    SessionControl:
       type: object
       required:
-        - protocol
-        - frameId
-        - streamId
-        - sessionId
-        - turnId
-        - turnExecutionId
-        - ownerAgentId
-        - ownershipEpoch
-        - seq
-        - visibility
-        - occurredAt
+      - requestId
+      - status
       properties:
-        protocol:
+        requestId:
           type: string
-          enum: [agentyard.agent-turn-transient.v1]
-        frameId:
+        status:
           type: string
-          description: Stable dedup key. Must be `${turnExecutionId}:${seq}`.
-        streamId:
-          type: string
-        sessionId:
-          type: string
-        turnId:
-          type: string
-        turnExecutionId:
-          type: string
-        ownerAgentId:
-          type: string
-        ownershipEpoch:
-          type: integer
-          format: int64
-        seq:
-          type: integer
-          format: int64
-        visibility:
-          $ref: '#/components/schemas/StreamVisibility'
-        occurredAt:
-          type: string
-          format: date-time
-    TransientTurnStartedFrame:
-      allOf:
-        - $ref: '#/components/schemas/AgentTurnTransientFrameBase'
-        - type: object
-          required: [kind, payload]
-          properties:
-            kind:
-              type: string
-              enum: [TURN_STARTED]
-            payload:
-              $ref: '#/components/schemas/TurnStartedPayload'
-    TransientModelStartedFrame:
-      allOf:
-        - $ref: '#/components/schemas/AgentTurnTransientFrameBase'
-        - type: object
-          required: [kind, payload]
-          properties:
-            kind:
-              type: string
-              enum: [MODEL_STARTED]
-            payload:
-              $ref: '#/components/schemas/ModelStartedPayload'
-    TransientModelCompletedFrame:
-      allOf:
-        - $ref: '#/components/schemas/AgentTurnTransientFrameBase'
-        - type: object
-          required: [kind, payload]
-          properties:
-            kind:
-              type: string
-              enum: [MODEL_COMPLETED]
-            payload:
-              $ref: '#/components/schemas/ModelCompletedPayload'
-    TransientToolStartedFrame:
-      allOf:
-        - $ref: '#/components/schemas/AgentTurnTransientFrameBase'
-        - type: object
-          required: [kind, payload]
-          properties:
-            kind:
-              type: string
-              enum: [ACTION_TOOL_STARTED]
-            payload:
-              $ref: '#/components/schemas/ToolStartedPayload'
-    TransientToolCompletedFrame:
-      allOf:
-        - $ref: '#/components/schemas/AgentTurnTransientFrameBase'
-        - type: object
-          required: [kind, payload]
-          properties:
-            kind:
-              type: string
-              enum: [ACTION_TOOL_COMPLETED]
-            payload:
-              $ref: '#/components/schemas/ToolCompletedPayload'
-    TransientReplyBlockDeltaFrame:
-      allOf:
-        - $ref: '#/components/schemas/AgentTurnTransientFrameBase'
-        - type: object
-          required: [kind, payload]
-          properties:
-            kind:
-              type: string
-              enum: [REPLY_BLOCK_DELTA]
-            payload:
-              $ref: '#/components/schemas/ReplyBlockDeltaPayload'
-    TransientReplyBlockCompletedFrame:
-      allOf:
-        - $ref: '#/components/schemas/AgentTurnTransientFrameBase'
-        - type: object
-          required: [kind, payload]
-          properties:
-            kind:
-              type: string
-              enum: [REPLY_BLOCK_COMPLETED]
-            payload:
-              $ref: '#/components/schemas/ReplyBlockCompletedPayload'
-    TransientTurnCompletedFrame:
-      allOf:
-        - $ref: '#/components/schemas/AgentTurnTransientFrameBase'
-        - type: object
-          required: [kind, payload]
-          properties:
-            kind:
-              type: string
-              enum: [TURN_COMPLETED]
-            payload:
-              $ref: '#/components/schemas/TurnCompletedPayload'
-    TransientErrorFrame:
-      allOf:
-        - $ref: '#/components/schemas/AgentTurnTransientFrameBase'
-        - type: object
-          required: [kind, payload]
-          properties:
-            kind:
-              type: string
-              enum: [ERROR]
-            payload:
-              $ref: '#/components/schemas/ErrorPayload'
-    AgentTurnStreamFrameBase:
+          enum:
+          - ACTIVE
+          - PAUSED
+          - CLOSED
+    ApiResponseReception:
       type: object
       required:
-        - protocol
-        - frameId
-        - streamId
-        - sessionId
-        - turnId
-        - turnExecutionId
-        - ownerAgentId
-        - ownershipEpoch
-        - seq
-        - visibility
-        - occurredAt
+      - success
+      - data
       properties:
-        protocol:
-          type: string
-          enum: [agentyard.agent-turn-stream.v1]
-        frameId:
-          type: string
-          description: Stable dedup key. Must be `${turnExecutionId}:${seq}`.
-        streamId:
-          type: string
-        sessionId:
-          type: string
-        turnId:
-          type: string
-        turnExecutionId:
-          type: string
-        ownerAgentId:
-          type: string
-        ownershipEpoch:
-          type: integer
-          format: int64
-        seq:
-          type: integer
-          format: int64
-        visibility:
-          $ref: '#/components/schemas/StreamVisibility'
-        occurredAt:
-          type: string
-          format: date-time
-    TurnStartedFrame:
-      allOf:
-        - $ref: '#/components/schemas/AgentTurnStreamFrameBase'
-        - type: object
-          required: [kind, payload]
-          properties:
-            kind:
-              type: string
-              enum: [TURN_STARTED]
-            payload:
-              $ref: '#/components/schemas/TurnStartedPayload'
-    ModelStartedFrame:
-      allOf:
-        - $ref: '#/components/schemas/AgentTurnStreamFrameBase'
-        - type: object
-          required: [kind, payload]
-          properties:
-            kind:
-              type: string
-              enum: [MODEL_STARTED]
-            payload:
-              $ref: '#/components/schemas/ModelStartedPayload'
-    ModelCompletedFrame:
-      allOf:
-        - $ref: '#/components/schemas/AgentTurnStreamFrameBase'
-        - type: object
-          required: [kind, payload]
-          properties:
-            kind:
-              type: string
-              enum: [MODEL_COMPLETED]
-            payload:
-              $ref: '#/components/schemas/ModelCompletedPayload'
-    ToolStartedFrame:
-      allOf:
-        - $ref: '#/components/schemas/AgentTurnStreamFrameBase'
-        - type: object
-          required: [kind, payload]
-          properties:
-            kind:
-              type: string
-              enum: [ACTION_TOOL_STARTED]
-            payload:
-              $ref: '#/components/schemas/ToolStartedPayload'
-    ToolCompletedFrame:
-      allOf:
-        - $ref: '#/components/schemas/AgentTurnStreamFrameBase'
-        - type: object
-          required: [kind, payload]
-          properties:
-            kind:
-              type: string
-              enum: [ACTION_TOOL_COMPLETED]
-            payload:
-              $ref: '#/components/schemas/ToolCompletedPayload'
-    ReplyBlockDeltaFrame:
-      allOf:
-        - $ref: '#/components/schemas/AgentTurnStreamFrameBase'
-        - type: object
-          required: [kind, payload]
-          properties:
-            kind:
-              type: string
-              enum: [REPLY_BLOCK_DELTA]
-            payload:
-              $ref: '#/components/schemas/ReplyBlockDeltaPayload'
-    ReplyBlockCompletedFrame:
-      allOf:
-        - $ref: '#/components/schemas/AgentTurnStreamFrameBase'
-        - type: object
-          required: [kind, payload]
-          properties:
-            kind:
-              type: string
-              enum: [REPLY_BLOCK_COMPLETED]
-            payload:
-              $ref: '#/components/schemas/ReplyBlockCompletedPayload'
-    FinalOutcomeFrame:
-      allOf:
-        - $ref: '#/components/schemas/AgentTurnStreamFrameBase'
-        - type: object
-          required: [kind, payload]
-          properties:
-            kind:
-              type: string
-              enum: [FINAL_OUTCOME]
-            payload:
-              $ref: '#/components/schemas/FinalOutcomePayload'
-    ErrorFrame:
-      allOf:
-        - $ref: '#/components/schemas/AgentTurnStreamFrameBase'
-        - type: object
-          required: [kind, payload]
-          properties:
-            kind:
-              type: string
-              enum: [ERROR]
-            payload:
-              $ref: '#/components/schemas/ErrorPayload'
-    TurnStartedPayload:
-      type: object
-      additionalProperties: false
-      required: [replyMessageId, triggerType]
-      properties:
-        replyMessageId:
-          type: string
-        triggerType:
-          $ref: '#/components/schemas/SessionTriggerType'
-    ModelStartedPayload:
-      type: object
-      additionalProperties: false
-      required: [modelRoundId]
-      properties:
-        modelRoundId:
-          type: string
-    ModelCompletedPayload:
-      type: object
-      additionalProperties: false
-      required: [modelRoundId, status]
-      properties:
-        modelRoundId:
-          type: string
-        status:
-          type: string
-          enum: [SUCCEEDED, FAILED, ABORTED]
-    RuntimeToolKind:
-      type: string
-      enum: [CONTEXT_TOOL, STATE_TOOL, MESSAGE_BLOCK_TOOL, LIFECYCLE_ACTION_TOOL]
-    ToolStartedPayload:
-      type: object
-      additionalProperties: false
-      required: [modelRoundId, toolCallId, toolName, toolKind]
-      properties:
-        modelRoundId:
-          type: string
-        toolCallId:
-          type: string
-        toolName:
-          type: string
-        toolKind:
-          $ref: '#/components/schemas/RuntimeToolKind'
-    ToolCompletedPayload:
-      type: object
-      additionalProperties: false
-      required: [toolCallId, toolName, toolKind, status]
-      properties:
-        toolCallId:
-          type: string
-        toolName:
-          type: string
-        toolKind:
-          $ref: '#/components/schemas/RuntimeToolKind'
-        status:
-          type: string
-          enum: [ACCEPTED, REJECTED, FAILED]
-        produced:
-          type: object
-          additionalProperties: false
-          properties:
-            action:
-              type: string
-            messageBlockId:
-              type: string
-            sharedStateUpdated:
-              type: boolean
-    ReplyBlockDeltaPayload:
-      type: object
-      additionalProperties: false
-      required: [replyMessageId, blockId, blockType, delta]
-      properties:
-        replyMessageId:
-          type: string
-        blockId:
-          type: string
-        blockType:
-          type: string
-          enum: [TEXT]
-        delta:
-          type: string
-    ReplyBlockCompletedPayload:
-      type: object
-      additionalProperties: false
-      required: [replyMessageId, blockId, block]
-      properties:
-        replyMessageId:
-          type: string
-        blockId:
-          type: string
-        block:
-          $ref: '#/components/schemas/SessionMessageBlock'
-    FinalOutcomePayload:
-      type: object
-      additionalProperties: false
-      required: [replyMessageId, outcome]
-      properties:
-        replyMessageId:
-          type: string
-        outcome:
-          $ref: '#/components/schemas/AgentTurnExecutionOutcome'
-    TurnCompletionStatus:
-      type: string
-      enum: [SUCCEEDED, FAILED]
-    TurnCompletedPayload:
-      type: object
-      additionalProperties: false
-      required: [replyMessageId, status]
-      properties:
-        replyMessageId:
-          type: string
-        status:
-          $ref: '#/components/schemas/TurnCompletionStatus'
-    ErrorPayload:
-      type: object
-      additionalProperties: false
-      required: [code, replyMessageId, message, stage, retryable]
-      properties:
-        code:
-          type: string
-        replyMessageId:
-          type: string
-        message:
-          type: string
-        stage:
-          type: string
-          enum: [PROVIDER_STREAM, TOOL_ARGUMENT_PARSE, TOOL_EXECUTION, FINAL_OUTCOME_BUILD, TRANSCRIPT_PERSISTENCE]
-        retryable:
+        success:
           type: boolean
-        details:
-          type: object
-          additionalProperties: true
-    ToolOutcomeSummary:
+        data:
+          $ref: '#/components/schemas/Reception'
+    ApiResponseCollaborationMessage:
+      type: object
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/CollaborationMessage'
+    ApiResponseAgentSessionDetail:
+      type: object
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AgentSessionDetail'
+    ApiResponseAgentSession:
+      type: object
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/AgentSession'
+    ResourceVersion:
       type: object
       properties:
-        callId:
-          type: string
-        toolId:
-          type: string
-        toolName:
-          type: string
-        toolKind:
-          $ref: '#/components/schemas/ToolKind'
-        operation:
-          type: string
-        providerType:
+        id:
           type: string
         resourceId:
           type: string
+        version:
+          type: string
+        status:
+          $ref: '#/components/schemas/VersionStatus'
+        summary:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        publishedAt:
+          type: string
+          format: date-time
           nullable: true
+        configuration:
+          $ref: '#/components/schemas/ResourceVersionConfiguration'
+    Resource:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        type:
+          $ref: '#/components/schemas/ResourceType'
+        shareScope:
+          $ref: '#/components/schemas/ShareScope'
+        ownerType:
+          type: string
+        ownerId:
+          type: string
+        summary:
+          type: string
+        steward:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        latestVersion:
+          allOf:
+          - $ref: '#/components/schemas/ResourceVersion'
+          nullable: true
+        effectiveVersion:
+          allOf:
+          - $ref: '#/components/schemas/ResourceVersion'
+          nullable: true
+        versions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceVersion'
+    CatalogSummary:
+      type: object
+      required:
+      - roleTemplates
+      - entries
+      - playbooks
+      - resources
+      - knowledgeBases
+      - resourceCenter
+      - resourceBlueprints
+      properties:
+        roleTemplates:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoleTemplate'
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/Entry'
+        playbooks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Playbook'
+        resources:
+          type: array
+          items:
+            $ref: '#/components/schemas/Resource'
+        knowledgeBases:
+          type: array
+          items:
+            $ref: '#/components/schemas/KnowledgeBase'
+        resourceCenter:
+          $ref: '#/components/schemas/ResourceCenter'
+        resourceBlueprints:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceBlueprint'
+    ResourceBlueprint:
+      type: object
+      required:
+      - type
+      - label
+      - description
+      - maintainedFields
+      - defaultConfiguration
+      properties:
+        type:
+          $ref: '#/components/schemas/ResourceType'
+        label:
+          type: string
+        description:
+          type: string
+        maintainedFields:
+          type: array
+          items:
+            type: string
+        defaultConfiguration:
+          $ref: '#/components/schemas/ResourceVersionConfiguration'
+    ResourceReference:
+      type: object
+      required:
+      - resourceId
+      - resourceName
+      - type
+      - shareScope
+      - ownerLabel
+      - latestVersion
+      - effectiveVersion
+      - referenceKind
+      - sourceType
+      - sourceId
+      - sourceName
+      - resourceVersionId
+      - resourceVersion
+      - blocksDeletion
+      properties:
+        resourceId:
+          type: string
         resourceName:
           type: string
-          nullable: true
+        type:
+          $ref: '#/components/schemas/ResourceType'
+        shareScope:
+          $ref: '#/components/schemas/ShareScope'
+        ownerLabel:
+          type: string
+        latestVersion:
+          anyOf:
+          - type: string
+          - type: 'null'
+        effectiveVersion:
+          anyOf:
+          - type: string
+          - type: 'null'
+        referenceKind:
+          type: string
+        sourceType:
+          type: string
+        sourceId:
+          type: string
+        sourceName:
+          type: string
+        resourceVersionId:
+          anyOf:
+          - type: string
+          - type: 'null'
+        resourceVersion:
+          anyOf:
+          - type: string
+          - type: 'null'
+        blocksDeletion:
+          type: boolean
+    ResourceCenter:
+      type: object
+      required:
+      - totalResources
+      - sharedResources
+      - privateResources
+      - references
+      properties:
+        totalResources:
+          type: integer
+        sharedResources:
+          type: integer
+        privateResources:
+          type: integer
+        references:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceReference'
+    ApiResponseCatalogSummary:
+      type: object
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/CatalogSummary'
+    ApiResponseResourceCenter:
+      type: object
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+        data:
+          $ref: '#/components/schemas/ResourceCenter'
+    ApiResponseResourceBlueprintList:
+      type: object
+      required:
+      - success
+      - data
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ResourceBlueprint'
+    AgentSubscription:
+      type: object
+      required:
+      - id
+      - sessionId
+      - scopeKind
+      - scopeId
+      - eventKinds
+      - active
+      - createdBy
+      - createdAt
+      properties:
+        id:
+          type: string
+        sessionId:
+          type: string
+        scopeKind:
+          $ref: '#/components/schemas/ScopeKind'
+        scopeId:
+          type: string
+        eventKinds:
+          type: array
+          items:
+            type: string
+        active:
+          type: boolean
+        createdBy:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    ExternalCallbackSource:
+      type: object
+      required:
+      - subjectType
+      - descriptorId
+      - accountId
+      properties:
+        subjectType:
+          type: string
+          enum:
+          - TOOL_CONNECTOR
+          - CHANNEL_PROVIDER
+        descriptorId:
+          type: string
+        accountId:
+          type: string
+    ToolRunExternalCallback:
+      type: object
+      required:
+      - waitingId
+      - eventId
+      - source
+      - payload
+      properties:
+        waitingId:
+          type: string
+        eventId:
+          type: string
+        source:
+          $ref: '#/components/schemas/ExternalCallbackSource'
+        payload:
+          type: object
+          additionalProperties: true
+    ToolRunResume:
+      type: object
+      required:
+      - signalId
+      - waitingId
+      - participantId
+      - source
+      - payload
+      properties:
+        signalId:
+          type: string
+        waitingId:
+          type: string
+        participantId:
+          type: string
+        sourceMessageId:
+          type:
+          - string
+          - 'null'
+        source:
+          type: string
+          enum:
+          - EXTERNAL_SYSTEM
+        payload:
+          type: object
+          additionalProperties: true
+    RuntimeLlmModel:
+      type: object
+      required:
+      - resourceId
+      - resourceVersionId
+      - providerType
+      - modelId
+      - baseUrl
+      - apiKeyEnvVar
+      properties:
+        resourceId:
+          type: string
+        resourceName:
+          type: string
+        resourceVersionId:
+          type: string
+        resourceVersion:
+          type: string
+        providerType:
+          type: string
+        modelId:
+          type: string
+        baseUrl:
+          type: string
+        apiKeyEnvVar:
+          type: string
+        reasoningEffort:
+          type: string
+        temperature:
+          type: number
+        maxTokens:
+          type: integer
+        privateDeployment:
+          type: boolean
+        enableThinking:
+          type: boolean
+    RuntimeKnowledgeBinding:
+      type: object
+      properties:
+        knowledgeBaseId:
+          type: string
+        knowledgeBaseName:
+          type: string
+        knowledgeReleaseId:
+          type: string
+        knowledgeReleaseVersion:
+          type: string
+        snapshotId:
+          type: string
+        retrievalMode:
+          type: string
+        defaultTopK:
+          type: integer
+        minScore:
+          type: number
+    RuntimeSkill:
+      type: object
+      properties:
+        resourceId:
+          type: string
+        resourceName:
+          type: string
+        resourceVersionId:
+          type: string
+        resourceVersion:
+          type: string
+        skillName:
+          type: string
+        skillDesc:
+          type: string
+        skillPrompt:
+          type: string
+    RuntimeToolRetryPolicy:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum:
+          - NONE
+          - FIXED
+          - EXPONENTIAL
+        maxAttempts:
+          type: integer
+        initialDelayMs:
+          type: integer
+        maxDelayMs:
+          type: integer
+        backoffMultiplier:
+          type: number
+        retryableCategories:
+          type: array
+          items:
+            type: string
+        retryableErrorCodes:
+          type: array
+          items:
+            type: string
+    RuntimeToolConnector:
+      type: object
+      properties:
+        connectorType:
+          type: string
+        accountSnapshot:
+          $ref: '#/components/schemas/ToolConnectorAccountSnapshot'
+        timeoutSeconds:
+          type: integer
+        retryPolicy:
+          $ref: '#/components/schemas/RuntimeToolRetryPolicy'
+        config:
+          type: object
+          additionalProperties: true
+        operationMappings:
+          type: object
+          additionalProperties:
+            type: object
+            additionalProperties: true
+    RuntimeTool:
+      type: object
+      properties:
+        resourceId:
+          type: string
+        resourceName:
+          type: string
+        resourceVersionId:
+          type: string
+        resourceVersion:
+          type: string
+        operations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ToolOperation'
+        connector:
+          $ref: '#/components/schemas/RuntimeToolConnector'
+    RuntimePlaybook:
+      type: object
+      properties:
+        playbookId:
+          type: string
+          description: Pinned immutable PlaybookVersion ID.
+        name:
+          type: string
+        description:
+          type: string
+        inputSchema:
+          type: string
+        resultSchema:
+          type: string
+        entryNodeKey:
+          type: string
+        executionPolicy:
+          $ref: '#/components/schemas/PlaybookExecutionPolicy'
+        allowHumanTask:
+          type: boolean
+        allowExternalInteraction:
+          type: boolean
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaybookNode'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaybookEdge'
+    AgentProfile:
+      type: object
+      properties:
+        name:
+          type: string
+        role:
+          type: string
+        responsibility:
+          type: string
+        systemPrompt:
+          type: string
+        model:
+          $ref: '#/components/schemas/RuntimeLlmModel'
+        effectivePrivacyModelBinding:
+          $ref: '#/components/schemas/RuntimeLlmModel'
+        effectivePrivacyMappingEnabled:
+          type: boolean
+        knowledgeBinding:
+          $ref: '#/components/schemas/RuntimeKnowledgeBinding'
+        memoryWindowSize:
+          type: integer
+        skills:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeSkill'
+        tools:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeTool'
+        playbooks:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimePlaybook'
+    ActivationRuntime:
+      type: object
+      properties:
+        activationId:
+          type: string
+        sessionId:
+          type: string
+        participantId:
+          type: string
+        templateVersionId:
+          type: string
+        agent:
+          $ref: '#/components/schemas/AgentProfile'
+        trigger:
+          $ref: '#/components/schemas/CollaborationMessage'
+        context:
+          type: object
+          additionalProperties: true
+        workMemory:
+          type: object
+          additionalProperties: true
+        maxToolSteps:
+          type: integer
+    RuntimeLlmUsage:
+      type: object
+      properties:
+        sourceType:
+          type: string
+        providerType:
+          type: string
+        modelResourceId:
+          type: string
+        modelResourceVersionId:
+          type: string
+        modelId:
+          type: string
+        callSequence:
+          type: integer
+        toolLoopStep:
+          type: integer
+        usageAvailable:
+          type: boolean
+        promptTokens:
+          type: integer
+        completionTokens:
+          type: integer
+        totalTokens:
+          type: integer
+        rawUsage:
+          type: object
+          additionalProperties: true
+        occurredAt:
+          type: string
+          format: date-time
+    RuntimePrivacyTelemetry:
+      type: object
+      properties:
+        privacyModelResourceId:
+          type: string
+        privacyModelResourceName:
+          type: string
+        enabled:
+          type: boolean
+        sanitizeCountByChannel:
+          type: object
+          additionalProperties:
+            type: integer
+        restoreCountByChannel:
+          type: object
+          additionalProperties:
+            type: integer
+        entityTypeBreakdown:
+          type: object
+          additionalProperties:
+            type: integer
+        placeholderCount:
+          type: integer
+        unresolvedPlaceholderCount:
+          type: integer
+        blockedEventCount:
+          type: integer
+        lastProcessedAt:
+          type: string
+          format: date-time
+    RuntimeSecurityAssessment:
+      type: object
+      properties:
+        action:
+          type: string
+        categories:
+          type: array
+          items:
+            type: string
+        reason:
+          type: string
+        confidence:
+          type: number
+    ActivationOutcome:
+      type: object
+      required:
+      - success
+      properties:
+        success:
+          type: boolean
+        completion:
+          type: string
+          enum: [COMPLETED, WAITING, BLOCKED]
+          description: Explicit execution disposition; never implies business acceptance of a Task.
+        retryable:
+          type: boolean
+          description: Resume the same activation from durable checkpoints within the workflow budget.
+        replyMessage:
+          $ref: '#/components/schemas/MessageContent'
+        workMemory:
+          type: object
+          additionalProperties: true
+        failureReason:
+          type: string
+        llmUsage:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeLlmUsage'
+        mappingTelemetry:
+          $ref: '#/components/schemas/RuntimePrivacyTelemetry'
+        securityAssessment:
+          $ref: '#/components/schemas/RuntimeSecurityAssessment'
+    MessageContent:
+      type: object
+      required:
+      - blocks
+      properties:
+        blocks:
+          type: array
+          items: {}
+        metadata:
+          type: object
+          additionalProperties: true
+    AgentToolInvocation:
+      type: object
+      required:
+      - callId
+      - name
+      - arguments
+      properties:
+        callId:
+          type: string
+        name:
+          type: string
+        arguments:
+          type: object
+          additionalProperties: true
+    AgentToolResult:
+      type: object
+      required:
+      - success
+      properties:
+        success:
+          type: boolean
+        result: {}
+        code:
+          type: string
+        message:
+          type: string
+    ToolRunRuntime:
+      type: object
+      required:
+      - run
+      - playbook
+      - agent
+      properties:
+        run:
+          $ref: '#/components/schemas/ToolRun'
+        playbook:
+          $ref: '#/components/schemas/RuntimePlaybook'
+        agent:
+          $ref: '#/components/schemas/AgentProfile'
+    ToolRunNodeAuthorization:
+      type: object
+      required:
+      - nodeKey
+      - executionId
+      properties:
+        nodeKey:
+          type: string
+        executionId:
+          type: string
+    ToolRunProgress:
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          enum:
+          - QUEUED
+          - RUNNING
+          - WAITING
+          - SUCCEEDED
+          - FAILED
+          - CANCELLED
         result:
           type: object
           additionalProperties: true
+        waiting:
+          type: object
+          additionalProperties: true
+        failureReason:
+          type: string

@@ -217,6 +217,34 @@ public class CollaborationTaskRecord extends UpdatableRecordImpl<CollaborationTa
         return (OffsetDateTime) get(13);
     }
 
+    /**
+     * Setter for <code>public.collaboration_task.initiated_by</code>.
+     */
+    public void setInitiatedBy(String value) {
+        set(14, value);
+    }
+
+    /**
+     * Getter for <code>public.collaboration_task.initiated_by</code>.
+     */
+    public String getInitiatedBy() {
+        return (String) get(14);
+    }
+
+    /**
+     * Setter for <code>public.collaboration_task.confirmer_id</code>.
+     */
+    public void setConfirmerId(String value) {
+        set(15, value);
+    }
+
+    /**
+     * Getter for <code>public.collaboration_task.confirmer_id</code>.
+     */
+    public String getConfirmerId() {
+        return (String) get(15);
+    }
+
     // -------------------------------------------------------------------------
     // Primary key information
     // -------------------------------------------------------------------------
@@ -240,7 +268,7 @@ public class CollaborationTaskRecord extends UpdatableRecordImpl<CollaborationTa
     /**
      * Create a detached, initialised CollaborationTaskRecord
      */
-    public CollaborationTaskRecord(String id, String organizationId, String title, String goal, String status, String stage, Long revision, Long contentRevision, JSONB attributes, JSONB policy, String createdBy, String submittedBy, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+    public CollaborationTaskRecord(String id, String organizationId, String title, String goal, String status, String stage, Long revision, Long contentRevision, JSONB attributes, JSONB policy, String createdBy, String submittedBy, OffsetDateTime createdAt, OffsetDateTime updatedAt, String initiatedBy, String confirmerId) {
         super(CollaborationTask.COLLABORATION_TASK);
 
         setId(id);
@@ -257,6 +285,8 @@ public class CollaborationTaskRecord extends UpdatableRecordImpl<CollaborationTa
         setSubmittedBy(submittedBy);
         setCreatedAt(createdAt);
         setUpdatedAt(updatedAt);
+        setInitiatedBy(initiatedBy);
+        setConfirmerId(confirmerId);
         resetChangedOnNotNull();
     }
 }

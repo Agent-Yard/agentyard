@@ -6,18 +6,29 @@ package com.agentyard.persistence.jooq.tables;
 
 import com.agentyard.persistence.jooq.Keys;
 import com.agentyard.persistence.jooq.Public;
+import com.agentyard.persistence.jooq.tables.AgentReceptionBinding.AgentReceptionBindingPath;
+import com.agentyard.persistence.jooq.tables.AgentSchedule.AgentSchedulePath;
+import com.agentyard.persistence.jooq.tables.AgentSession.AgentSessionPath;
+import com.agentyard.persistence.jooq.tables.AgentSubscription.AgentSubscriptionPath;
+import com.agentyard.persistence.jooq.tables.AgentToolRun.AgentToolRunPath;
+import com.agentyard.persistence.jooq.tables.AgentToolRunSignal.AgentToolRunSignalPath;
+import com.agentyard.persistence.jooq.tables.CatalogEntry.CatalogEntryPath;
+import com.agentyard.persistence.jooq.tables.ChannelParticipantIdentity.ChannelParticipantIdentityPath;
 import com.agentyard.persistence.jooq.tables.CollaborationContextEntry.CollaborationContextEntryPath;
 import com.agentyard.persistence.jooq.tables.CollaborationContextVersion.CollaborationContextVersionPath;
-import com.agentyard.persistence.jooq.tables.CollaborationExecution.CollaborationExecutionPath;
-import com.agentyard.persistence.jooq.tables.CollaborationExecutionSignal.CollaborationExecutionSignalPath;
+import com.agentyard.persistence.jooq.tables.CollaborationDecision.CollaborationDecisionPath;
+import com.agentyard.persistence.jooq.tables.CollaborationEventOutbox.CollaborationEventOutboxPath;
+import com.agentyard.persistence.jooq.tables.CollaborationGrant.CollaborationGrantPath;
 import com.agentyard.persistence.jooq.tables.CollaborationMembership.CollaborationMembershipPath;
+import com.agentyard.persistence.jooq.tables.CollaborationMessage.CollaborationMessagePath;
+import com.agentyard.persistence.jooq.tables.CollaborationOperationReceipt.CollaborationOperationReceiptPath;
 import com.agentyard.persistence.jooq.tables.CollaborationOrganization.CollaborationOrganizationPath;
 import com.agentyard.persistence.jooq.tables.CollaborationParticipant.CollaborationParticipantPath;
 import com.agentyard.persistence.jooq.tables.CollaborationTask.CollaborationTaskPath;
 import com.agentyard.persistence.jooq.tables.CollaborationTaskCommand.CollaborationTaskCommandPath;
 import com.agentyard.persistence.jooq.tables.CollaborationTaskEvent.CollaborationTaskEventPath;
-import com.agentyard.persistence.jooq.tables.CollaborationTaskReview.CollaborationTaskReviewPath;
 import com.agentyard.persistence.jooq.tables.CollaborationTaskSession.CollaborationTaskSessionPath;
+import com.agentyard.persistence.jooq.tables.LlmUsageRecord.LlmUsageRecordPath;
 import com.agentyard.persistence.jooq.tables.records.CollaborationActorRecord;
 
 import java.time.OffsetDateTime;
@@ -177,6 +188,126 @@ public class CollaborationActor extends TableImpl<CollaborationActorRecord> {
         return Arrays.asList(Keys.COLLABORATION_ACTOR_KIND_SUBJECT_ID_KEY);
     }
 
+    private transient AgentReceptionBindingPath _agentReceptionBinding;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.agent_reception_binding</code> table
+     */
+    public AgentReceptionBindingPath agentReceptionBinding() {
+        if (_agentReceptionBinding == null)
+            _agentReceptionBinding = new AgentReceptionBindingPath(this, null, Keys.AGENT_RECEPTION_BINDING__AGENT_RECEPTION_BINDING_PARTICIPANT_ID_FKEY.getInverseKey());
+
+        return _agentReceptionBinding;
+    }
+
+    private transient AgentSchedulePath _agentSchedule;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.agent_schedule</code> table
+     */
+    public AgentSchedulePath agentSchedule() {
+        if (_agentSchedule == null)
+            _agentSchedule = new AgentSchedulePath(this, null, Keys.AGENT_SCHEDULE__AGENT_SCHEDULE_CREATED_BY_FKEY.getInverseKey());
+
+        return _agentSchedule;
+    }
+
+    private transient AgentSessionPath _agentSessionCreatedByFkey;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.agent_session</code> table, via the
+     * <code>agent_session_created_by_fkey</code> key
+     */
+    public AgentSessionPath agentSessionCreatedByFkey() {
+        if (_agentSessionCreatedByFkey == null)
+            _agentSessionCreatedByFkey = new AgentSessionPath(this, null, Keys.AGENT_SESSION__AGENT_SESSION_CREATED_BY_FKEY.getInverseKey());
+
+        return _agentSessionCreatedByFkey;
+    }
+
+    private transient AgentSessionPath _agentSessionParticipantIdFkey;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.agent_session</code> table, via the
+     * <code>agent_session_participant_id_fkey</code> key
+     */
+    public AgentSessionPath agentSessionParticipantIdFkey() {
+        if (_agentSessionParticipantIdFkey == null)
+            _agentSessionParticipantIdFkey = new AgentSessionPath(this, null, Keys.AGENT_SESSION__AGENT_SESSION_PARTICIPANT_ID_FKEY.getInverseKey());
+
+        return _agentSessionParticipantIdFkey;
+    }
+
+    private transient AgentSessionPath _agentSessionReplyToParticipantIdFkey;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.agent_session</code> table, via the
+     * <code>agent_session_reply_to_participant_id_fkey</code> key
+     */
+    public AgentSessionPath agentSessionReplyToParticipantIdFkey() {
+        if (_agentSessionReplyToParticipantIdFkey == null)
+            _agentSessionReplyToParticipantIdFkey = new AgentSessionPath(this, null, Keys.AGENT_SESSION__AGENT_SESSION_REPLY_TO_PARTICIPANT_ID_FKEY.getInverseKey());
+
+        return _agentSessionReplyToParticipantIdFkey;
+    }
+
+    private transient AgentSubscriptionPath _agentSubscription;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.agent_subscription</code> table
+     */
+    public AgentSubscriptionPath agentSubscription() {
+        if (_agentSubscription == null)
+            _agentSubscription = new AgentSubscriptionPath(this, null, Keys.AGENT_SUBSCRIPTION__AGENT_SUBSCRIPTION_CREATED_BY_FKEY.getInverseKey());
+
+        return _agentSubscription;
+    }
+
+    private transient AgentToolRunPath _agentToolRun;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.agent_tool_run</code> table
+     */
+    public AgentToolRunPath agentToolRun() {
+        if (_agentToolRun == null)
+            _agentToolRun = new AgentToolRunPath(this, null, Keys.AGENT_TOOL_RUN__AGENT_TOOL_RUN_PARTICIPANT_ID_FKEY.getInverseKey());
+
+        return _agentToolRun;
+    }
+
+    private transient AgentToolRunSignalPath _agentToolRunSignal;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.agent_tool_run_signal</code> table
+     */
+    public AgentToolRunSignalPath agentToolRunSignal() {
+        if (_agentToolRunSignal == null)
+            _agentToolRunSignal = new AgentToolRunSignalPath(this, null, Keys.AGENT_TOOL_RUN_SIGNAL__AGENT_TOOL_RUN_SIGNAL_PARTICIPANT_ID_FKEY.getInverseKey());
+
+        return _agentToolRunSignal;
+    }
+
+    private transient ChannelParticipantIdentityPath _channelParticipantIdentity;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.channel_participant_identity</code> table
+     */
+    public ChannelParticipantIdentityPath channelParticipantIdentity() {
+        if (_channelParticipantIdentity == null)
+            _channelParticipantIdentity = new ChannelParticipantIdentityPath(this, null, Keys.CHANNEL_PARTICIPANT_IDENTITY__CHANNEL_PARTICIPANT_IDENTITY_PARTICIPANT_ID_FKEY.getInverseKey());
+
+        return _channelParticipantIdentity;
+    }
+
     private transient CollaborationContextEntryPath _collaborationContextEntry;
 
     /**
@@ -203,45 +334,73 @@ public class CollaborationActor extends TableImpl<CollaborationActorRecord> {
         return _collaborationContextVersion;
     }
 
-    private transient CollaborationExecutionPath _collaborationExecutionActorIdFkey;
+    private transient CollaborationDecisionPath _collaborationDecisionDecidedByFkey;
 
     /**
      * Get the implicit to-many join path to the
-     * <code>public.collaboration_execution</code> table, via the
-     * <code>collaboration_execution_actor_id_fkey</code> key
+     * <code>public.collaboration_decision</code> table, via the
+     * <code>collaboration_decision_decided_by_fkey</code> key
      */
-    public CollaborationExecutionPath collaborationExecutionActorIdFkey() {
-        if (_collaborationExecutionActorIdFkey == null)
-            _collaborationExecutionActorIdFkey = new CollaborationExecutionPath(this, null, Keys.COLLABORATION_EXECUTION__COLLABORATION_EXECUTION_ACTOR_ID_FKEY.getInverseKey());
+    public CollaborationDecisionPath collaborationDecisionDecidedByFkey() {
+        if (_collaborationDecisionDecidedByFkey == null)
+            _collaborationDecisionDecidedByFkey = new CollaborationDecisionPath(this, null, Keys.COLLABORATION_DECISION__COLLABORATION_DECISION_DECIDED_BY_FKEY.getInverseKey());
 
-        return _collaborationExecutionActorIdFkey;
+        return _collaborationDecisionDecidedByFkey;
     }
 
-    private transient CollaborationExecutionPath _collaborationExecutionRequestedByFkey;
+    private transient CollaborationDecisionPath _collaborationDecisionExecutedByFkey;
 
     /**
      * Get the implicit to-many join path to the
-     * <code>public.collaboration_execution</code> table, via the
-     * <code>collaboration_execution_requested_by_fkey</code> key
+     * <code>public.collaboration_decision</code> table, via the
+     * <code>collaboration_decision_executed_by_fkey</code> key
      */
-    public CollaborationExecutionPath collaborationExecutionRequestedByFkey() {
-        if (_collaborationExecutionRequestedByFkey == null)
-            _collaborationExecutionRequestedByFkey = new CollaborationExecutionPath(this, null, Keys.COLLABORATION_EXECUTION__COLLABORATION_EXECUTION_REQUESTED_BY_FKEY.getInverseKey());
+    public CollaborationDecisionPath collaborationDecisionExecutedByFkey() {
+        if (_collaborationDecisionExecutedByFkey == null)
+            _collaborationDecisionExecutedByFkey = new CollaborationDecisionPath(this, null, Keys.COLLABORATION_DECISION__COLLABORATION_DECISION_EXECUTED_BY_FKEY.getInverseKey());
 
-        return _collaborationExecutionRequestedByFkey;
+        return _collaborationDecisionExecutedByFkey;
     }
 
-    private transient CollaborationExecutionSignalPath _collaborationExecutionSignal;
+    private transient CollaborationEventOutboxPath _collaborationEventOutbox;
 
     /**
      * Get the implicit to-many join path to the
-     * <code>public.collaboration_execution_signal</code> table
+     * <code>public.collaboration_event_outbox</code> table
      */
-    public CollaborationExecutionSignalPath collaborationExecutionSignal() {
-        if (_collaborationExecutionSignal == null)
-            _collaborationExecutionSignal = new CollaborationExecutionSignalPath(this, null, Keys.COLLABORATION_EXECUTION_SIGNAL__COLLABORATION_EXECUTION_SIGNAL_ACTOR_ID_FKEY.getInverseKey());
+    public CollaborationEventOutboxPath collaborationEventOutbox() {
+        if (_collaborationEventOutbox == null)
+            _collaborationEventOutbox = new CollaborationEventOutboxPath(this, null, Keys.COLLABORATION_EVENT_OUTBOX__COLLABORATION_EVENT_OUTBOX_ACTOR_ID_FKEY.getInverseKey());
 
-        return _collaborationExecutionSignal;
+        return _collaborationEventOutbox;
+    }
+
+    private transient CollaborationGrantPath _collaborationGrantGrantedByFkey;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.collaboration_grant</code> table, via the
+     * <code>collaboration_grant_granted_by_fkey</code> key
+     */
+    public CollaborationGrantPath collaborationGrantGrantedByFkey() {
+        if (_collaborationGrantGrantedByFkey == null)
+            _collaborationGrantGrantedByFkey = new CollaborationGrantPath(this, null, Keys.COLLABORATION_GRANT__COLLABORATION_GRANT_GRANTED_BY_FKEY.getInverseKey());
+
+        return _collaborationGrantGrantedByFkey;
+    }
+
+    private transient CollaborationGrantPath _collaborationGrantParticipantIdFkey;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.collaboration_grant</code> table, via the
+     * <code>collaboration_grant_participant_id_fkey</code> key
+     */
+    public CollaborationGrantPath collaborationGrantParticipantIdFkey() {
+        if (_collaborationGrantParticipantIdFkey == null)
+            _collaborationGrantParticipantIdFkey = new CollaborationGrantPath(this, null, Keys.COLLABORATION_GRANT__COLLABORATION_GRANT_PARTICIPANT_ID_FKEY.getInverseKey());
+
+        return _collaborationGrantParticipantIdFkey;
     }
 
     private transient CollaborationMembershipPath _collaborationMembership;
@@ -255,6 +414,47 @@ public class CollaborationActor extends TableImpl<CollaborationActorRecord> {
             _collaborationMembership = new CollaborationMembershipPath(this, null, Keys.COLLABORATION_MEMBERSHIP__COLLABORATION_MEMBERSHIP_ACTOR_ID_FKEY.getInverseKey());
 
         return _collaborationMembership;
+    }
+
+    private transient CollaborationMessagePath _collaborationMessageRecipientIdFkey;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.collaboration_message</code> table, via the
+     * <code>collaboration_message_recipient_id_fkey</code> key
+     */
+    public CollaborationMessagePath collaborationMessageRecipientIdFkey() {
+        if (_collaborationMessageRecipientIdFkey == null)
+            _collaborationMessageRecipientIdFkey = new CollaborationMessagePath(this, null, Keys.COLLABORATION_MESSAGE__COLLABORATION_MESSAGE_RECIPIENT_ID_FKEY.getInverseKey());
+
+        return _collaborationMessageRecipientIdFkey;
+    }
+
+    private transient CollaborationMessagePath _collaborationMessageSenderIdFkey;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.collaboration_message</code> table, via the
+     * <code>collaboration_message_sender_id_fkey</code> key
+     */
+    public CollaborationMessagePath collaborationMessageSenderIdFkey() {
+        if (_collaborationMessageSenderIdFkey == null)
+            _collaborationMessageSenderIdFkey = new CollaborationMessagePath(this, null, Keys.COLLABORATION_MESSAGE__COLLABORATION_MESSAGE_SENDER_ID_FKEY.getInverseKey());
+
+        return _collaborationMessageSenderIdFkey;
+    }
+
+    private transient CollaborationOperationReceiptPath _collaborationOperationReceipt;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.collaboration_operation_receipt</code> table
+     */
+    public CollaborationOperationReceiptPath collaborationOperationReceipt() {
+        if (_collaborationOperationReceipt == null)
+            _collaborationOperationReceipt = new CollaborationOperationReceiptPath(this, null, Keys.COLLABORATION_OPERATION_RECEIPT__COLLABORATION_OPERATION_RECEIPT_PARTICIPANT_ID_FKEY.getInverseKey());
+
+        return _collaborationOperationReceipt;
     }
 
     private transient CollaborationOrganizationPath _collaborationOrganization;
@@ -296,6 +496,20 @@ public class CollaborationActor extends TableImpl<CollaborationActorRecord> {
         return _collaborationTaskCommand;
     }
 
+    private transient CollaborationTaskPath _collaborationTaskConfirmerIdFkey;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.collaboration_task</code> table, via the
+     * <code>collaboration_task_confirmer_id_fkey</code> key
+     */
+    public CollaborationTaskPath collaborationTaskConfirmerIdFkey() {
+        if (_collaborationTaskConfirmerIdFkey == null)
+            _collaborationTaskConfirmerIdFkey = new CollaborationTaskPath(this, null, Keys.COLLABORATION_TASK__COLLABORATION_TASK_CONFIRMER_ID_FKEY.getInverseKey());
+
+        return _collaborationTaskConfirmerIdFkey;
+    }
+
     private transient CollaborationTaskPath _collaborationTaskCreatedByFkey;
 
     /**
@@ -323,17 +537,18 @@ public class CollaborationActor extends TableImpl<CollaborationActorRecord> {
         return _collaborationTaskEvent;
     }
 
-    private transient CollaborationTaskReviewPath _collaborationTaskReview;
+    private transient CollaborationTaskPath _collaborationTaskInitiatedByFkey;
 
     /**
      * Get the implicit to-many join path to the
-     * <code>public.collaboration_task_review</code> table
+     * <code>public.collaboration_task</code> table, via the
+     * <code>collaboration_task_initiated_by_fkey</code> key
      */
-    public CollaborationTaskReviewPath collaborationTaskReview() {
-        if (_collaborationTaskReview == null)
-            _collaborationTaskReview = new CollaborationTaskReviewPath(this, null, Keys.COLLABORATION_TASK_REVIEW__COLLABORATION_TASK_REVIEW_ACTOR_ID_FKEY.getInverseKey());
+    public CollaborationTaskPath collaborationTaskInitiatedByFkey() {
+        if (_collaborationTaskInitiatedByFkey == null)
+            _collaborationTaskInitiatedByFkey = new CollaborationTaskPath(this, null, Keys.COLLABORATION_TASK__COLLABORATION_TASK_INITIATED_BY_FKEY.getInverseKey());
 
-        return _collaborationTaskReview;
+        return _collaborationTaskInitiatedByFkey;
     }
 
     private transient CollaborationTaskSessionPath _collaborationTaskSession;
@@ -361,6 +576,27 @@ public class CollaborationActor extends TableImpl<CollaborationActorRecord> {
             _collaborationTaskSubmittedByFkey = new CollaborationTaskPath(this, null, Keys.COLLABORATION_TASK__COLLABORATION_TASK_SUBMITTED_BY_FKEY.getInverseKey());
 
         return _collaborationTaskSubmittedByFkey;
+    }
+
+    private transient LlmUsageRecordPath _llmUsageRecord;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.llm_usage_record</code> table
+     */
+    public LlmUsageRecordPath llmUsageRecord() {
+        if (_llmUsageRecord == null)
+            _llmUsageRecord = new LlmUsageRecordPath(this, null, Keys.LLM_USAGE_RECORD__LLM_USAGE_RECORD_PARTICIPANT_ID_FKEY.getInverseKey());
+
+        return _llmUsageRecord;
+    }
+
+    /**
+     * Get the implicit many-to-many join path to the
+     * <code>public.catalog_entry</code> table
+     */
+    public CatalogEntryPath catalogEntry() {
+        return agentReceptionBinding().catalogEntry();
     }
 
     /**

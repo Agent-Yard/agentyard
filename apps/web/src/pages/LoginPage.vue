@@ -21,15 +21,15 @@ function goToDevBootstrapLogin() {
 <template>
   <div class="login-screen">
     <div class="login-card">
-      <span class="login-card__eyebrow">OIDC Sign-In</span>
-      <a-typography-title :level="2">登录 AgentYard 控制台</a-typography-title>
+      <span class="login-card__eyebrow">AgentYard</span>
+      <a-typography-title :level="2">登录你的协作空间</a-typography-title>
       <a-typography-paragraph type="secondary" class="login-card__meta">
-        控制台认证已切换为 API 托管会话。浏览器不会持久化 access token，登录完成后只通过同域 HttpOnly session cookie 访问 `/api`。
+        与 Agent 持续交流，和团队一起推进工作、共享资料与确认成果。
       </a-typography-paragraph>
       <div class="login-card__actions">
-        <a-button type="primary" size="large" block @click="goToOidcLogin">使用 OIDC 登录</a-button>
+        <a-button type="primary" size="large" block @click="goToOidcLogin">使用组织账号登录</a-button>
         <a-button v-if="showDevBootstrapLogin" size="large" block @click="goToDevBootstrapLogin">
-          开发态 Bootstrap 登录
+          本地管理员登录
         </a-button>
       </div>
     </div>

@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.agentyard.channel.gateway.channel.ChannelAdminRepository;
 import com.agentyard.channel.gateway.testing.EmbeddedPostgresTestDatabase;
-import com.agentyard.contracts.channel.ChannelContracts.ChannelAssistantBinding;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelEntryBinding;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelGatewayProfile;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelProfileStatus;
 import java.net.ConnectException;
@@ -106,7 +106,7 @@ class FeishuLongConnectionManagerTest {
     }
 
     @Test
-    void startsOnlyActiveInboundFeishuProfilesWithAssistantBindingAndAccount() {
+    void startsOnlyActiveInboundFeishuProfilesWithEntryBindingAndAccount() {
         createProfile("eligible", FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, "assistant-1", "account-1");
         createProfile("no-account", FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, "assistant-1", null);
         createProfile("no-assistant", FeishuGatewayNativeChannelProviderAdapter.PROVIDER_TYPE, ChannelProfileStatus.ACTIVE, true, null, "account-2");
@@ -174,7 +174,7 @@ class FeishuLongConnectionManagerTest {
         String providerType,
         ChannelProfileStatus status,
         boolean inboundEnabled,
-        String assistantId,
+        String entryId,
         String accountId
     ) {
         Instant now = Instant.parse("2026-04-30T00:00:00Z");
@@ -185,7 +185,7 @@ class FeishuLongConnectionManagerTest {
             status,
             inboundEnabled,
             Map.of(),
-            assistantId == null ? null : new ChannelAssistantBinding(assistantId, null),
+            entryId == null ? null : new ChannelEntryBinding(entryId),
             accountId,
             false,
             1,

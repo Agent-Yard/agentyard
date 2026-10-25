@@ -1,26 +1,8 @@
-export type ResourceType = 'TOOL' | 'LLM_MODEL' | 'SKILL';
-export type ShareScope = 'PRIVATE' | 'DOMAIN_SHARED';
-export type VersionStatus = 'DRAFT' | 'PUBLISHED';
-export type ReferenceObjectType = 'DOMAIN' | 'SCENARIO' | 'ASSISTANT' | 'PLAYBOOK' | 'AGENT' | 'RESOURCE' | 'KNOWLEDGE_BASE';
-export type PlatformAggregateType =
-  | 'DOMAIN'
-  | 'SCENARIO'
-  | 'ASSISTANT'
-  | 'AGENT'
-  | 'PLAYBOOK'
-  | 'RESOURCE'
-  | 'KNOWLEDGE_BASE'
-  | 'SESSION'
-  | 'PLAYBOOK_RUN'
-  | 'SESSION_PRIVACY_MAPPING';
-export type ReferenceRelationMode = 'DIRECT' | 'INDIRECT';
-export type ReferenceImpactLevel = 'BLOCKS_DELETION' | 'ADVISORY';
-export type KnowledgeFileStatus = 'UPLOADED' | 'IMPORTING' | 'IMPORTED' | 'FAILED';
-export type KnowledgeImportJobStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED';
-export type KnowledgeImportSourceType = 'FILE_UPLOAD' | 'URL';
-export type KnowledgeIndexSnapshotStatus = 'QUEUED' | 'RUNNING' | 'READY' | 'FAILED';
-export type KnowledgeImportJobStage = 'QUEUED' | 'FETCHING_SOURCE' | 'PARSING' | 'CHUNKING' | 'PERSISTING' | 'SUCCEEDED' | 'FAILED';
-export type KnowledgeIndexSnapshotStage = 'QUEUED' | 'COLLECTING_DOCUMENTS' | 'INDEXING' | 'READY' | 'FAILED';
+import type { PlaybookExecutionPolicy, PlaybookNode, PlaybookEdge } from './catalog';
+export * from './catalog';
+export * from './task';
+export * from './agent';
+
 export type ToolKind = 'RESOURCE' | 'BUILTIN';
 export type IntegrationAccountSubjectType = 'TOOL_CONNECTOR' | 'CHANNEL_PROVIDER';
 export type IntegrationAccountStatus = 'ENABLED' | 'DISABLED' | 'ARCHIVED';
@@ -171,159 +153,6 @@ export interface RotateIntegrationAccountCredentialPayload {
   credential: Record<string, unknown>;
 }
 
-export interface KnowledgeBindingSnapshot {
-  knowledgeBaseId: string;
-  knowledgeBaseName: string;
-  knowledgeReleaseId: string;
-  knowledgeReleaseVersion: string;
-  snapshotId: string;
-  defaultTopK: number;
-  retrievalMode: string;
-  minScore: number;
-}
-
-export interface KnowledgeChunkRead {
-  chunkId: string;
-  documentId: string;
-  documentTitle: string;
-  sourceUri: string;
-  headingPath: string;
-  pageNumber: number | null;
-  content: string;
-}
-
-export interface KnowledgeSearchRequest {
-  query: string;
-  topK?: number;
-  minScore?: number;
-  retrievalMode?: 'LEXICAL' | 'VECTOR' | 'HYBRID' | null;
-}
-
-export interface KnowledgeSearchResult {
-  knowledgeBaseId: string;
-  knowledgeBaseName: string;
-  knowledgeReleaseId: string;
-  knowledgeReleaseVersion: string;
-  hits: KnowledgeRetrievalPreviewHit[];
-  lowConfidence: boolean;
-}
-
-export interface KnowledgeReadRequest {
-  chunkIds: string[];
-}
-
-export interface KnowledgeReadResult {
-  knowledgeBaseId: string;
-  knowledgeBaseName: string;
-  knowledgeReleaseId: string;
-  knowledgeReleaseVersion: string;
-  chunks: KnowledgeChunkRead[];
-}
-
-export interface KnowledgeRetrievalProfile {
-  defaultTopK: number;
-  retrievalMode: 'LEXICAL' | 'VECTOR' | 'HYBRID';
-  minScore: number;
-}
-
-export interface KnowledgeRelease {
-  id: string;
-  knowledgeBaseId: string;
-  version: string;
-  status: VersionStatus;
-  summary: string;
-  snapshotId: string;
-  retrievalProfile: KnowledgeRetrievalProfile;
-  createdAt: string;
-  publishedAt: string | null;
-}
-
-export interface KnowledgeBase {
-  id: string;
-  domainId: string;
-  name: string;
-  shareScope: ShareScope;
-  ownerType: string;
-  ownerId: string;
-  summary: string;
-  steward: string;
-  tags: string[];
-  latestRelease: KnowledgeRelease | null;
-  effectiveRelease: KnowledgeRelease | null;
-  releases: KnowledgeRelease[];
-}
-
-export interface KnowledgeReference {
-  knowledgeBaseId: string;
-  referenceKind: string;
-  sourceType: string;
-  sourceId: string;
-  sourceName: string;
-  knowledgeReleaseId: string | null;
-  knowledgeReleaseVersion: string | null;
-  blocksDeletion: boolean;
-}
-
-export interface ObjectReferenceRelation {
-  relationKind: string;
-  relationRole: string;
-  relationMode: ReferenceRelationMode;
-  impactLevel: ReferenceImpactLevel;
-  targetType: string;
-  targetId: string;
-  targetName: string;
-  releaseId: string | null;
-  releaseVersion: string | null;
-  resourceVersionId: string | null;
-  resourceVersion: string | null;
-  knowledgeReleaseId: string | null;
-  knowledgeReleaseVersion: string | null;
-}
-
-export interface ObjectReferenceAnalysis {
-  objectType: ReferenceObjectType;
-  objectId: string;
-  objectName: string;
-  relations: ObjectReferenceRelation[];
-}
-
-export interface DeletionCascadeItem {
-  action: string;
-  relationKind: string;
-  targetType: string;
-  targetId: string;
-  targetName: string;
-  description: string;
-  releaseVersion: string | null;
-  resourceVersion: string | null;
-  knowledgeReleaseVersion: string | null;
-}
-
-export interface DeletionImpactPreview {
-  objectType: ReferenceObjectType;
-  objectId: string;
-  objectName: string;
-  canDelete: boolean;
-  blockers: ObjectReferenceRelation[];
-  advisories: ObjectReferenceRelation[];
-  cascadeDeletes: DeletionCascadeItem[];
-}
-
-export interface PlatformEvent {
-  id: string;
-  eventType: string;
-  aggregateType: PlatformAggregateType;
-  aggregateId: string;
-  actorId: string | null;
-  payload: Record<string, unknown>;
-  occurredAt: string;
-}
-
-export interface PlatformEventPage {
-  items: PlatformEvent[];
-  nextCursor: string | null;
-}
-
 export interface ChannelProfile {
   id: string;
   providerType: string;
@@ -331,7 +160,7 @@ export interface ChannelProfile {
   status: ChannelProfileStatus;
   inboundEnabled: boolean;
   config: Record<string, unknown>;
-  assistantBinding: ChannelAssistantBinding | null;
+  entryBinding: ChannelEntryBinding | null;
   accountId: string | null;
   hasExternalSecretRef: boolean;
   revision: number;
@@ -347,7 +176,7 @@ export interface ChannelGatewayProfile {
   status: ChannelProfileStatus;
   inboundEnabled: boolean;
   config: Record<string, unknown>;
-  assistantBinding: ChannelAssistantBinding | null;
+  entryBinding: ChannelEntryBinding | null;
   accountId: string | null;
   hasExternalSecretRef: boolean;
   revision: number;
@@ -355,9 +184,8 @@ export interface ChannelGatewayProfile {
   updatedAt: string;
 }
 
-export interface ChannelAssistantBinding {
-  assistantId: string | null;
-  scenarioId: string | null;
+export interface ChannelEntryBinding {
+  entryId: string | null;
 }
 
 export type IntegrationAccountAvailabilityBlock =
@@ -495,8 +323,8 @@ export interface ChannelConversationBinding {
   channelProfileId: string;
   externalConversationId: string;
   externalUserId: string | null;
-  assistantId: string | null;
-  customerId: string | null;
+  entryId: string | null;
+  participantId: string | null;
   sessionId: string | null;
   status: ChannelConversationBindingStatus;
   metadata: Record<string, unknown>;
@@ -537,29 +365,31 @@ export interface ChannelProviderOutboundCapability {
 }
 
 export interface ChannelOutboundTypingPayload {
-  replyMessageId: string;
+  messageId: string;
 }
 
 export interface ChannelOutboundDraftUpdatePayload {
-  replyMessageId: string;
+  messageId: string;
   blockId: string;
   blockType: string;
   delta?: string | null;
 }
 
 export interface ChannelOutboundDraftCompletePayload {
-  replyMessageId: string;
+  messageId: string;
   blockId: string;
   blockType: string;
   block: Record<string, unknown>;
 }
 
 export interface ChannelOutboundDraftDiscardPayload {
-  replyMessageId: string;
+  messageId: string;
   reason?: string | null;
 }
 
 export interface ChannelOutboundFinalDeliveryPayload {
+  draftMessageId?: string | null;
+  senderParticipantId?: string | null;
   sessionMessageId: string;
   messageSequence: number;
   messageBlocks: Record<string, unknown>[];
@@ -572,11 +402,11 @@ export type ChannelOutboundTransientFrame =
       frameId: string;
       channelProfileId: string;
       providerType: string;
-      assistantId?: string | null;
+      entryId?: string | null;
       externalConversationId: string;
       sessionId: string;
-      turnId: string;
-      turnExecutionId: string;
+      sourceMessageId: string;
+      activationId: string;
       sourceSeq: number;
       kind: 'TYPING_START' | 'TYPING_STOP';
       occurredAt: string;
@@ -589,11 +419,11 @@ export type ChannelOutboundTransientFrame =
       frameId: string;
       channelProfileId: string;
       providerType: string;
-      assistantId?: string | null;
+      entryId?: string | null;
       externalConversationId: string;
       sessionId: string;
-      turnId: string;
-      turnExecutionId: string;
+      sourceMessageId: string;
+      activationId: string;
       sourceSeq: number;
       kind: 'DRAFT_UPDATE';
       occurredAt: string;
@@ -606,11 +436,11 @@ export type ChannelOutboundTransientFrame =
       frameId: string;
       channelProfileId: string;
       providerType: string;
-      assistantId?: string | null;
+      entryId?: string | null;
       externalConversationId: string;
       sessionId: string;
-      turnId: string;
-      turnExecutionId: string;
+      sourceMessageId: string;
+      activationId: string;
       sourceSeq: number;
       kind: 'DRAFT_COMPLETE';
       occurredAt: string;
@@ -623,11 +453,11 @@ export type ChannelOutboundTransientFrame =
       frameId: string;
       channelProfileId: string;
       providerType: string;
-      assistantId?: string | null;
+      entryId?: string | null;
       externalConversationId: string;
       sessionId: string;
-      turnId: string;
-      turnExecutionId: string;
+      sourceMessageId: string;
+      activationId: string;
       sourceSeq: number;
       kind: 'DRAFT_DISCARD';
       occurredAt: string;
@@ -641,7 +471,7 @@ export interface ChannelOutboundFinalDeliveryFrame {
   frameId: string;
   channelProfileId: string;
   providerType: string;
-  assistantId?: string | null;
+  entryId?: string | null;
   externalConversationId: string;
   sessionId: string;
   finalSequence: number;
@@ -700,7 +530,7 @@ export interface ChannelOutboundBindingSnapshotRefreshRequest {
 
 export interface ChannelTemplateBindingKey {
   channelProfileId: string;
-  assistantId: string;
+  entryId: string;
   messageType: string;
   messageSubtype: string;
   messageVersion: string;
@@ -709,7 +539,7 @@ export interface ChannelTemplateBindingKey {
 export interface ChannelTemplateBinding {
   id: string;
   channelProfileId: string;
-  assistantId: string;
+  entryId: string;
   messageType: string;
   messageSubtype: string;
   messageVersion: string;
@@ -732,15 +562,6 @@ export interface ChannelTemplateBindingWritePayload {
   externalEditUrl?: string | null;
   enabled?: boolean | null;
   expectedRevision?: number | null;
-}
-
-export interface ResolvedChannelTemplate {
-  externalTemplateId: string;
-  externalTemplateVersion: string | null;
-  variableSchema: Record<string, unknown>;
-  displayName: string;
-  externalEditUrl: string | null;
-  bindingRevision: number;
 }
 
 export interface ChannelProviderJobScheduleConfig {
@@ -832,7 +653,7 @@ export interface CreateChannelProfilePayload {
   status?: ChannelProfileStatus | null;
   inboundEnabled?: boolean | null;
   config: Record<string, unknown>;
-  assistantBinding?: ChannelAssistantBinding | null;
+  entryBinding?: ChannelEntryBinding | null;
   integrationAccountId?: string | null;
 }
 
@@ -842,7 +663,7 @@ export interface UpdateChannelProfilePayload {
   status?: ChannelProfileStatus | null;
   inboundEnabled?: boolean | null;
   config: Record<string, unknown>;
-  assistantBinding?: ChannelAssistantBinding | null;
+  entryBinding?: ChannelEntryBinding | null;
   integrationAccountId?: string | null;
   expectedRevision: number;
 }
@@ -853,7 +674,7 @@ export interface CreateChannelProfileInternalPayload {
   status?: ChannelProfileStatus | null;
   inboundEnabled?: boolean | null;
   config?: Record<string, unknown> | null;
-  assistantBinding?: ChannelAssistantBinding | null;
+  entryBinding?: ChannelEntryBinding | null;
   accountSnapshot?: ChannelProfileAccountSnapshot | null;
 }
 
@@ -863,220 +684,13 @@ export interface UpdateChannelProfileInternalPayload {
   status?: ChannelProfileStatus | null;
   inboundEnabled?: boolean | null;
   config?: Record<string, unknown> | null;
-  assistantBinding?: ChannelAssistantBinding | null;
+  entryBinding?: ChannelEntryBinding | null;
   accountSnapshot?: ChannelProfileAccountSnapshot | null;
   expectedRevision: number;
 }
 
-export type SessionRuntimeStreamEventType =
-  | 'SESSION_SNAPSHOT'
-  | 'SESSION_UPDATED'
-  | 'SESSION_PROGRESS'
-  | 'SESSION_REPLY_DRAFT'
-  | 'SESSION_STREAM_ERROR';
-
-export type StreamVisibility = 'CUSTOMER' | 'OPERATOR' | 'DEVELOPER' | 'INTERNAL';
-
-export interface SessionRuntimeSnapshotEvent<Detail = unknown> {
-  id: string;
-  type: 'SESSION_SNAPSHOT' | 'SESSION_UPDATED';
-  occurredAt: string;
-  sessionId: string;
-  detail: Detail;
-}
-
-export interface SessionProgressEvent {
-  id: string;
-  type: 'SESSION_PROGRESS';
-  occurredAt: string;
-  sessionId: string;
-  turnId: string;
-  visibility: Exclude<StreamVisibility, 'INTERNAL'>;
-  phase: string;
-  status: 'STARTED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | string;
-  title: string;
-  detail: Record<string, unknown>;
-}
-
-export interface SessionReplyDraftEvent {
-  id: string;
-  type: 'SESSION_REPLY_DRAFT';
-  occurredAt: string;
-  sessionId: string;
-  turnId: string;
-  replyMessageId: string;
-  operation: 'DELTA' | 'COMPLETED' | 'DISCARD';
-  blockId: string;
-  blockType: SessionMessageBlockType;
-  delta: string | null;
-  text: string | null;
-}
-
-export interface SessionStreamErrorEvent {
-  id: string;
-  type: 'SESSION_STREAM_ERROR';
-  occurredAt: string;
-  sessionId: string;
-  turnId: string;
-  code: string;
-  message: string;
-  retryable: boolean;
-  detail: Record<string, unknown>;
-}
-
-export type SessionRuntimeStreamEvent<Detail = unknown> =
-  | SessionRuntimeSnapshotEvent<Detail>
-  | SessionProgressEvent
-  | SessionReplyDraftEvent
-  | SessionStreamErrorEvent;
-
-export interface KnowledgeUploadSession {
-  id: string;
-  knowledgeBaseId: string;
-  status: string;
-  acceptedTypes: string[];
-}
-
-export interface KnowledgeFile {
-  id: string;
-  knowledgeBaseId: string;
-  uploadSessionId: string;
-  sourceType: KnowledgeImportSourceType;
-  sourceUri: string;
-  fileName: string;
-  contentType: string;
-  sizeBytes: number;
-  status: KnowledgeFileStatus;
-  errorMessage: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface KnowledgeImportJob {
-  id: string;
-  knowledgeBaseId: string;
-  fileId: string;
-  sourceType: KnowledgeImportSourceType;
-  sourceUri: string;
-  fileName: string;
-  status: KnowledgeImportJobStatus;
-  stage: KnowledgeImportJobStage;
-  progressPercent: number;
-  retryCount: number;
-  retryable: boolean;
-  failureReason: string | null;
-  startedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-  completedAt: string | null;
-}
-
-export interface KnowledgeDocument {
-  id: string;
-  knowledgeBaseId: string;
-  fileId: string;
-  title: string;
-  sourceUri: string;
-  documentType: string;
-  status: string;
-  chunkCount: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface KnowledgeSnapshot {
-  id: string;
-  knowledgeBaseId: string;
-  retrievalBackend: 'PGVECTOR';
-  retrievalMode: string;
-  status: KnowledgeIndexSnapshotStatus;
-  stage: KnowledgeIndexSnapshotStage;
-  progressPercent: number;
-  retryCount: number;
-  retryable: boolean;
-  documentCount: number;
-  chunkCount: number;
-  failureReason: string | null;
-  startedAt: string | null;
-  builtAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface KnowledgeRetrievalPreviewRequest {
-  snapshotId: string;
-  query: string;
-  topK?: number;
-  minScore?: number;
-  retrievalMode?: 'LEXICAL' | 'VECTOR' | 'HYBRID' | null;
-}
-
-export interface KnowledgeRetrievalPreviewHit {
-  chunkId: string;
-  documentId: string;
-  documentTitle: string;
-  sourceUri: string;
-  snippet: string;
-  score: number;
-  pageNumber: number | null;
-  headingPath: string;
-}
-
-export interface KnowledgeRetrievalPreviewResult {
-  hits: KnowledgeRetrievalPreviewHit[];
-  lowConfidence: boolean;
-}
-
-export type SessionMessageDeliveryStatus = 'ACCEPTED' | 'BUSY' | 'REJECTED';
-export type SessionMessageRole = 'USER' | 'ASSISTANT' | 'HUMAN_OPERATOR' | 'SYSTEM';
-export type SessionMessageStatus = 'SENT' | 'STREAMING' | 'DELIVERED' | 'FAILED';
-export type SessionMessageSenderType = 'CUSTOMER' | 'AGENT' | 'HUMAN_OPERATOR' | 'SYSTEM';
-export type SessionMessageBlockType = 'TEXT' | 'IMAGE' | 'RICH_TEXT' | 'CARD';
-export type SessionMessageProducerType = 'EXTERNAL' | 'PLATFORM';
 export type RichTextFormat = 'MARKDOWN';
 export type CardActionType = 'LINK';
-export type AgentDecisionAction =
-  | 'REPLY'
-  | 'NO_OP'
-  | 'SWITCH_OWNER'
-  | 'RUN_PLAYBOOK'
-  | 'SESSION_HUMAN_HANDOFF'
-  | 'SECURITY_BLOCK';
-export type SessionTriggerType = 'USER_MESSAGE' | 'PLAYBOOK_COMPLETED';
-export type SessionActorType = 'CUSTOMER' | 'AGENT' | 'SYSTEM' | 'HUMAN_OPERATOR' | 'EXTERNAL_SYSTEM';
-export type SessionEventType =
-  | 'AGENT_DECISION_REJECTED'
-  | 'AGENT_TURN_FAILED'
-  | 'USER_MESSAGE_SECURITY_BLOCKED'
-  | 'OWNER_SWITCH'
-  | 'PLAYBOOK_STARTED'
-  | 'PLAYBOOK_WAITING'
-  | 'PLAYBOOK_RESUMED'
-  | 'PLAYBOOK_COMPLETED'
-  | 'SESSION_HUMAN_HANDOFF_STARTED'
-  | 'SESSION_HUMAN_HANDOFF_ENDED'
-  | 'HUMAN_RESUME_RECEIVED'
-  | 'EXTERNAL_CALLBACK_RECEIVED';
-export type PlaybookRunStatus = 'RUNNING' | 'WAITING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
-export type PlaybookNodeType = 'STEP' | 'TOOL_TASK' | 'HUMAN_TASK' | 'EXTERNAL_INTERACTION' | 'END';
-export type PlaybookWaitingType = 'HUMAN_TASK' | 'EXTERNAL_INTERACTION';
-export type PlaybookResumeSource = 'HUMAN' | 'EXTERNAL_SYSTEM';
-
-export interface SessionOwnerPolicy {
-  maxOwnerSwitchesPerTurn: number;
-}
-
-export interface SessionPolicy {
-  idleTimeout: string;
-  maxWorkflowAge: string;
-  maxWorkflowHistoryEvents: number;
-}
-
-export interface PlaybookExecutionPolicy {
-  timeoutPolicy: string | null;
-  retryPolicy: string | null;
-}
-
 export interface LlmModelDescriptor {
   resourceId: string;
   resourceName: string;
@@ -1156,64 +770,6 @@ export interface ToolDescriptor {
   connector: ToolConnectorDescriptor | null;
 }
 
-export interface AssistantSessionConfig {
-  assistantId: string;
-  assistantName: string;
-  assistantReleaseVersion: string;
-  primaryAgentId: string;
-  ownerPolicy: SessionOwnerPolicy;
-  sessionPolicy: SessionPolicy;
-  playbookPolicy: PlaybookExecutionPolicy;
-}
-
-export interface OwnerAgentConfig {
-  agentId: string;
-  name: string;
-  role: string;
-  responsibility: string;
-  model: LlmModelDescriptor | null;
-  effectivePrivacyModelBinding: LlmModelDescriptor | null;
-  effectivePrivacyMappingEnabled: boolean;
-  systemPrompt: string;
-  knowledgeEnabled: boolean;
-  knowledgeBaseId: string | null;
-  knowledgeBinding: KnowledgeBindingDescriptor | null;
-  memoryWindowSize: number;
-  canOwnSession: boolean;
-  allowedActions: AgentDecisionAction[];
-  switchableOwnerAgentIds: string[];
-  playbookIds: string[];
-  skills: SkillDescriptor[];
-  tools: ToolDescriptor[];
-}
-
-export interface PlaybookNode {
-  nodeKey: string;
-  nodeName: string;
-  nodeType: PlaybookNodeType;
-  description: string;
-  scriptRef: string | null;
-  scriptVersion: string | null;
-  toolId: string | null;
-  toolOperation: string | null;
-  config: Record<string, unknown>;
-  layout: PlaybookNodeLayout;
-}
-
-export interface PlaybookNodeLayout {
-  x: number;
-  y: number;
-}
-
-export interface PlaybookEdge {
-  edgeKey: string;
-  sourceNodeKey: string;
-  targetNodeKey: string;
-  routeKey: string;
-  label: string;
-  defaultEdge: boolean;
-}
-
 export interface PlaybookConfig {
   playbookId: string;
   name: string;
@@ -1228,11 +784,6 @@ export interface PlaybookConfig {
   edges: PlaybookEdge[];
 }
 
-export interface SessionMessageSender {
-  senderType: SessionMessageSenderType;
-  senderId: string | null;
-  senderName: string;
-}
 
 export interface TextMessageBlock {
   type: 'TEXT';
@@ -1268,549 +819,19 @@ export interface CardMessageBlock {
   actions: CardLinkAction[];
 }
 
-export type SessionMessageBlock =
+export type MessageBlock =
   | TextMessageBlock
   | ImageMessageBlock
   | RichTextMessageBlock
   | CardMessageBlock;
 
-export interface SessionMessageInput {
-  blocks: SessionMessageBlock[];
+export interface MessageContent {
+  blocks: MessageBlock[];
   metadata: Record<string, unknown>;
 }
 
-export interface WebSessionTurnMessageInput {
-  clientMessageId?: string | null;
-  occurredAt?: string | null;
-  blocks: SessionMessageBlock[];
-  metadata: Record<string, unknown>;
-}
 
-export interface SendSessionTurnRequest {
-  sessionId?: string | null;
-  assistantId?: string | null;
-  customerId: string;
-  turnDedupKey: string;
-  messages: WebSessionTurnMessageInput[];
-  metadata: Record<string, unknown>;
-}
-
-export interface AcceptedSessionMessageAllocation {
-  requestIndex: number;
-  clientMessageId?: string | null;
-  messageId: string;
-  turnIndex: number;
-}
-
-export interface SendSessionTurnResponse {
-  sessionId: string;
-  turnId: string;
-  status: SessionMessageDeliveryStatus;
-  acceptedMessageIds: string[];
-  acceptedMessageAllocations: AcceptedSessionMessageAllocation[];
-  duplicateExternalMessageIds: string[];
-  reason: string | null;
-}
-
-export interface SessionMessage {
-  messageId: string;
-  sessionId: string;
-  sequence: number;
-  turnId: string;
-  turnIndex: number;
-  producerType: SessionMessageProducerType;
-  externalMessageId: string | null;
-  clientMessageId: string | null;
-  occurredAt: string | null;
-  role: SessionMessageRole;
-  sender: SessionMessageSender;
-  status: SessionMessageStatus;
-  blocks: SessionMessageBlock[];
-  metadata: Record<string, unknown>;
-  relatedPlaybookRunId: string | null;
-  relatedOwnerAgentId: string | null;
-  sourceEventId: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface SessionEvent {
-  eventId: string;
-  sessionId: string;
-  sequence: number;
-  eventType: SessionEventType;
-  createdAt: string;
-  actorType: SessionActorType;
-  actorId: string | null;
-  payload: Record<string, unknown>;
-  relatedMessageId: string | null;
-  relatedPlaybookRunId: string | null;
-  relatedOwnerAgentId: string | null;
-}
-
-export interface PlaybookRun {
-  runId: string;
-  sessionId: string;
-  parentSessionEventId: string;
-  playbookId: string;
-  ownerAgentId: string;
-  status: PlaybookRunStatus;
-  input: Record<string, unknown>;
-  result: Record<string, unknown>;
-  failureReason: string | null;
-  createdAt: string;
-  updatedAt: string;
-  waitingReason: string | null;
-}
-
-export interface ActivePlaybookSummary {
-  runId: string;
-  playbookId: string;
-  playbookName: string;
-  status: PlaybookRunStatus;
-  waitingReason: string | null;
-  latestResult: Record<string, unknown>;
-}
-
-export interface SessionTrigger {
-  triggerType: SessionTriggerType;
-  turnId: string;
-  eventId: string;
-  payload: Record<string, unknown>;
-}
-
-export type AgentRuntimeContextEntryType =
-  | 'SESSION_EVENT'
-  | 'SHARED_STATE_SNAPSHOT'
-  | 'SHARED_STATE_PATCH'
-  | 'ACTIVE_PLAYBOOK_SUMMARY';
-
-export interface AgentRuntimeContextEntry {
-  entryId: string;
-  entryType: AgentRuntimeContextEntryType;
-  revision: number;
-  occurredAt: string;
-  data: Record<string, unknown>;
-}
-
-export type PrivacyChannel =
-  | 'PROMPT_INSTRUCTION'
-  | 'PROMPT_RUNTIME_MESSAGE'
-  | 'SKILL_PAYLOAD'
-  | 'MODEL_TOOL_ARGUMENT'
-  | 'TOOL_RESULT'
-  | 'MODEL_FINAL_RESPONSE';
-
-export interface PrivacyMappingTelemetry {
-  enabled: boolean;
-  privacyModelResourceId: string | null;
-  privacyModelResourceName: string | null;
-  sanitizeCountByChannel: Record<PrivacyChannel, number>;
-  restoreCountByChannel: Record<PrivacyChannel, number>;
-  entityTypeBreakdown: Record<string, number>;
-  placeholderCount: number;
-  unresolvedPlaceholderCount: number;
-  blockedEventCount: number;
-  lastProcessedAt: string | null;
-}
-
-export interface AgentDecision {
-  action: AgentDecisionAction;
-  replyMessage: SessionMessageInput | null;
-  targetAgentId: string | null;
-  playbookId: string | null;
-  playbookInput: Record<string, unknown>;
-  operatorReason: string | null;
-}
-
-export type LlmUsageSourceType = 'SESSION_OWNER_MODEL' | 'SESSION_PRIVACY_MODEL';
-
-export interface LlmUsageEntry {
-  sourceType: LlmUsageSourceType;
-  callSequence: number;
-  toolLoopStep: number;
-  providerType: string;
-  modelResourceId: string | null;
-  modelResourceVersionId: string | null;
-  modelId: string;
-  usageAvailable: boolean;
-  promptTokens: number | null;
-  completionTokens: number | null;
-  totalTokens: number | null;
-  rawUsage: Record<string, unknown>;
-  occurredAt: string;
-}
-
-export interface AgentTurnRequest {
-  sessionId: string;
-  turnId: string;
-  turnExecutionId: string;
-  replyMessageId: string;
-  ownershipEpoch: number;
-  assistantId: string;
-  assistantReleaseVersion: string;
-  currentOwner: OwnerAgentConfig;
-  availableAgents: OwnerAgentConfig[];
-  availablePlaybooks: PlaybookConfig[];
-  activePlaybook: ActivePlaybookSummary | null;
-  sharedState: Record<string, unknown>;
-  effectivePrivacyModelBinding: LlmModelDescriptor | null;
-  effectivePrivacyMappingEnabled: boolean;
-  trigger: SessionTrigger;
-  messages: SessionMessage[];
-  contextEntries: AgentRuntimeContextEntry[];
-  transcriptBootstrap: boolean;
-}
-
-export interface AgentTurnResult {
-  decision: AgentDecision;
-  sharedState: Record<string, unknown>;
-  mappingTelemetry: PrivacyMappingTelemetry | null;
-  securityAssessment: SecurityAssessment | null;
-}
-
-export interface SecurityAssessment {
-  action: 'ALLOW' | 'BLOCK' | string;
-  categories: string[];
-  reason: string | null;
-  confidence: number | null;
-}
-
-export interface AgentTurnExecutionOutcome {
-  success: boolean;
-  result: AgentTurnResult | null;
-  failureReason: string | null;
-  llmUsage: LlmUsageEntry[];
-}
-
-export type AgentTurnStreamFrameKind =
-  | 'TURN_STARTED'
-  | 'MODEL_STARTED'
-  | 'MODEL_COMPLETED'
-  | 'ACTION_TOOL_STARTED'
-  | 'ACTION_TOOL_COMPLETED'
-  | 'REPLY_BLOCK_DELTA'
-  | 'REPLY_BLOCK_COMPLETED'
-  | 'FINAL_OUTCOME'
-  | 'ERROR';
-
-export type AgentTurnTransientFrameKind =
-  | 'TURN_STARTED'
-  | 'MODEL_STARTED'
-  | 'MODEL_COMPLETED'
-  | 'ACTION_TOOL_STARTED'
-  | 'ACTION_TOOL_COMPLETED'
-  | 'REPLY_BLOCK_DELTA'
-  | 'REPLY_BLOCK_COMPLETED'
-  | 'TURN_COMPLETED'
-  | 'ERROR';
-
-export type ModelStreamStatus = 'SUCCEEDED' | 'FAILED' | 'ABORTED';
-export type TurnCompletionStatus = 'SUCCEEDED' | 'FAILED';
-export type RuntimeToolKind = 'CONTEXT_TOOL' | 'STATE_TOOL' | 'MESSAGE_BLOCK_TOOL' | 'LIFECYCLE_ACTION_TOOL';
-export type ToolCompletionStatus = 'ACCEPTED' | 'REJECTED' | 'FAILED';
-export type StreamErrorStage =
-  | 'PROVIDER_STREAM'
-  | 'TOOL_ARGUMENT_PARSE'
-  | 'TOOL_EXECUTION'
-  | 'FINAL_OUTCOME_BUILD'
-  | 'TRANSCRIPT_PERSISTENCE';
-
-export interface AgentTurnStreamFrame<K extends AgentTurnStreamFrameKind, P> {
-  protocol: 'agentyard.agent-turn-stream.v1';
-  frameId: string;
-  streamId: string;
-  sessionId: string;
-  turnId: string;
-  turnExecutionId: string;
-  ownerAgentId: string;
-  ownershipEpoch: number;
-  seq: number;
-  kind: K;
-  visibility: StreamVisibility;
-  occurredAt: string;
-  payload: P;
-}
-
-export interface AgentTurnTransientFrame<K extends AgentTurnTransientFrameKind, P> {
-  protocol: 'agentyard.agent-turn-transient.v1';
-  frameId: string;
-  streamId: string;
-  sessionId: string;
-  turnId: string;
-  turnExecutionId: string;
-  ownerAgentId: string;
-  ownershipEpoch: number;
-  seq: number;
-  kind: K;
-  visibility: StreamVisibility;
-  occurredAt: string;
-  payload: P;
-}
-
-export interface TurnStartedPayload {
-  replyMessageId: string;
-  triggerType: SessionTriggerType;
-  inputMessageCount: number;
-}
-
-export interface ModelStartedPayload {
-  modelRoundId: string;
-}
-
-export interface ModelCompletedPayload {
-  modelRoundId: string;
-  status: ModelStreamStatus;
-}
-
-export interface ToolStartedPayload {
-  modelRoundId: string;
-  toolCallId: string;
-  toolName: string;
-  toolKind: RuntimeToolKind;
-}
-
-export interface ToolCompletedPayload {
-  toolCallId: string;
-  toolName: string;
-  toolKind: RuntimeToolKind;
-  status: ToolCompletionStatus;
-  produced?: {
-    action?: string;
-    messageBlockId?: string;
-    sharedStateUpdated?: boolean;
-  };
-}
-
-export interface ReplyBlockDeltaPayload {
-  replyMessageId: string;
-  blockId: string;
-  blockType: 'TEXT';
-  delta: string;
-}
-
-export interface ReplyBlockCompletedPayload {
-  replyMessageId: string;
-  blockId: string;
-  block: SessionMessageBlock;
-}
-
-export interface FinalOutcomePayload {
-  replyMessageId: string;
-  outcome: AgentTurnExecutionOutcome;
-}
-
-export interface TurnCompletedPayload {
-  replyMessageId: string;
-  status: TurnCompletionStatus;
-}
-
-export interface ErrorPayload {
-  code: string;
-  replyMessageId: string;
-  message: string;
-  stage: StreamErrorStage;
-  retryable: boolean;
-  details?: Record<string, unknown>;
-}
-
-export type AgentTurnFrame =
-  | AgentTurnStreamFrame<'TURN_STARTED', TurnStartedPayload>
-  | AgentTurnStreamFrame<'MODEL_STARTED', ModelStartedPayload>
-  | AgentTurnStreamFrame<'MODEL_COMPLETED', ModelCompletedPayload>
-  | AgentTurnStreamFrame<'ACTION_TOOL_STARTED', ToolStartedPayload>
-  | AgentTurnStreamFrame<'ACTION_TOOL_COMPLETED', ToolCompletedPayload>
-  | AgentTurnStreamFrame<'REPLY_BLOCK_DELTA', ReplyBlockDeltaPayload>
-  | AgentTurnStreamFrame<'REPLY_BLOCK_COMPLETED', ReplyBlockCompletedPayload>
-  | AgentTurnStreamFrame<'FINAL_OUTCOME', FinalOutcomePayload>
-  | AgentTurnStreamFrame<'ERROR', ErrorPayload>;
-
-export type AgentTurnTransientIngressFrame =
-  | AgentTurnTransientFrame<'TURN_STARTED', TurnStartedPayload>
-  | AgentTurnTransientFrame<'MODEL_STARTED', ModelStartedPayload>
-  | AgentTurnTransientFrame<'MODEL_COMPLETED', ModelCompletedPayload>
-  | AgentTurnTransientFrame<'ACTION_TOOL_STARTED', ToolStartedPayload>
-  | AgentTurnTransientFrame<'ACTION_TOOL_COMPLETED', ToolCompletedPayload>
-  | AgentTurnTransientFrame<'REPLY_BLOCK_DELTA', ReplyBlockDeltaPayload>
-  | AgentTurnTransientFrame<'REPLY_BLOCK_COMPLETED', ReplyBlockCompletedPayload>
-  | AgentTurnTransientFrame<'TURN_COMPLETED', TurnCompletedPayload>
-  | AgentTurnTransientFrame<'ERROR', ErrorPayload>;
-
-export interface UserTurn {
-  turnId: string;
-  customerId: string;
-  turnDedupKey: string;
-  messages: SessionMessage[];
-  metadata: Record<string, unknown>;
-}
-
-export interface SessionStartRequest {
-  sessionId: string;
-  scenarioId: string;
-  sessionTitle: string;
-  customerId: string;
-  assistant: AssistantSessionConfig;
-  agents: OwnerAgentConfig[];
-  playbooks: PlaybookConfig[];
-  initialSharedState: Record<string, unknown>;
-}
-
-export interface HumanResumeSignal {
-  sessionId: string;
-  playbookRunId: string;
-  operatorId: string;
-  payload: Record<string, unknown>;
-}
-
-export interface ExternalCallbackSignal {
-  sessionId: string;
-  playbookRunId: string;
-  payload: Record<string, unknown>;
-}
-
-export interface HumanResumeRequest {
-  playbookRunId: string;
-  payload: Record<string, unknown>;
-}
-
-export interface ExternalCallbackRequest {
-  playbookRunId: string;
-  payload: Record<string, unknown>;
-}
-
-export interface ChannelInboundSessionTurnMessage {
-  externalEventId?: string | null;
-  externalMessageId: string;
-  occurredAt?: string | null;
-  role: SessionMessageRole;
-  sender: SessionMessageSender;
-  message: SessionMessageInput;
-  metadata: Record<string, unknown>;
-}
-
-export interface ChannelInboundSessionTurnRequest {
-  channelProfileId: string;
-  externalConversationId: string;
-  dedupKey: string;
-  assistantId: string;
-  customerId: string;
-  sessionId?: string | null;
-  messages: ChannelInboundSessionTurnMessage[];
-  metadata: Record<string, unknown>;
-}
-
-export interface ChannelInboundSessionTurnResponse {
-  sessionId: string;
-  turnId: string;
-  status: SessionMessageDeliveryStatus;
-  acceptedMessageIds: string[];
-  acceptedMessageAllocations: AcceptedSessionMessageAllocation[];
-  duplicateExternalMessageIds: string[];
-  reason: string | null;
-}
-
-export type ImportSessionTarget =
-  | ExistingSessionImportTarget
-  | WebIdentityImportTarget
-  | ChannelIdentityImportTarget;
-
-export interface ExistingSessionImportTarget {
-  sessionId: string;
-  customerId: string;
-  assistantId: string;
-}
-
-export interface WebIdentityImportTarget {
-  customerId: string;
-  assistantId: string;
-}
-
-export interface ChannelIdentityImportTarget {
-  channelProfileId: string;
-  externalConversationId: string;
-  customerId: string;
-  assistantId: string;
-}
-
-export interface TrustedImportSessionTurnMessage {
-  importMessageId?: string | null;
-  externalMessageId?: string | null;
-  occurredAt?: string | null;
-  role: SessionMessageRole;
-  sender: SessionMessageSender;
-  message: SessionMessageInput;
-  metadata: Record<string, unknown>;
-}
-
-export interface TrustedImportSessionTurnRequest {
-  target: ImportSessionTarget;
-  turnDedupKey: string;
-  importBatchId: string;
-  sourceSystem: string;
-  messages: TrustedImportSessionTurnMessage[];
-  metadata: Record<string, unknown>;
-}
-
-export interface HumanOperatorReplyRequest {
-  message: SessionMessageInput;
-  payload: Record<string, unknown>;
-}
-
-export interface EndHumanHandoffSignal {
-  sessionId: string;
-  operatorId: string;
-}
-
-export interface SessionSnapshot {
-  sessionId: string;
-  assistantId: string;
-  assistantReleaseVersion: string;
-  primaryAgentId: string;
-  currentOwnerAgentId: string;
-  ownerSwitchCountInTurn: number;
-  sharedState: Record<string, unknown>;
-  activePlaybookRunId: string | null;
-  agentTurnActive: boolean;
-  sessionHumanHandoffActive: boolean;
-  pendingOwnerReevaluation: boolean;
-  draining: boolean;
-  idleDeadline: string | null;
-}
-
-export interface PlaybookStartRequest {
-  sessionId: string;
-  playbookRunId: string;
-  triggeringEventId: string;
-  ownerAgentId: string;
-  ownerAgent: OwnerAgentConfig;
-  playbook: PlaybookConfig;
-  input: Record<string, unknown>;
-}
-
-export interface PlaybookToolTaskRequest {
-  sessionId: string;
-  playbookRunId: string;
-  playbookId: string;
-  nodeKey: string;
-  nodeName: string;
-  ownerAgent: OwnerAgentConfig;
-  toolId: string;
-  toolOperation: string;
-  input: Record<string, unknown>;
-  config: Record<string, unknown>;
-}
-
-export interface PlaybookToolTaskResult {
-  statePatch: Record<string, unknown>;
-  routeKey: string | null;
-  terminalStatus: PlaybookRunStatus | null;
-  failureReason: string | null;
-}
-
-export interface PlaybookResumeSignal {
-  playbookRunId: string;
-  source: PlaybookResumeSource;
-  operatorId: string;
-  payload: Record<string, unknown>;
-}
-export * from './task';
+export interface ChannelReceptionMessage { externalMessageId:string; externalUserId:string; displayName:string; message:MessageContent }
+export interface ChannelReceptionRequest { channelProfileId:string; externalConversationId:string; dedupKey:string; entryId:string; messages:ChannelReceptionMessage[]; metadata:Record<string,unknown> }
+export interface ChannelReceptionAllocation { requestIndex:number; messageId:string; sessionId:string; participantId:string }
+export interface ChannelReceptionResponse { sessionId:string; acceptedMessageAllocations:ChannelReceptionAllocation[]; duplicateExternalMessageIds:string[]; reason:string|null }

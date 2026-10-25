@@ -97,16 +97,6 @@ public class KnowledgeService {
         });
     }
 
-    public List<KnowledgeBaseDto> listKnowledgeBasesByDomain(String domainId) {
-        return withReadState(repo -> {
-        return repo.listKnowledgeBases().stream()
-            .filter(item -> item.domainId().equals(domainId))
-            .sorted(Comparator.comparing(KnowledgeBaseDto::name))
-            .map(item -> toKnowledgeBaseView(repo, item))
-            .toList();
-        });
-    }
-
     public KnowledgeBaseDto getKnowledgeBase(String knowledgeBaseId) {
         return withReadState(repo -> {
         return toKnowledgeBaseView(repo, findKnowledgeBase(repo, knowledgeBaseId));
@@ -115,14 +105,11 @@ public class KnowledgeService {
 
     public KnowledgeBaseDto createKnowledgeBase(CreateKnowledgeBaseRequest request) {
         return withWriteState(repo -> {
-        String domainId = requireText(request.domainId(), "knowledgeBase.domainId");
-        requireDomain(domainId);
-        validateKnowledgeOwner(domainId, request.ownerType(), request.ownerId());
+        com.agentyard.platform.catalog.CatalogOwnership.validate(request.ownerType(), request.ownerId());
         KnowledgeBaseDto knowledgeBase = new KnowledgeBaseDto(
             nextId("knowledge-base"),
-            domainId,
             requireText(request.name(), "knowledgeBase.name"),
-            request.shareScope() == null ? ShareScope.DOMAIN_SHARED : request.shareScope(),
+            request.shareScope() == null ? ShareScope.PRIVATE : request.shareScope(),
             requireText(request.ownerType(), "knowledgeBase.ownerType"),
             requireText(request.ownerId(), "knowledgeBase.ownerId"),
             normalizeOptionalText(request.summary()),
@@ -141,10 +128,9 @@ public class KnowledgeService {
     public KnowledgeBaseDto updateKnowledgeBase(String knowledgeBaseId, UpdateKnowledgeBaseRequest request) {
         return withWriteState(repo -> {
         KnowledgeBaseDto existing = findKnowledgeBase(repo, knowledgeBaseId);
-        validateKnowledgeOwner(existing.domainId(), request.ownerType(), request.ownerId());
+        com.agentyard.platform.catalog.CatalogOwnership.validate(request.ownerType(), request.ownerId());
         KnowledgeBaseDto updated = new KnowledgeBaseDto(
             existing.id(),
-            existing.domainId(),
             requireText(request.name(), "knowledgeBase.name"),
             request.shareScope() == null ? existing.shareScope() : request.shareScope(),
             requireText(request.ownerType(), "knowledgeBase.ownerType"),
@@ -211,22 +197,7 @@ public class KnowledgeService {
         VersionStatus status = request == null || request.status() == null ? VersionStatus.DRAFT : request.status();
         validateSnapshotReady(snapshotId);
         List<KnowledgeReleaseDto> existingReleases = new ArrayList<>(releasesForKnowledgeBase(repo, knowledgeBaseId));
-        List<KnowledgeReleaseDto> normalizedExisting = status == VersionStatus.PUBLISHED
-            ? existingReleases.stream().map(release -> release.status() == VersionStatus.PUBLISHED
-                ? new KnowledgeReleaseDto(
-                    release.id(),
-                    release.knowledgeBaseId(),
-                    release.version(),
-                    VersionStatus.DRAFT,
-                    release.summary(),
-                    release.snapshotId(),
-                    release.retrievalProfile(),
-                    release.createdAt(),
-                    null
-                )
-                : release)
-                .toList()
-            : existingReleases;
+        List<KnowledgeReleaseDto> normalizedExisting = existingReleases;
         String summary = normalizeOptionalText(request == null ? null : request.summary());
         KnowledgeReleaseDto created = new KnowledgeReleaseDto(
             nextId("knowledge-release"),
@@ -282,12 +253,12 @@ public class KnowledgeService {
                 release.id(),
                 release.knowledgeBaseId(),
                 release.version(),
-                release.id().equals(releaseId) ? VersionStatus.PUBLISHED : VersionStatus.DRAFT,
+                release.id().equals(releaseId) ? VersionStatus.PUBLISHED : release.status(),
                 release.summary(),
                 release.snapshotId(),
                 release.retrievalProfile(),
                 release.createdAt(),
-                release.id().equals(releaseId) ? Instant.now() : null
+                release.id().equals(releaseId) ? (release.publishedAt() == null ? Instant.now() : release.publishedAt()) : release.publishedAt()
             ))
             .toList();
         repo.replaceKnowledgeReleases(knowledgeBaseId, updated);
@@ -524,18 +495,6 @@ public class KnowledgeService {
         });
     }
 
-    public boolean hasKnowledgeBasesInDomain(String domainId) {
-        return withReadState(repo -> {
-        return repo.listKnowledgeBases().stream().anyMatch(item -> item.domainId().equals(domainId));
-        });
-    }
-
-    public boolean hasAssistantOwnedKnowledgeBases(String assistantId) {
-        return withReadState(repo -> {
-        return repo.listKnowledgeBases().stream().anyMatch(item -> "ASSISTANT".equals(item.ownerType()) && assistantId.equals(item.ownerId()));
-        });
-    }
-
     public String resolveDefaultKnowledgeBaseId(String preferredKnowledgeBaseId) {
         return withReadState(repo -> {
         if (preferredKnowledgeBaseId != null && repo.listKnowledgeBases().stream().anyMatch(item -> item.id().equals(preferredKnowledgeBaseId))) {
@@ -547,33 +506,6 @@ public class KnowledgeService {
 
     private void recordKnowledgeEvent(String eventType, PlatformAggregateType aggregateType, String aggregateId, Map<String, Object> payload) {
         platformEventService.recordControlEvent(eventType, aggregateType, aggregateId, payload);
-    }
-
-    private void requireDomain(String domainId) {
-        if (catalogRepository.findDomain(domainId).isEmpty()) {
-            throw new NoSuchElementException("business domain not found: " + domainId);
-        }
-    }
-
-    private void validateKnowledgeOwner(String domainId, String ownerType, String ownerId) {
-        String normalizedOwnerType = requireText(ownerType, "knowledgeBase.ownerType");
-        String normalizedOwnerId = requireText(ownerId, "knowledgeBase.ownerId");
-        if ("DOMAIN".equals(normalizedOwnerType)) {
-            if (!domainId.equals(normalizedOwnerId)) {
-                throw new IllegalArgumentException("knowledgeBase ownerId must match domainId when ownerType=DOMAIN");
-            }
-            return;
-        }
-        if (!"ASSISTANT".equals(normalizedOwnerType)) {
-            throw new IllegalArgumentException("knowledgeBase ownerType must be DOMAIN or ASSISTANT");
-        }
-        AssistantDto assistant = catalogRepository.findAssistant(normalizedOwnerId)
-            .orElseThrow(() -> new NoSuchElementException("assistant not found: " + normalizedOwnerId));
-        ScenarioDto scenario = catalogRepository.findScenario(assistant.scenarioId())
-            .orElseThrow(() -> new NoSuchElementException("scenario not found: " + assistant.scenarioId()));
-        if (!domainId.equals(scenario.domainId())) {
-            throw new IllegalArgumentException("assistant owner must belong to the same business domain as knowledgeBase.domainId");
-        }
     }
 
     private List<KnowledgeReferenceDto> listKnowledgeBaseReferences(
@@ -594,14 +526,6 @@ public class KnowledgeService {
                 "BLOCKS_DELETION".equals(relation.impactLevel())
             ))
             .toList();
-    }
-
-    private String resolveSourceName(CatalogRepository catalogState, String sourceType, String sourceId) {
-        return switch (sourceType) {
-            case "ASSISTANT" -> catalogState.findAssistant(sourceId).map(AssistantDto::name).orElse(sourceId);
-            case "AGENT" -> catalogState.findAgent(sourceId).map(AgentDto::name).orElse(sourceId);
-            default -> sourceId;
-        };
     }
 
     private String findKnowledgeBaseDeletionBlocker(KnowledgeRepository repo, String knowledgeBaseId) {
@@ -639,37 +563,7 @@ public class KnowledgeService {
         CatalogRepository catalogState,
         KnowledgeBaseDto knowledgeBase
     ) {
-        return ObjectReferenceAnalyzer.analyzeKnowledgeBase(
-            knowledgeBase,
-            catalogState.findKnowledgeBindings(knowledgeBase.id()),
-            catalogState.findReleaseKnowledgeRefs(knowledgeBase.id()),
-            sourceKey -> resolveSourceName(catalogState, sourceKey),
-            this::resolveAssistantReleaseName,
-            this::findAssistantReleaseById
-        );
-    }
-
-    private String resolveSourceName(CatalogRepository catalogState, String sourceKey) {
-        int separatorIndex = sourceKey.indexOf(':');
-        if (separatorIndex < 0) {
-            return sourceKey;
-        }
-        return resolveSourceName(catalogState, sourceKey.substring(0, separatorIndex), sourceKey.substring(separatorIndex + 1));
-    }
-
-    private AssistantReleaseDto findAssistantReleaseById(String releaseId) {
-        return catalogRepository.findAssistantReleaseById(releaseId).orElse(null);
-    }
-
-    private String resolveAssistantReleaseName(String releaseId) {
-        AssistantReleaseDto release = findAssistantReleaseById(releaseId);
-        if (release == null) {
-            return releaseId;
-        }
-        String assistantName = catalogRepository.findAssistant(release.assistantId())
-            .map(AssistantDto::name)
-            .orElse(release.assistantId());
-        return assistantName + "@" + release.releaseVersion();
+        return ObjectReferenceAnalyzer.analyzeKnowledgeBase(knowledgeBase, catalogState);
     }
 
     private String toKnowledgeBaseDeletionMessage(ObjectReferenceRelationDto relation) {
@@ -688,7 +582,6 @@ public class KnowledgeService {
             .orElse(null);
         return new KnowledgeBaseDto(
             knowledgeBase.id(),
-            knowledgeBase.domainId(),
             knowledgeBase.name(),
             knowledgeBase.shareScope(),
             knowledgeBase.ownerType(),

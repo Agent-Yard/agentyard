@@ -4,22 +4,22 @@
 package com.agentyard.persistence.jooq.tables;
 
 
-import com.agentyard.persistence.jooq.Indexes;
 import com.agentyard.persistence.jooq.Keys;
 import com.agentyard.persistence.jooq.Public;
+import com.agentyard.persistence.jooq.tables.CatalogPlaybookVersion.CatalogPlaybookVersionPath;
 import com.agentyard.persistence.jooq.tables.records.CatalogPlaybookRecord;
 
-import java.util.Arrays;
 import java.util.Collection;
-import java.util.List;
 
 import org.jooq.Condition;
 import org.jooq.Field;
-import org.jooq.Index;
-import org.jooq.JSONB;
+import org.jooq.ForeignKey;
+import org.jooq.InverseForeignKey;
 import org.jooq.Name;
+import org.jooq.Path;
 import org.jooq.PlainSQL;
 import org.jooq.QueryPart;
+import org.jooq.Record;
 import org.jooq.SQL;
 import org.jooq.Schema;
 import org.jooq.Select;
@@ -57,63 +57,27 @@ public class CatalogPlaybook extends TableImpl<CatalogPlaybookRecord> {
     /**
      * The column <code>public.catalog_playbook.id</code>.
      */
-    public final TableField<CatalogPlaybookRecord, String> ID = createField(DSL.name("id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
-
-    /**
-     * The column <code>public.catalog_playbook.assistant_id</code>.
-     */
-    public final TableField<CatalogPlaybookRecord, String> ASSISTANT_ID = createField(DSL.name("assistant_id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
+    public final TableField<CatalogPlaybookRecord, String> ID = createField(DSL.name("id"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
      * The column <code>public.catalog_playbook.name</code>.
      */
-    public final TableField<CatalogPlaybookRecord, String> NAME = createField(DSL.name("name"), SQLDataType.VARCHAR(255).nullable(false), this, "");
+    public final TableField<CatalogPlaybookRecord, String> NAME = createField(DSL.name("name"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
      * The column <code>public.catalog_playbook.description</code>.
      */
-    public final TableField<CatalogPlaybookRecord, String> DESCRIPTION = createField(DSL.name("description"), SQLDataType.CLOB, this, "");
+    public final TableField<CatalogPlaybookRecord, String> DESCRIPTION = createField(DSL.name("description"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
-     * The column <code>public.catalog_playbook.input_schema</code>.
+     * The column <code>public.catalog_playbook.owner_type</code>.
      */
-    public final TableField<CatalogPlaybookRecord, String> INPUT_SCHEMA = createField(DSL.name("input_schema"), SQLDataType.CLOB, this, "");
+    public final TableField<CatalogPlaybookRecord, String> OWNER_TYPE = createField(DSL.name("owner_type"), SQLDataType.CLOB.nullable(false), this, "");
 
     /**
-     * The column <code>public.catalog_playbook.result_schema</code>.
+     * The column <code>public.catalog_playbook.owner_id</code>.
      */
-    public final TableField<CatalogPlaybookRecord, String> RESULT_SCHEMA = createField(DSL.name("result_schema"), SQLDataType.CLOB, this, "");
-
-    /**
-     * The column <code>public.catalog_playbook.execution_policy</code>.
-     */
-    public final TableField<CatalogPlaybookRecord, JSONB> EXECUTION_POLICY = createField(DSL.name("execution_policy"), SQLDataType.JSONB.nullable(false), this, "");
-
-    /**
-     * The column <code>public.catalog_playbook.allow_human_task</code>.
-     */
-    public final TableField<CatalogPlaybookRecord, Boolean> ALLOW_HUMAN_TASK = createField(DSL.name("allow_human_task"), SQLDataType.BOOLEAN.nullable(false), this, "");
-
-    /**
-     * The column
-     * <code>public.catalog_playbook.allow_external_interaction</code>.
-     */
-    public final TableField<CatalogPlaybookRecord, Boolean> ALLOW_EXTERNAL_INTERACTION = createField(DSL.name("allow_external_interaction"), SQLDataType.BOOLEAN.nullable(false), this, "");
-
-    /**
-     * The column <code>public.catalog_playbook.entry_node_key</code>.
-     */
-    public final TableField<CatalogPlaybookRecord, String> ENTRY_NODE_KEY = createField(DSL.name("entry_node_key"), SQLDataType.VARCHAR(255).nullable(false), this, "");
-
-    /**
-     * The column <code>public.catalog_playbook.nodes</code>.
-     */
-    public final TableField<CatalogPlaybookRecord, JSONB> NODES = createField(DSL.name("nodes"), SQLDataType.JSONB.nullable(false), this, "");
-
-    /**
-     * The column <code>public.catalog_playbook.edges</code>.
-     */
-    public final TableField<CatalogPlaybookRecord, JSONB> EDGES = createField(DSL.name("edges"), SQLDataType.JSONB.nullable(false), this, "");
+    public final TableField<CatalogPlaybookRecord, String> OWNER_ID = createField(DSL.name("owner_id"), SQLDataType.CLOB.nullable(false), this, "");
 
     private CatalogPlaybook(Name alias, Table<CatalogPlaybookRecord> aliased) {
         this(alias, aliased, (Field<?>[]) null, null);
@@ -144,19 +108,60 @@ public class CatalogPlaybook extends TableImpl<CatalogPlaybookRecord> {
         this(DSL.name("catalog_playbook"), null);
     }
 
+    public <O extends Record> CatalogPlaybook(Table<O> path, ForeignKey<O, CatalogPlaybookRecord> childPath, InverseForeignKey<O, CatalogPlaybookRecord> parentPath) {
+        super(path, childPath, parentPath, CATALOG_PLAYBOOK);
+    }
+
+    /**
+     * A subtype implementing {@link Path} for simplified path-based joins.
+     */
+    public static class CatalogPlaybookPath extends CatalogPlaybook implements Path<CatalogPlaybookRecord> {
+
+        private static final long serialVersionUID = 1L;
+        public <O extends Record> CatalogPlaybookPath(Table<O> path, ForeignKey<O, CatalogPlaybookRecord> childPath, InverseForeignKey<O, CatalogPlaybookRecord> parentPath) {
+            super(path, childPath, parentPath);
+        }
+        private CatalogPlaybookPath(Name alias, Table<CatalogPlaybookRecord> aliased) {
+            super(alias, aliased);
+        }
+
+        @Override
+        public CatalogPlaybookPath as(String alias) {
+            return new CatalogPlaybookPath(DSL.name(alias), this);
+        }
+
+        @Override
+        public CatalogPlaybookPath as(Name alias) {
+            return new CatalogPlaybookPath(alias, this);
+        }
+
+        @Override
+        public CatalogPlaybookPath as(Table<?> alias) {
+            return new CatalogPlaybookPath(alias.getQualifiedName(), this);
+        }
+    }
+
     @Override
     public Schema getSchema() {
         return aliased() ? null : Public.PUBLIC;
     }
 
     @Override
-    public List<Index> getIndexes() {
-        return Arrays.asList(Indexes.IDX_CATALOG_PLAYBOOK_ASSISTANT);
-    }
-
-    @Override
     public UniqueKey<CatalogPlaybookRecord> getPrimaryKey() {
         return Keys.CATALOG_PLAYBOOK_PKEY;
+    }
+
+    private transient CatalogPlaybookVersionPath _catalogPlaybookVersion;
+
+    /**
+     * Get the implicit to-many join path to the
+     * <code>public.catalog_playbook_version</code> table
+     */
+    public CatalogPlaybookVersionPath catalogPlaybookVersion() {
+        if (_catalogPlaybookVersion == null)
+            _catalogPlaybookVersion = new CatalogPlaybookVersionPath(this, null, Keys.CATALOG_PLAYBOOK_VERSION__CATALOG_PLAYBOOK_VERSION_PLAYBOOK_ID_FKEY.getInverseKey());
+
+        return _catalogPlaybookVersion;
     }
 
     @Override

@@ -14,16 +14,14 @@ public final class AuthModels {
 
     public enum Role {
         PLATFORM_ADMIN,
-        DOMAIN_ADMIN,
         DEVELOPER,
         BUSINESS_USER;
 
         int priority() {
             return switch (this) {
                 case PLATFORM_ADMIN -> 0;
-                case DOMAIN_ADMIN -> 1;
-                case DEVELOPER -> 2;
-                case BUSINESS_USER -> 3;
+                case DEVELOPER -> 1;
+                case BUSINESS_USER -> 2;
             };
         }
     }

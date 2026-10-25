@@ -75,36 +75,12 @@ describe('api client', () => {
     expect(appendSafeReturnTo('/api/auth/dev-bootstrap-login', '/login')).toBe('/api/auth/dev-bootstrap-login');
   });
 
-  it('surfaces conflict details for concurrent session turns', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ detail: 'session has an active workflow' }), {
-        status: 409,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    await expect(
-      api.sendRuntimeSessionTurn({
-        sessionId: 'session-1',
-        customerId: 'customer-1',
-        turnDedupKey: 'web-turn:session-1:retry',
-        messages: [{
-          clientMessageId: 'client-message-1',
-          blocks: [{ type: 'TEXT', text: '第二条消息' }],
-          metadata: {},
-        }],
-        metadata: {},
-      }),
-    ).rejects.toThrow('session has an active workflow');
-    expect(fetchMock).toHaveBeenCalledOnce();
-  });
 
   it('sends browser credentials for authenticated API requests', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({
         data: {
-          objectType: 'DOMAIN',
+          objectType: 'ROLE_TEMPLATE',
           objectId: 'domain-1',
           objectName: '客服域',
           canDelete: false,
@@ -119,10 +95,10 @@ describe('api client', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await api.getDeletionImpactPreview('DOMAIN', 'domain-1');
+    await api.getDeletionImpactPreview('ROLE_TEMPLATE', 'domain-1');
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/catalog/deletion-preview/DOMAIN/domain-1',
+      '/api/catalog/deletion-preview/ROLE_TEMPLATE/domain-1',
       expect.objectContaining({
         credentials: 'include',
         headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
@@ -165,68 +141,6 @@ describe('api client', () => {
     );
   });
 
-  it('posts runtime turns with the turn dedup key as idempotency key', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({
-        data: {
-          sessionId: 'session-1',
-          turnId: 'turn-1',
-          status: 'ACCEPTED',
-          acceptedMessageIds: ['message-1'],
-          acceptedMessageAllocations: [{
-            requestIndex: 0,
-            clientMessageId: 'client-message-1',
-            messageId: 'message-1',
-            turnIndex: 0,
-          }],
-          duplicateExternalMessageIds: [],
-          reason: null,
-        },
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    await api.sendRuntimeSessionTurn({
-      assistantId: 'assistant-1',
-      customerId: 'customer-1',
-      turnDedupKey: 'web-turn:assistant-1:abc',
-      messages: [{
-        clientMessageId: 'client-message-1',
-        blocks: [{ type: 'TEXT', text: '你好' }],
-        metadata: {},
-      }],
-      metadata: {},
-    });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/session-runtime/turns',
-      expect.objectContaining({
-        credentials: 'include',
-        headers: expect.objectContaining({
-          'Content-Type': 'application/json',
-          'Idempotency-Key': 'web-turn:assistant-1:abc',
-        }),
-        method: 'POST',
-        body: JSON.stringify({
-          assistantId: 'assistant-1',
-          customerId: 'customer-1',
-          turnDedupKey: 'web-turn:assistant-1:abc',
-          messages: [{
-            clientMessageId: 'client-message-1',
-            blocks: [{ type: 'TEXT', text: '你好' }],
-            metadata: {},
-          }],
-          metadata: {},
-        }),
-      }),
-    );
-    const requestBody = JSON.parse(fetchMock.mock.calls[0][1].body as string);
-    expect(JSON.stringify(requestBody)).not.toContain('role');
-    expect(JSON.stringify(requestBody)).not.toContain('sender');
-  });
 
   it('queries channel admin profiles through the control-plane api', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
@@ -340,7 +254,7 @@ describe('api client', () => {
           status: 'ACTIVE',
           inboundEnabled: true,
           config: {},
-          assistantBinding: null,
+          entryBinding: null,
           accountId: 'integration-account-1',
           hasExternalSecretRef: true,
           revision: 1,
@@ -361,7 +275,7 @@ describe('api client', () => {
       status: 'ACTIVE',
       inboundEnabled: true,
       config: {},
-      assistantBinding: null,
+      entryBinding: null,
       integrationAccountId: 'integration-account-1',
     });
 
@@ -377,7 +291,7 @@ describe('api client', () => {
           status: 'ACTIVE',
           inboundEnabled: true,
           config: {},
-          assistantBinding: null,
+          entryBinding: null,
           integrationAccountId: 'integration-account-1',
         }),
       }),
@@ -394,7 +308,7 @@ describe('api client', () => {
           status: 'INACTIVE',
           inboundEnabled: true,
           config: {},
-          assistantBinding: null,
+          entryBinding: null,
           accountId: 'integration-account-1',
           hasExternalSecretRef: true,
           revision: 3,
@@ -427,7 +341,7 @@ describe('api client', () => {
         data: {
           id: 'channel-template-binding-1',
           channelProfileId: 'channel-profile-1',
-          assistantId: 'assistant-1',
+          entryId: 'assistant-1',
           messageType: 'CARD',
           messageSubtype: 'ORDER_STATUS',
           messageVersion: 'v1',
@@ -479,7 +393,7 @@ describe('api client', () => {
         data: {
           id: 'channel-template-binding-1',
           channelProfileId: 'channel-profile-1',
-          assistantId: 'assistant-1',
+          entryId: 'assistant-1',
           messageType: 'CARD',
           messageSubtype: 'ORDER_STATUS',
           messageVersion: 'v1',
@@ -661,8 +575,7 @@ describe('api client', () => {
       new Response(JSON.stringify({
         data: {
           id: 'domain-1',
-          name: '客服域',
-          description: '处理客服相关流程',
+          name:'Reception',description:'Receives users',ownerType:'PERSON',ownerId:'user-1',
           scenarios: [],
           resources: [],
           knowledgeBases: [],
@@ -674,81 +587,21 @@ describe('api client', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    await api.createDomain({
-      name: '客服域',
-      description: '处理客服相关流程',
-    });
+    await api.createRoleTemplate({name:'Reception',description:'Receives users',ownerType:'PERSON',ownerId:'user-1'});
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/domains',
+      '/api/role-templates',
       expect.objectContaining({
         credentials: 'include',
         method: 'POST',
         headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
-          name: '客服域',
-          description: '处理客服相关流程',
+          name:'Reception',description:'Receives users',ownerType:'PERSON',ownerId:'user-1',
         }),
       }),
     );
   });
 
-  it('merges default JSON headers with per-request idempotency headers', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({
-        data: {
-          id: 'session-1',
-          scenarioId: 'scenario-1',
-          title: '默认会话',
-          sessionId: 'session-1',
-          customerId: 'customer-1',
-          assistantId: 'assistant-1',
-          assistantName: '助手',
-          assistantReleaseVersion: '1.0.0',
-          status: 'ACTIVE',
-          primaryAgentId: 'agent-1',
-          currentOwnerAgentId: 'agent-1',
-          activePlaybookRunId: null,
-          agentTurnActive: false,
-          sessionHumanHandoffActive: false,
-          pendingOwnerReevaluation: false,
-          draining: false,
-          sharedState: {},
-          idleDeadline: null,
-          createdAt: '2026-04-01T00:00:00Z',
-          updatedAt: '2026-04-01T00:00:00Z',
-          endedAt: null,
-          latestMessageSequence: 0,
-          latestEventSequence: 0,
-        },
-      }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    );
-    vi.stubGlobal('fetch', fetchMock);
-
-    await api.resumeRuntimePlaybookWithExternalCallback(
-      'session-1',
-      {
-        playbookRunId: 'playbook-run-1',
-        payload: { approved: true },
-      },
-      'custom-idempotency-key',
-    );
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      '/api/session-runtime/sessions/session-1/external-callback',
-      expect.objectContaining({
-        credentials: 'include',
-        method: 'POST',
-        headers: expect.objectContaining({
-          'Content-Type': 'application/json',
-          'Idempotency-Key': 'custom-idempotency-key',
-        }),
-      }),
-    );
-  });
 
   it('queries platform events with aggregate filters and cursor pagination', async () => {
     const fetchMock = vi.fn().mockResolvedValue(
@@ -765,14 +618,14 @@ describe('api client', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     await api.listPlatformEvents({
-      aggregateType: 'ASSISTANT',
+      aggregateType: 'ROLE_TEMPLATE',
       aggregateId: 'assistant-1',
       limit: 20,
       cursor: 'cursor-1',
     });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/events?aggregateType=ASSISTANT&aggregateId=assistant-1&limit=20&cursor=cursor-1',
+      '/api/events?aggregateType=ROLE_TEMPLATE&aggregateId=assistant-1&limit=20&cursor=cursor-1',
       expect.objectContaining({
         credentials: 'include',
         headers: expect.objectContaining({ 'Content-Type': 'application/json' }),

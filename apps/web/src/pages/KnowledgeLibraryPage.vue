@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ownerChoices, ownershipTypes, type OwnershipOption } from '../composables/ownership';
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { message } from 'ant-design-vue';
 import CatalogFormDrawer from '../components/CatalogFormDrawer.vue';
@@ -8,7 +9,6 @@ import PageHeadActions from '../components/PageHeadActions.vue';
 import { hasActiveKnowledgeOperations, knowledgeSourceLabel, knowledgeStatusColor } from './knowledgeWorkspace';
 import { api } from '../services/api';
 import type {
-  BusinessDomain,
   CreateKnowledgeBasePayload,
   CreateKnowledgeReleasePayload,
   KnowledgeBase,
@@ -23,7 +23,8 @@ import type {
 } from '../types';
 
 const props = defineProps<{
-  domains: BusinessDomain[];
+  currentUserId: string;
+  ownershipOptions: OwnershipOption[];
   knowledgeBases: KnowledgeBase[];
   preferredKnowledgeBaseId?: string | null;
   catalogRevision: number;
@@ -60,10 +61,9 @@ const documentDeletionPreview = ref<KnowledgeDocumentDeletionPreview | null>(nul
 const documentDeletionOpen = ref(false);
 let workspacePollingTimer: number | null = null;
 const createForm = reactive<CreateKnowledgeBasePayload>({
-  domainId: '',
   name: '',
-  shareScope: 'DOMAIN_SHARED',
-  ownerType: 'DOMAIN',
+  shareScope: 'SHARED',
+  ownerType: 'PERSON',
   ownerId: '',
   summary: '',
   steward: '',
@@ -71,8 +71,8 @@ const createForm = reactive<CreateKnowledgeBasePayload>({
 });
 const editForm = reactive<UpdateKnowledgeBasePayload>({
   name: '',
-  shareScope: 'DOMAIN_SHARED',
-  ownerType: 'DOMAIN',
+  shareScope: 'SHARED',
+  ownerType: 'PERSON',
   ownerId: '',
   summary: '',
   steward: '',
@@ -126,27 +126,9 @@ const uploadContentWarnings = [
 const selectedKnowledgeBase = computed(() =>
   props.knowledgeBases.find((item) => item.id === selectedKnowledgeBaseId.value) ?? props.knowledgeBases[0] ?? null,
 );
-const createOwnerOptions = computed(() => {
-  if (createForm.ownerType === 'ASSISTANT') {
-    return props.domains
-      .find((domain) => domain.id === createForm.domainId)
-      ?.scenarios.flatMap((scenario) => scenario.assistants.map((assistant) => ({ label: assistant.name, value: assistant.id })))
-      ?? [];
-  }
-  return props.domains.map((domain) => ({ label: domain.name, value: domain.id }));
-});
-const editOwnerOptions = computed(() => {
-  if (!selectedKnowledgeBase.value) {
-    return [];
-  }
-  if (editForm.ownerType === 'ASSISTANT') {
-    return props.domains
-      .find((domain) => domain.id === selectedKnowledgeBase.value.domainId)
-      ?.scenarios.flatMap((scenario) => scenario.assistants.map((assistant) => ({ label: assistant.name, value: assistant.id })))
-      ?? [];
-  }
-  return [{ label: selectedKnowledgeBase.value.domainId, value: selectedKnowledgeBase.value.domainId }];
-});
+const createOwnerOptions = computed(() => ownerChoices(props.ownershipOptions, createForm.ownerType));
+const editOwnerOptions = computed(() => ownerChoices(props.ownershipOptions, editForm.ownerType));
+
 const readySnapshots = computed(() => snapshots.value.filter((item) => item.status === 'READY'));
 const hasPendingOperations = computed(() => hasActiveKnowledgeOperations(importJobs.value, snapshots.value));
 
@@ -155,10 +137,9 @@ function resetCreateForm() {
   createForm.summary = '';
   createForm.steward = '';
   createForm.tags = [];
-  createForm.domainId = selectedKnowledgeBase.value?.domainId ?? props.domains[0]?.id ?? '';
-  createForm.shareScope = 'DOMAIN_SHARED';
-  createForm.ownerType = 'DOMAIN';
-  createForm.ownerId = createForm.domainId;
+  createForm.shareScope = 'SHARED';
+  createForm.ownerType = 'PERSON';
+  createForm.ownerId = props.currentUserId;
 }
 
 function openCreateDrawer() {
@@ -303,61 +284,13 @@ watch(
   { immediate: true },
 );
 
-watch(
-  () => props.domains,
-  (domains) => {
-    if (!createForm.domainId && domains.length) {
-      createForm.domainId = selectedKnowledgeBase.value?.domainId ?? domains[0].id;
-    }
-    if (!createForm.ownerId && domains.length && createForm.ownerType === 'DOMAIN') {
-      createForm.ownerId = createForm.domainId || domains[0].id;
-    }
-  },
-  { immediate: true },
-);
 
-watch(
-  () => createForm.ownerType,
-  (ownerType) => {
-    createForm.ownerId = ownerType === 'ASSISTANT'
-      ? createOwnerOptions.value[0]?.value ?? ''
-      : (createForm.domainId || props.domains[0]?.id || '');
-  },
-  { immediate: true },
-);
 
-watch(
-  () => editForm.ownerType,
-  (ownerType) => {
-    if (!selectedKnowledgeBase.value) {
-      return;
-    }
-    if (ownerType === 'DOMAIN') {
-      editForm.ownerId = selectedKnowledgeBase.value.domainId;
-      return;
-    }
-    if (!editOwnerOptions.value.some((option) => option.value === editForm.ownerId)) {
-      editForm.ownerId = editOwnerOptions.value[0]?.value ?? '';
-    }
-  },
-);
 
-watch(
-  () => createForm.domainId,
-  (domainId) => {
-    if (!domainId) {
-      return;
-    }
-    if (createForm.ownerType === 'DOMAIN') {
-      createForm.ownerId = domainId;
-      return;
-    }
-    if (!createOwnerOptions.value.some((option) => option.value === createForm.ownerId)) {
-      createForm.ownerId = createOwnerOptions.value[0]?.value ?? '';
-    }
-  },
-  { immediate: true },
-);
+
+
+
+
 
 
 onMounted(() => {
@@ -557,6 +490,7 @@ async function handlePreviewRetrieval() {
     previewingRetrieval.value = false;
   }
 }
+watch(() => createForm.ownerType, () => { createForm.ownerId = createOwnerOptions.value[0]?.value ?? ''; });
 </script>
 
 <template>
@@ -577,7 +511,7 @@ async function handlePreviewRetrieval() {
               :class="{ 'graph-list-item--active': selectedKnowledgeBase?.id === item.id }"
               @click="selectedKnowledgeBaseId = item.id"
             >
-              <a-list-item-meta :title="item.name" :description="item.summary || item.domainId" />
+              <a-list-item-meta :title="item.name" :description="item.summary || item.ownerId" />
               <a-space>
                 <a-tag v-if="selectedKnowledgeBaseId === item.id" class="console-accent-tag">当前</a-tag>
                 <a-tag :color="item.effectiveRelease ? 'green' : 'gold'">
@@ -607,7 +541,7 @@ async function handlePreviewRetrieval() {
           <a-tab-pane key="overview" tab="概览">
             <a-descriptions :column="2" size="small">
               <a-descriptions-item label="知识库 ID">{{ selectedKnowledgeBase.id }}</a-descriptions-item>
-              <a-descriptions-item label="所属业务域">{{ selectedKnowledgeBase.domainId }}</a-descriptions-item>
+
               <a-descriptions-item label="负责人">{{ selectedKnowledgeBase.steward || '-' }}</a-descriptions-item>
               <a-descriptions-item label="归属">{{ selectedKnowledgeBase.ownerType }} / {{ selectedKnowledgeBase.ownerId }}</a-descriptions-item>
               <a-descriptions-item label="最新发布">{{ selectedKnowledgeBase.latestRelease?.version || '-' }}</a-descriptions-item>
@@ -954,12 +888,7 @@ async function handlePreviewRetrieval() {
           </a-form-item>
         </a-col>
         <a-col :span="12">
-          <a-form-item label="所属业务域">
-            <a-select
-              v-model:value="createForm.domainId"
-              :options="domains.map((item) => ({ label: item.name, value: item.id }))"
-            />
-          </a-form-item>
+
         </a-col>
       </a-row>
 
@@ -969,7 +898,7 @@ async function handlePreviewRetrieval() {
             <a-select
               v-model:value="createForm.shareScope"
               :options="[
-                { label: '域内共享', value: 'DOMAIN_SHARED' },
+                { label: '可共享（仍需授权）', value: 'SHARED' },
                 { label: '私有', value: 'PRIVATE' },
               ]"
             />
@@ -979,10 +908,7 @@ async function handlePreviewRetrieval() {
           <a-form-item label="归属类型">
             <a-segmented
               v-model:value="createForm.ownerType"
-              :options="[
-                { label: '业务域', value: 'DOMAIN' },
-                { label: '助手私有', value: 'ASSISTANT' },
-              ]"
+              :options="ownershipTypes"
               block
             />
           </a-form-item>
@@ -1032,9 +958,7 @@ async function handlePreviewRetrieval() {
           </a-form-item>
         </a-col>
         <a-col :span="12">
-          <a-form-item label="所属业务域">
-            <a-input :value="selectedKnowledgeBase?.domainId" disabled />
-          </a-form-item>
+
         </a-col>
       </a-row>
 
@@ -1044,7 +968,7 @@ async function handlePreviewRetrieval() {
             <a-select
               v-model:value="editForm.shareScope"
               :options="[
-                { label: '域内共享', value: 'DOMAIN_SHARED' },
+                { label: '可共享（仍需授权）', value: 'SHARED' },
                 { label: '私有', value: 'PRIVATE' },
               ]"
             />
@@ -1054,10 +978,8 @@ async function handlePreviewRetrieval() {
           <a-form-item label="归属类型">
             <a-segmented
               v-model:value="editForm.ownerType"
-              :options="[
-                { label: '业务域', value: 'DOMAIN' },
-                { label: '助手私有', value: 'ASSISTANT' },
-              ]"
+              @change="() => { editForm.ownerId=editOwnerOptions[0]?.value ?? ''; }"
+              :options="ownershipTypes"
               block
             />
           </a-form-item>

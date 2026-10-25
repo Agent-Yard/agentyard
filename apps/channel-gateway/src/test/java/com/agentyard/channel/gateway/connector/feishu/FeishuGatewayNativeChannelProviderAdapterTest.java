@@ -315,9 +315,9 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
         try {
             adapter.consumeOutboundFrame(profile(), typingFrameWithMessageId("session-message-reply-1"));
             adapter.consumeOutboundFrame(profile(), typingStopFrameWithMessageId(5L, "session-message-reply-1"));
-            adapter.consumeOutboundFrame(profile(), finalFrameWithMessageId("session-message-reply-1", List.of(
+            adapter.consumeOutboundFrame(profile(), finalFrameWithMessageId("durable-message-uuid", List.of(
                 Map.of("type", "TEXT", "text", "当前处理遇到问题，请稍后再试")
-            )));
+            ),"session-message-reply-1"));
 
             assertEquals(1, messageSender.createCardCommands.size());
             assertEquals(1, messageSender.sendCardCommands.size());
@@ -705,7 +705,16 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
     }
 
     private static ChannelOutboundFrame finalFrameWithMessageId(String messageId, List<Map<String, Object>> messageBlocks) {
+        return finalFrameWithMessageId(messageId,messageBlocks,null);
+    }
+
+    private static ChannelOutboundFrame finalFrameWithMessageId(String messageId, List<Map<String, Object>> messageBlocks,String draftMessageId) {
         String frameId = "channel-profile-d28237bb:session-v2-b50aa165:session-message-4b8e6432-b10a-358c-a77e-197599f37579:FINAL_DELIVERY";
+        Map<String,Object> payload=new java.util.LinkedHashMap<>();
+        payload.put("sessionMessageId",messageId);
+        payload.put("messageSequence",1);
+        payload.put("messageBlocks",messageBlocks);
+        if(draftMessageId!=null) payload.put("draftMessageId",draftMessageId);
         return new ChannelOutboundFrame(
             ChannelContracts.CHANNEL_OUTBOUND_FRAME_PROTOCOL,
             frameId,
@@ -721,11 +730,7 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
             ChannelOutboundFrameKind.FINAL_DELIVERY,
             Instant.parse("2026-05-05T00:00:00Z"),
             frameId,
-            Map.of(
-                "sessionMessageId", messageId,
-                "messageSequence", 1,
-                "messageBlocks", messageBlocks
-            ),
+            payload,
             null
         );
     }
@@ -751,7 +756,7 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
             ChannelOutboundFrameKind.TYPING_START,
             Instant.parse("2026-05-05T00:00:00Z"),
             frameId,
-            Map.of("replyMessageId", messageId),
+            Map.of("messageId", messageId),
             null
         );
     }
@@ -773,7 +778,7 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
             ChannelOutboundFrameKind.TYPING_STOP,
             Instant.parse("2026-05-05T00:00:00Z"),
             frameId,
-            Map.of("replyMessageId", messageId),
+            Map.of("messageId", messageId),
             null
         );
     }
@@ -796,7 +801,7 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
             Instant.parse("2026-05-05T00:00:00Z"),
             frameId,
             Map.of(
-                "replyMessageId", messageId,
+                "messageId", messageId,
                 "reason", reason
             ),
             null
@@ -824,7 +829,7 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
             Instant.parse("2026-05-05T00:00:00Z"),
             "profile-1:exec-1:" + sourceSeq + ":DRAFT_UPDATE",
             Map.of(
-                "replyMessageId", messageId,
+                "messageId", messageId,
                 "blockId", blockId,
                 "blockType", "TEXT",
                 "delta", delta
@@ -854,7 +859,7 @@ class FeishuGatewayNativeChannelProviderAdapterTest {
             Instant.parse("2026-05-05T00:00:00Z"),
             "profile-1:exec-1:" + sourceSeq + ":DRAFT_COMPLETE",
             Map.of(
-                "replyMessageId", "session-message-reply-1",
+                "messageId", "session-message-reply-1",
                 "blockId", blockId,
                 "blockType", "TEXT",
                 "block", block

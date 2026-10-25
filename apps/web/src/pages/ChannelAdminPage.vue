@@ -22,7 +22,7 @@ import type {
 } from './channelAdminPage';
 import { api } from '../services/api';
 import type {
-  Assistant,
+  Entry,
   ChannelConversationBinding,
   ChannelInboundEvent,
   ChannelOutboundFrameCheckpoint,
@@ -33,7 +33,6 @@ import type {
   ChannelTemplateBinding,
   CreateChannelProfilePayload,
   IntegrationAccount,
-  Scenario,
   UpdateChannelProfilePayload,
 } from '../types';
 import type {
@@ -49,11 +48,9 @@ interface SchemaDrivenFormExpose {
 type JobDefinition = ChannelProviderDefinition['jobDefinitions'][number];
 
 const props = withDefaults(defineProps<{
-  assistants?: Assistant[];
-  scenarios?: Scenario[];
+  entries?: Entry[];
 }>(), {
-  assistants: () => [],
-  scenarios: () => [],
+  entries: () => [],
 });
 
 const definitions = ref<ChannelProviderDefinition[]>([]);
@@ -83,8 +80,7 @@ const profileForm = reactive<ChannelProfileFormState>({
   displayName: '',
   status: 'INACTIVE',
   inboundEnabled: false,
-  assistantId: null,
-  scenarioId: null,
+  entryId: null,
   integrationAccountId: null,
   config: {},
 });
@@ -92,7 +88,7 @@ const jobForms = reactive<Record<string, ChannelProviderJobFormState>>({});
 const jobSaving = reactive<Record<string, boolean>>({});
 const jobRunning = reactive<Record<string, boolean>>({});
 const templateKeyForm = reactive({
-  assistantId: '',
+  entryId: '',
   messageType: 'CARD',
   messageSubtype: '',
   messageVersion: 'v1',
@@ -115,7 +111,7 @@ const profileColumns = [
 ];
 const templateColumns = [
   { title: '名称', dataIndex: 'displayName', key: 'displayName' },
-  { title: 'Assistant', dataIndex: 'assistantId', key: 'assistantId' },
+  { title: '接待入口', dataIndex: 'entryId', key: 'entryId' },
   { title: '消息', key: 'message' },
   { title: '外部模板', dataIndex: 'externalTemplateId', key: 'externalTemplateId' },
   { title: '状态', dataIndex: 'enabled', key: 'enabled' },
@@ -125,7 +121,7 @@ const templateColumns = [
 const bindingColumns = [
   { title: '外部会话', dataIndex: 'externalConversationId', key: 'externalConversationId' },
   { title: '外部用户', dataIndex: 'externalUserId', key: 'externalUserId' },
-  { title: 'Assistant', dataIndex: 'assistantId', key: 'assistantId' },
+  { title: '接待入口', dataIndex: 'entryId', key: 'entryId' },
   { title: 'Session', dataIndex: 'sessionId', key: 'sessionId' },
   { title: '状态', dataIndex: 'status', key: 'status' },
   { title: '更新时间', dataIndex: 'updatedAt', key: 'updatedAt' },
@@ -177,17 +173,11 @@ const selectedProfileHardBlock = computed(() => (
     : null
 ));
 const accountRiskSummary = computed(() => selectedProfile.value?.integrationAccount?.risks ?? []);
-const assistantOptions = computed(() => props.assistants.map((assistant) => ({
-  label: assistant.name,
-  value: assistant.id,
+const entryOptions = computed(() => props.entries.map((entry) => ({
+  label: entry.name,
+  value: entry.id,
 })));
-const scenarioOptions = computed(() => {
-  const assistant = props.assistants.find((item) => item.id === profileForm.assistantId);
-  const scenarioIds = assistant ? new Set([assistant.scenarioId]) : new Set(props.scenarios.map((scenario) => scenario.id));
-  return props.scenarios
-    .filter((scenario) => scenarioIds.has(scenario.id))
-    .map((scenario) => ({ label: scenario.name, value: scenario.id }));
-});
+
 const profileConfigUiSchema = computed(() => schemaDrivenUiSchemaWithFallback(
   profileFormDefinition.value?.configSchema,
   profileFormDefinition.value?.configUiSchema,
@@ -381,9 +371,8 @@ function profilePayload(): CreateChannelProfilePayload {
     status: profileForm.status,
     inboundEnabled: profileForm.inboundEnabled,
     config: profileForm.config,
-    assistantBinding: {
-      assistantId: profileForm.assistantId || null,
-      scenarioId: profileForm.scenarioId || null,
+    entryBinding: {
+      entryId: profileForm.entryId || null,
     },
     integrationAccountId: profileForm.integrationAccountId || null,
   };
@@ -538,7 +527,7 @@ async function runProviderJob(job: ChannelProviderJobConfig) {
 
 function resetTemplateDrawer() {
   editingTemplateBinding.value = null;
-  templateKeyForm.assistantId = selectedProfile.value?.assistantBinding?.assistantId ?? '';
+  templateKeyForm.entryId = selectedProfile.value?.entryBinding?.entryId ?? '';
   templateKeyForm.messageType = 'CARD';
   templateKeyForm.messageSubtype = '';
   templateKeyForm.messageVersion = 'v1';
@@ -558,7 +547,7 @@ function openCreateTemplateDrawer() {
 
 function openEditTemplateDrawer(binding: ChannelTemplateBinding) {
   editingTemplateBinding.value = binding;
-  templateKeyForm.assistantId = binding.assistantId;
+  templateKeyForm.entryId = binding.entryId;
   templateKeyForm.messageType = binding.messageType;
   templateKeyForm.messageSubtype = binding.messageSubtype;
   templateKeyForm.messageVersion = binding.messageVersion;
@@ -578,7 +567,7 @@ async function submitTemplateBinding() {
     return;
   }
   const profileId = profile.id;
-  if (!templateKeyForm.assistantId.trim() || !templateKeyForm.messageType.trim() || !templateKeyForm.messageSubtype.trim() || !templateKeyForm.messageVersion.trim()) {
+  if (!templateKeyForm.entryId.trim() || !templateKeyForm.messageType.trim() || !templateKeyForm.messageSubtype.trim() || !templateKeyForm.messageVersion.trim()) {
     void message.error('请填写完整的消息匹配字段');
     return;
   }
@@ -597,7 +586,7 @@ async function submitTemplateBinding() {
   try {
     await api.upsertChannelTemplateBinding(
       profileId,
-      templateKeyForm.assistantId.trim(),
+      templateKeyForm.entryId.trim(),
       templateKeyForm.messageType.trim(),
       templateKeyForm.messageSubtype.trim(),
       templateKeyForm.messageVersion.trim(),
@@ -626,7 +615,7 @@ async function deleteTemplateBinding(binding: ChannelTemplateBinding) {
   try {
     await api.deleteChannelTemplateBinding(
       profileId,
-      binding.assistantId,
+      binding.entryId,
       binding.messageType,
       binding.messageSubtype,
       binding.messageVersion,
@@ -720,11 +709,8 @@ async function deleteTemplateBinding(binding: ChannelTemplateBinding) {
                   <a-descriptions-item label="Inbound">
                     {{ selectedProfile.inboundEnabled ? 'ON' : 'OFF' }}
                   </a-descriptions-item>
-                  <a-descriptions-item label="Assistant">
-                    {{ selectedProfile.assistantBinding?.assistantId || '-' }}
-                  </a-descriptions-item>
-                  <a-descriptions-item label="Scenario">
-                    {{ selectedProfile.assistantBinding?.scenarioId || '-' }}
+                  <a-descriptions-item label="接待入口">
+                    {{ selectedProfile.entryBinding?.entryId || '-' }}
                   </a-descriptions-item>
                   <a-descriptions-item label="Integration Account">
                     {{ selectedProfile.integrationAccount?.name || selectedProfile.accountId || '-' }}
@@ -988,10 +974,10 @@ async function deleteTemplateBinding(binding: ChannelTemplateBinding) {
         </a-row>
         <a-row :gutter="[12, 12]">
           <a-col :span="12">
-            <a-form-item label="Assistant">
+            <a-form-item label="接待入口">
               <a-select
-                v-model:value="profileForm.assistantId"
-                :options="assistantOptions"
+                v-model:value="profileForm.entryId"
+                :options="entryOptions"
                 show-search
                 allow-clear
                 option-filter-prop="label"
@@ -999,15 +985,6 @@ async function deleteTemplateBinding(binding: ChannelTemplateBinding) {
             </a-form-item>
           </a-col>
           <a-col :span="12">
-            <a-form-item label="Scenario">
-              <a-select
-                v-model:value="profileForm.scenarioId"
-                :options="scenarioOptions"
-                show-search
-                allow-clear
-                option-filter-prop="label"
-              />
-            </a-form-item>
           </a-col>
         </a-row>
         <a-form-item label="Integration Account">
@@ -1055,10 +1032,10 @@ async function deleteTemplateBinding(binding: ChannelTemplateBinding) {
       <a-form layout="vertical">
         <a-row :gutter="[12, 12]">
           <a-col :span="12">
-            <a-form-item label="Assistant" required>
+            <a-form-item label="接待入口" required>
               <a-select
-                v-model:value="templateKeyForm.assistantId"
-                :options="assistantOptions"
+                v-model:value="templateKeyForm.entryId"
+                :options="entryOptions"
                 :disabled="Boolean(editingTemplateBinding)"
                 show-search
                 option-filter-prop="label"

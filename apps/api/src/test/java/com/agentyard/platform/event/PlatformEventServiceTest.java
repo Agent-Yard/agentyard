@@ -22,10 +22,10 @@ class PlatformEventServiceTest {
             testCurrentUserResolver()
         );
 
-        service.recordControlEvent("DOMAIN_CREATED", PlatformAggregateType.DOMAIN, "domain-1", Map.of("name", "运营域"));
-        service.recordControlEvent("DOMAIN_UPDATED", PlatformAggregateType.DOMAIN, "domain-1", Map.of("name", "运营域"));
+        service.recordControlEvent("ROLE_TEMPLATE_CREATED", PlatformAggregateType.ROLE_TEMPLATE, "template-1", Map.of("name", "运营域"));
+        service.recordControlEvent("ROLE_TEMPLATE_UPDATED", PlatformAggregateType.ROLE_TEMPLATE, "template-1", Map.of("name", "运营域"));
 
-        List<PlatformEventDto> items = service.listEvents(PlatformAggregateType.DOMAIN, "domain-1", null, 10, null).items();
+        List<PlatformEventDto> items = service.listEvents(PlatformAggregateType.ROLE_TEMPLATE, "template-1", null, 10, null).items();
 
         assertEquals(2, items.size());
         assertEquals(2, items.stream().map(PlatformEventDto::id).distinct().count());

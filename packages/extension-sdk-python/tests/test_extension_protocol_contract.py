@@ -136,8 +136,8 @@ def test_channel_outbound_frame_schema_rejects_illegal_kind_payload_combinations
 
     draft_complete = _base_frame(
         kind="DRAFT_COMPLETE",
-        turnId="turn-1",
-        turnExecutionId="exec-1",
+        sourceMessageId="message-1",
+        activationId="exec-1",
         sourceSeq=7,
         payload={
             "messageId": "draft-message-1",
@@ -256,7 +256,7 @@ def _base_frame(**overrides: object) -> dict[str, object]:
         "frameId": "channel-profile-1:exec-1:7:DRAFT_COMPLETE",
         "channelProfileId": "channel-profile-1",
         "providerType": "enterprise.acme.im",
-        "assistantId": "assistant-1",
+        "entryId": "assistant-1",
         "externalConversationId": "chat-1",
         "sessionId": "session-1",
         "kind": "DRAFT_COMPLETE",

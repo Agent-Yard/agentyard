@@ -73,10 +73,9 @@ public class ChannelProfileTemplateBinding extends TableImpl<ChannelProfileTempl
     public final TableField<ChannelProfileTemplateBindingRecord, String> CHANNEL_PROFILE_ID = createField(DSL.name("channel_profile_id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
 
     /**
-     * The column
-     * <code>public.channel_profile_template_binding.assistant_id</code>.
+     * The column <code>public.channel_profile_template_binding.entry_id</code>.
      */
-    public final TableField<ChannelProfileTemplateBindingRecord, String> ASSISTANT_ID = createField(DSL.name("assistant_id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
+    public final TableField<ChannelProfileTemplateBindingRecord, String> ENTRY_ID = createField(DSL.name("entry_id"), SQLDataType.VARCHAR(64).nullable(false), this, "");
 
     /**
      * The column

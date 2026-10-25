@@ -16,7 +16,10 @@ import static com.agentyard.platform.event.PlatformEventDtos.*;
 public class PlatformEventController {
     private final PlatformEventService platformEventService;
 
-    public PlatformEventController(PlatformEventService platformEventService) {
+    private final com.agentyard.platform.catalog.CatalogAccess access;
+
+    public PlatformEventController(PlatformEventService platformEventService, com.agentyard.platform.catalog.CatalogAccess access) {
+        this.access = access;
         this.platformEventService = platformEventService;
     }
 
@@ -28,6 +31,10 @@ public class PlatformEventController {
         @RequestParam(required = false) Integer limit,
         @RequestParam(required = false) String cursor
     ) {
+        if (!access.isPlatformAdmin()) {
+            if (aggregateType == null || aggregateId == null) throw new org.springframework.security.access.AccessDeniedException("global configuration event history requires platform administration");
+            access.object(aggregateType.name(), aggregateId, false);
+        }
         return ApiResponse.ok(platformEventService.listEvents(aggregateType, aggregateId, since, limit, cursor));
     }
 }

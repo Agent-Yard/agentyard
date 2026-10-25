@@ -3,7 +3,7 @@ import type { CollaborationRole, TaskPermission } from '../../../../packages/con
 const model = defineModel<CollaborationRole[]>({ required: true });
 const permissions: { label: string; value: TaskPermission }[] = [
   { label: '查看', value: 'VIEW' }, { label: '贡献', value: 'CONTRIBUTE' }, { label: '决策', value: 'DECIDE' },
-  { label: '执行', value: 'EXECUTE' }, { label: '评审', value: 'REVIEW' }, { label: '管理', value: 'MANAGE' },
+  { label: '执行', value: 'EXECUTE' }, { label: '管理', value: 'MANAGE' },
 ];
 </script>
 <template>

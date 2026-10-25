@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ownerChoices, ownershipTypes, type OwnershipOption } from '../composables/ownership';
 import { computed, reactive, ref, watch } from 'vue';
 import CatalogFormDrawer from '../components/CatalogFormDrawer.vue';
 import ObjectHistoryPanel from '../components/ObjectHistoryPanel.vue';
@@ -7,7 +8,6 @@ import PageHeadActions from '../components/PageHeadActions.vue';
 import ResourceVersionConfigEditor from '../components/ResourceVersionConfigEditor.vue';
 import ResourceVersionConfigSummary from '../components/ResourceVersionConfigSummary.vue';
 import type {
-  BusinessDomain,
   CreateResourcePayload,
   CreateResourceVersionPayload,
   Resource,
@@ -20,7 +20,8 @@ import type {
 } from '../types';
 
 const props = defineProps<{
-  domains: BusinessDomain[];
+  currentUserId: string;
+  ownershipOptions: OwnershipOption[];
   resourceCenter: ResourceCenter;
   resources: Resource[];
   resourceBlueprints: ResourceBlueprint[];
@@ -49,8 +50,8 @@ const createVersionDrawerOpen = ref(false);
 const editVersionDrawerOpen = ref(false);
 const resourceForm = reactive<UpdateResourcePayload>({
   name: '',
-  shareScope: 'DOMAIN_SHARED',
-  ownerType: 'DOMAIN',
+  shareScope: 'SHARED',
+  ownerType: 'PERSON',
   ownerId: '',
   summary: '',
   steward: '',
@@ -69,11 +70,10 @@ function defaultConfiguration(type: ResourceType) {
 }
 
 const createResourceForm = reactive<CreateResourcePayload>({
-  domainId: '',
   name: '',
-  type: 'TOOL',
-  shareScope: 'DOMAIN_SHARED',
-  ownerType: 'DOMAIN',
+  type: 'LLM_MODEL',
+  shareScope: 'SHARED',
+  ownerType: 'PERSON',
   ownerId: '',
   summary: '',
   steward: '',
@@ -81,7 +81,7 @@ const createResourceForm = reactive<CreateResourcePayload>({
   initialVersion: {
     summary: '初始版本',
     status: 'DRAFT',
-    configuration: defaultConfiguration('TOOL'),
+    configuration: defaultConfiguration('LLM_MODEL'),
   },
 });
 const draftVersionForm = reactive<UpdateResourceVersionPayload>({
@@ -104,31 +104,8 @@ const selectedVersion = computed(() =>
 const createCurrentBlueprint = computed(() =>
   props.resourceBlueprints.find((item) => item.type === createResourceForm.type) ?? props.resourceBlueprints[0],
 );
-const assistantOwnerOptions = computed(() => {
-  return props.domains
-    .find((item) => item.id === selectedResource.value?.domainId)
-    ?.scenarios.flatMap((scenario) => scenario.assistants.map((assistant) => ({ label: assistant.name, value: assistant.id })))
-    ?? [];
-});
-
-const effectiveOwnerOptions = computed(() => {
-  if (!selectedResource.value) {
-    return [];
-  }
-  if (resourceForm.ownerType === 'ASSISTANT') {
-    return assistantOwnerOptions.value;
-  }
-  return [{ label: selectedResource.value.domainId, value: selectedResource.value.domainId }];
-});
-const createOwnerOptions = computed(() => {
-  if (createResourceForm.ownerType === 'ASSISTANT') {
-    return props.domains
-      .find((domain) => domain.id === createResourceForm.domainId)
-      ?.scenarios.flatMap((scenario) => scenario.assistants.map((assistant) => ({ label: assistant.name, value: assistant.id })))
-      ?? [];
-  }
-  return props.domains.map((domain) => ({ label: domain.name, value: domain.id }));
-});
+const createOwnerOptions = computed(() => ownerChoices(props.ownershipOptions, createResourceForm.ownerType));
+const effectiveOwnerOptions = computed(() => ownerChoices(props.ownershipOptions, resourceForm.ownerType));
 
 function syncResourceForm(resource: Resource) {
   resourceForm.name = resource.name;
@@ -148,18 +125,17 @@ function cloneVersionConfiguration(version: ResourceVersion | null) {
 }
 
 function resetCreateResourceForm() {
-  createResourceForm.domainId = selectedResource.value?.domainId ?? props.domains[0]?.id ?? '';
   createResourceForm.name = '';
-  createResourceForm.type = 'TOOL';
-  createResourceForm.shareScope = 'DOMAIN_SHARED';
-  createResourceForm.ownerType = 'DOMAIN';
-  createResourceForm.ownerId = createResourceForm.domainId;
+  createResourceForm.type = 'LLM_MODEL';
+  createResourceForm.shareScope = 'SHARED';
+  createResourceForm.ownerType = 'PERSON';
+  createResourceForm.ownerId = props.currentUserId;
   createResourceForm.summary = '';
   createResourceForm.steward = '';
   createResourceForm.tags = [];
   createResourceForm.initialVersion.summary = '初始版本';
   createResourceForm.initialVersion.status = 'DRAFT';
-  createResourceForm.initialVersion.configuration = defaultConfiguration('TOOL');
+  createResourceForm.initialVersion.configuration = defaultConfiguration('LLM_MODEL');
 }
 
 function openCreateDrawer() {
@@ -227,61 +203,13 @@ watch(
   { immediate: true },
 );
 
-watch(
-  () => resourceForm.ownerType,
-  (ownerType) => {
-    if (!selectedResource.value) {
-      return;
-    }
-    if (ownerType === 'DOMAIN') {
-      resourceForm.ownerId = selectedResource.value.domainId;
-      return;
-    }
-    if (!effectiveOwnerOptions.value.some((item) => item.value === resourceForm.ownerId)) {
-      resourceForm.ownerId = effectiveOwnerOptions.value[0]?.value ?? '';
-    }
-  },
-);
 
-watch(
-  () => props.domains,
-  (domains) => {
-    if (!createResourceForm.domainId && domains.length) {
-      createResourceForm.domainId = selectedResource.value?.domainId ?? domains[0].id;
-    }
-    if (!createResourceForm.ownerId && domains.length && createResourceForm.ownerType === 'DOMAIN') {
-      createResourceForm.ownerId = createResourceForm.domainId || domains[0].id;
-    }
-  },
-  { immediate: true },
-);
 
-watch(
-  () => createResourceForm.ownerType,
-  (ownerType) => {
-    createResourceForm.ownerId = ownerType === 'ASSISTANT'
-      ? createOwnerOptions.value[0]?.value ?? ''
-      : (createResourceForm.domainId || props.domains[0]?.id || '');
-  },
-  { immediate: true },
-);
 
-watch(
-  () => createResourceForm.domainId,
-  (domainId) => {
-    if (!domainId) {
-      return;
-    }
-    if (createResourceForm.ownerType === 'DOMAIN') {
-      createResourceForm.ownerId = domainId;
-      return;
-    }
-    if (!createOwnerOptions.value.some((option) => option.value === createResourceForm.ownerId)) {
-      createResourceForm.ownerId = createOwnerOptions.value[0]?.value ?? '';
-    }
-  },
-  { immediate: true },
-);
+
+
+
+
 
 watch(
   () => createResourceForm.type,
@@ -354,6 +282,7 @@ function openEditVersionDrawer(version: ResourceVersion) {
   draftVersionForm.configuration = cloneVersionConfiguration(version);
   editVersionDrawerOpen.value = true;
 }
+watch(() => createResourceForm.ownerType, () => { createResourceForm.ownerId = createOwnerOptions.value[0]?.value ?? ''; });
 </script>
 
 <template>
@@ -367,7 +296,7 @@ function openEditVersionDrawer(version: ResourceVersion) {
         <template #extra>
           <a-space>
             <a-tag class="console-accent-tag">{{ resourceCenter.totalResources }} 个资源</a-tag>
-            <a-tag>{{ resourceCenter.domainSharedResources }} 个域共享</a-tag>
+            <a-tag>{{ resourceCenter.sharedResources }} 个共享资源</a-tag>
           </a-space>
         </template>
         <a-list :data-source="resources" :locale="{ emptyText: '暂无资源' }">
@@ -422,7 +351,7 @@ function openEditVersionDrawer(version: ResourceVersion) {
               <a-descriptions-item label="资源 ID">{{ selectedResource.id }}</a-descriptions-item>
               <a-descriptions-item label="资源类型">{{ selectedResource.type }}</a-descriptions-item>
               <a-descriptions-item label="共享范围">{{ selectedResource.shareScope }}</a-descriptions-item>
-              <a-descriptions-item label="业务域">{{ selectedResource.domainId }}</a-descriptions-item>
+
               <a-descriptions-item label="归属">{{ selectedResource.ownerType }} / {{ selectedResource.ownerId }}</a-descriptions-item>
               <a-descriptions-item label="负责人">{{ selectedResource.steward || '-' }}</a-descriptions-item>
               <a-descriptions-item label="标签" :span="2">{{ selectedResource.tags.join(' / ') || '-' }}</a-descriptions-item>
@@ -615,19 +544,14 @@ function openEditVersionDrawer(version: ResourceVersion) {
 
               <a-row :gutter="[16, 16]">
                 <a-col :span="12">
-                  <a-form-item label="所属业务域">
-                    <a-select
-                      v-model:value="createResourceForm.domainId"
-                      :options="domains.map((item) => ({ label: item.name, value: item.id }))"
-                    />
-                  </a-form-item>
+
                 </a-col>
                 <a-col :span="12">
                   <a-form-item label="共享范围">
                     <a-select
                       v-model:value="createResourceForm.shareScope"
                       :options="[
-                        { label: '域内共享', value: 'DOMAIN_SHARED' },
+                        { label: '可共享（仍需授权）', value: 'SHARED' },
                         { label: '私有', value: 'PRIVATE' },
                       ]"
                     />
@@ -640,10 +564,7 @@ function openEditVersionDrawer(version: ResourceVersion) {
                   <a-form-item label="归属类型">
                     <a-segmented
                       v-model:value="createResourceForm.ownerType"
-                      :options="[
-                        { label: '业务域', value: 'DOMAIN' },
-                        { label: '助手私有', value: 'ASSISTANT' },
-                      ]"
+                      :options="ownershipTypes"
                       block
                     />
                   </a-form-item>
@@ -842,16 +763,14 @@ function openEditVersionDrawer(version: ResourceVersion) {
             <a-select
               v-model:value="resourceForm.shareScope"
               :options="[
-                { label: '域内共享', value: 'DOMAIN_SHARED' },
+                { label: '可共享（仍需授权）', value: 'SHARED' },
                 { label: '私有', value: 'PRIVATE' },
               ]"
             />
           </a-form-item>
         </a-col>
         <a-col :span="12">
-          <a-form-item label="业务域">
-            <a-input :value="selectedResource?.domainId" disabled />
-          </a-form-item>
+
         </a-col>
       </a-row>
 
@@ -860,10 +779,8 @@ function openEditVersionDrawer(version: ResourceVersion) {
           <a-form-item label="归属类型">
             <a-segmented
               v-model:value="resourceForm.ownerType"
-              :options="[
-                { label: '业务域', value: 'DOMAIN' },
-                { label: '助手私有', value: 'ASSISTANT' },
-              ]"
+              @change="() => { resourceForm.ownerId=effectiveOwnerOptions[0]?.value ?? ''; }"
+              :options="ownershipTypes"
               block
             />
           </a-form-item>

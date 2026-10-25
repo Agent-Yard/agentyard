@@ -8,14 +8,11 @@ import com.agentyard.contracts.channel.ChannelContracts.NormalizedChannelInbound
 import com.agentyard.contracts.channel.ChannelContracts.NormalizedChannelInboundTurnResult;
 import com.agentyard.contracts.channel.ChannelContracts.NormalizedChannelMessageSender;
 import com.agentyard.contracts.channel.ChannelContracts.NormalizedChannelSenderType;
-import com.agentyard.contracts.session.SessionContracts.AcceptedSessionMessageAllocation;
-import com.agentyard.contracts.session.SessionContracts.ChannelInboundSessionTurnMessage;
-import com.agentyard.contracts.session.SessionContracts.ChannelInboundSessionTurnRequest;
-import com.agentyard.contracts.session.SessionContracts.ChannelInboundSessionTurnResponse;
-import com.agentyard.contracts.session.SessionContracts.SessionMessageInput;
-import com.agentyard.contracts.session.SessionContracts.SessionMessageRole;
-import com.agentyard.contracts.session.SessionContracts.SessionMessageSender;
-import com.agentyard.contracts.session.SessionContracts.SessionMessageSenderType;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelReceptionAllocation;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelReceptionMessage;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelReceptionRequest;
+import com.agentyard.contracts.channel.ChannelContracts.ChannelReceptionResponse;
+import com.agentyard.contracts.runtime.RuntimeContracts.MessageContent;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -37,36 +34,36 @@ public class ChannelInboundSessionDispatcher {
     private static final Logger log = LoggerFactory.getLogger(ChannelInboundSessionDispatcher.class);
 
     private final ChannelAdminRepository repository;
-    private final ChannelSessionRuntimeClient sessionRuntimeClient;
+    private final ChannelReceptionClient receptionClient;
     private final ChannelBindingSnapshotRefreshHintClient bindingSnapshotRefreshHintClient;
     private final List<ChannelInboundSessionDispatchObserver> observers;
 
     @Autowired
     public ChannelInboundSessionDispatcher(
         ChannelAdminRepository repository,
-        ChannelSessionRuntimeClient sessionRuntimeClient,
+        ChannelReceptionClient receptionClient,
         ChannelBindingSnapshotRefreshHintClient bindingSnapshotRefreshHintClient,
         List<ChannelInboundSessionDispatchObserver> observers
     ) {
         this.repository = repository;
-        this.sessionRuntimeClient = sessionRuntimeClient;
+        this.receptionClient = receptionClient;
         this.bindingSnapshotRefreshHintClient = bindingSnapshotRefreshHintClient;
         this.observers = observers == null || observers.isEmpty() ? List.of() : List.copyOf(observers);
     }
 
     public ChannelInboundSessionDispatcher(
         ChannelAdminRepository repository,
-        ChannelSessionRuntimeClient sessionRuntimeClient
+        ChannelReceptionClient receptionClient
     ) {
-        this(repository, sessionRuntimeClient, null, List.of());
+        this(repository, receptionClient, null, List.of());
     }
 
     public ChannelInboundSessionDispatcher(
         ChannelAdminRepository repository,
-        ChannelSessionRuntimeClient sessionRuntimeClient,
+        ChannelReceptionClient receptionClient,
         ChannelBindingSnapshotRefreshHintClient bindingSnapshotRefreshHintClient
     ) {
-        this(repository, sessionRuntimeClient, bindingSnapshotRefreshHintClient, List.of());
+        this(repository, receptionClient, bindingSnapshotRefreshHintClient, List.of());
     }
 
     public NormalizedChannelInboundTurnResult dispatch(
@@ -94,7 +91,7 @@ public class ChannelInboundSessionDispatcher {
                 return result;
             }
 
-            ChannelInboundSessionTurnResponse response = sessionRuntimeClient.dispatchInboundTurn(toApiRequest(
+            ChannelReceptionResponse response = receptionClient.dispatchInboundTurn(toApiRequest(
                 audit,
                 ingestResult.binding(),
                 plan.messagesToDispatch()
@@ -106,7 +103,7 @@ public class ChannelInboundSessionDispatcher {
             NormalizedChannelInboundTurnResult result = markRejected(audit, error.getMessage(), ingestResult.duplicateDedupKey());
             notifyDispatchFailed(turn, ingestResult, error);
             log.warn(
-                "session runtime rejected channel inbound turn: channelProfileId={}, externalConversationId={}, turnId={}, dedupKey={}, reason={}",
+                "Agent reception rejected channel inbound turn: channelProfileId={}, externalConversationId={}, turnId={}, dedupKey={}, reason={}",
                 audit.channelProfileId(),
                 audit.externalConversationId(),
                 audit.turnId(),
@@ -118,7 +115,7 @@ public class ChannelInboundSessionDispatcher {
             NormalizedChannelInboundTurnResult result = markFailed(audit, error.getMessage(), ingestResult.duplicateDedupKey());
             notifyDispatchFailed(turn, ingestResult, error);
             log.warn(
-                "failed to dispatch channel inbound turn to session runtime: channelProfileId={}, externalConversationId={}, turnId={}, dedupKey={}",
+                "failed to dispatch channel inbound turn to Agent reception: channelProfileId={}, externalConversationId={}, turnId={}, dedupKey={}",
                 audit.channelProfileId(),
                 audit.externalConversationId(),
                 audit.turnId(),
@@ -189,15 +186,15 @@ public class ChannelInboundSessionDispatcher {
         ChannelInboundTurnAudit audit,
         ChannelInboundTurnIngestResult ingestResult,
         DispatchPlan plan,
-        ChannelInboundSessionTurnResponse response
+        ChannelReceptionResponse response
     ) {
         Map<Integer, ChannelInboundTurnMessageAudit> dispatchedByApiIndex = new LinkedHashMap<>();
         for (int index = 0; index < plan.messagesToDispatch().size(); index += 1) {
             dispatchedByApiIndex.put(index, plan.messagesToDispatch().get(index));
         }
-        Map<Integer, AcceptedSessionMessageAllocation> allocationsByIndex = response.acceptedMessageAllocations().stream()
+        Map<Integer, ChannelReceptionAllocation> allocationsByIndex = response.acceptedMessageAllocations().stream()
             .collect(Collectors.toMap(
-                AcceptedSessionMessageAllocation::requestIndex,
+                ChannelReceptionAllocation::requestIndex,
                 Function.identity(),
                 (left, right) -> left,
                 LinkedHashMap::new
@@ -206,7 +203,7 @@ public class ChannelInboundSessionDispatcher {
         Instant now = Instant.now();
         for (Map.Entry<Integer, ChannelInboundTurnMessageAudit> entry : dispatchedByApiIndex.entrySet()) {
             ChannelInboundTurnMessageAudit message = entry.getValue();
-            AcceptedSessionMessageAllocation allocation = allocationsByIndex.get(entry.getKey());
+            ChannelReceptionAllocation allocation = allocationsByIndex.get(entry.getKey());
             if (allocation != null) {
                 repository.updateInboundTurnMessageStatus(
                     message.turnId(),
@@ -220,9 +217,10 @@ public class ChannelInboundSessionDispatcher {
                     message.channelProfileId(),
                     message.externalConversationId(),
                     message.externalMessageId(),
-                    response.sessionId(),
+                    allocation.sessionId(),
                     allocation.messageId()
                 );
+                sendBindingSnapshotRefreshHint(attachReception(ingestResult.binding(), message, allocation));
             } else if (apiDuplicateExternalIds.contains(message.externalMessageId())) {
                 repository.updateInboundTurnMessageStatus(
                     message.turnId(),
@@ -247,10 +245,6 @@ public class ChannelInboundSessionDispatcher {
         List<ChannelInboundTurnMessageAudit> refreshed = repository.listInboundTurnMessages(audit.turnId());
         ChannelInboundTurnStatus status = inferFinalStatus(refreshed);
         repository.updateInboundTurnStatus(audit.turnId(), status, response.sessionId(), now);
-        ChannelConversationBinding updatedBinding = attachSession(ingestResult.binding(), response.sessionId());
-        if (!Objects.equals(updatedBinding.sessionId(), ingestResult.binding().sessionId())) {
-            sendBindingSnapshotRefreshHint(updatedBinding);
-        }
         return resultFromAudit(
             audit.turnId(),
             response.sessionId(),
@@ -310,51 +304,31 @@ public class ChannelInboundSessionDispatcher {
         );
     }
 
-    private ChannelInboundSessionTurnRequest toApiRequest(
+    private ChannelReceptionRequest toApiRequest(
         ChannelInboundTurnAudit audit,
         ChannelConversationBinding binding,
         List<ChannelInboundTurnMessageAudit> messages
     ) {
-        List<ChannelInboundSessionTurnMessage> apiMessages = new ArrayList<>();
+        List<ChannelReceptionMessage> apiMessages = new ArrayList<>();
         for (ChannelInboundTurnMessageAudit message : messages) {
-            apiMessages.add(new ChannelInboundSessionTurnMessage(
-                message.externalEventId(),
+            apiMessages.add(new ChannelReceptionMessage(
                 message.externalMessageId(),
-                message.occurredAt(),
-                SessionMessageRole.valueOf(message.role().name()),
-                toSessionSender(message.sender()),
-                toSessionMessageInput(audit, message),
-                messageMetadata(audit, message)
+                requireText(message.sender().senderId(), "channel sender identity"),
+                requireText(message.sender().senderName(), "channel sender name"),
+                toMessageContent(audit, message)
             ));
         }
-        return new ChannelInboundSessionTurnRequest(
+        return new ChannelReceptionRequest(
             audit.channelProfileId(),
             audit.externalConversationId(),
             audit.dedupKey(),
-            binding.assistantId(),
-            binding.customerId(),
-            binding.sessionId(),
+            binding.entryId(),
             apiMessages,
             audit.metadata()
         );
     }
 
-    private static SessionMessageSender toSessionSender(NormalizedChannelMessageSender sender) {
-        if (sender == null) {
-            throw new IllegalArgumentException("channelInbound.message.sender is required");
-        }
-        NormalizedChannelSenderType senderType = sender.senderType();
-        if (senderType == null) {
-            throw new IllegalArgumentException("channelInbound.message.sender.senderType is required");
-        }
-        return new SessionMessageSender(
-            SessionMessageSenderType.valueOf(senderType.name()),
-            sender.senderId(),
-            requireText(sender.senderName(), "channelInbound.message.sender.senderName")
-        );
-    }
-
-    private static SessionMessageInput toSessionMessageInput(
+    private static MessageContent toMessageContent(
         ChannelInboundTurnAudit audit,
         ChannelInboundTurnMessageAudit message
     ) {
@@ -368,7 +342,7 @@ public class ChannelInboundSessionDispatcher {
         for (NormalizedChannelAttachment attachment : message.attachments()) {
             blocks.add(toAttachmentBlock(attachment));
         }
-        return new SessionMessageInput(blocks, messageMetadata(audit, message));
+        return new MessageContent(blocks, messageMetadata(audit, message));
     }
 
     private static Map<String, Object> toAttachmentBlock(NormalizedChannelAttachment attachment) {
@@ -419,24 +393,25 @@ public class ChannelInboundSessionDispatcher {
         return Map.copyOf(metadata);
     }
 
-    private ChannelConversationBinding attachSession(ChannelConversationBinding binding, String sessionId) {
-        if (sessionId == null || sessionId.isBlank() || sessionId.equals(binding.sessionId())) {
-            return binding;
-        }
+    private ChannelConversationBinding attachReception(ChannelConversationBinding binding,
+        ChannelInboundTurnMessageAudit message, ChannelReceptionAllocation allocation) {
+        String externalUserId = requireText(message.sender().senderId(), "channel sender identity");
+        ChannelConversationBinding existing = repository.findBindingByProfileAndExternalConversation(
+            binding.channelProfileId(), binding.externalConversationId(), externalUserId).orElse(null);
         ChannelConversationBinding updated = new ChannelConversationBinding(
-            binding.id(),
+            existing == null ? "channel-binding-" + java.util.UUID.randomUUID().toString().substring(0, 8) : existing.id(),
             binding.channelProfileId(),
             binding.externalConversationId(),
-            binding.externalUserId(),
-            binding.assistantId(),
-            binding.customerId(),
-            sessionId,
+            externalUserId,
+            binding.entryId(),
+            allocation.participantId(),
+            allocation.sessionId(),
             binding.status(),
             binding.metadata(),
-            binding.createdAt(),
+            existing == null ? Instant.now() : existing.createdAt(),
             Instant.now()
         );
-        repository.saveBinding(updated);
+        repository.saveBindingForConversation(updated);
         return updated;
     }
 

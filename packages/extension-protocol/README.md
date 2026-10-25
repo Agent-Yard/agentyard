@@ -5,7 +5,7 @@
 This package owns only the cross-boundary contract between AgentYard core services and extension services:
 
 - OpenAPI for extension HTTP operations, headers, request envelopes, responses, and `ExtensionError`.
-- JSON Schema for service manifests, channel provider descriptors, tool connector descriptors, UI fields, job/schedule config, assistant binding, and shared manifest-time validation inputs.
+- JSON Schema for service manifests, channel provider descriptors, tool connector descriptors, UI fields, job/schedule config, reception entry binding, and shared manifest-time validation inputs.
 - Examples and shared contract fixtures used by protocol self-checks and later JVM/Python SDK contract tests.
 - AgentYard canonical JSON fixtures for descriptor definition and registration digest implementations.
 

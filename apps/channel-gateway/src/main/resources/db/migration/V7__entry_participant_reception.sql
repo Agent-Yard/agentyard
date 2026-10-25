@@ -1,0 +1,10 @@
+truncate channel_conversation_binding,channel_outbound_final_checkpoint,channel_inbound_turn,
+    channel_inbound_turn_message,channel_inbound_message_dedupe,channel_profile_template_binding;
+alter table channel_profile rename column assistant_binding to entry_binding;
+update channel_profile set entry_binding='{}',inbound_enabled=false;
+alter table channel_conversation_binding rename column assistant_id to entry_id;
+alter table channel_conversation_binding rename column customer_id to participant_id;
+alter table channel_profile_template_binding rename column assistant_id to entry_id;
+drop index uk_channel_conversation_binding_profile_external_conversation;
+create unique index uk_channel_conversation_participant
+    on channel_conversation_binding(channel_profile_id,external_conversation_id,external_user_id);

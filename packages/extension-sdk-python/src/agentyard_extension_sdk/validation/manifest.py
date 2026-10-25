@@ -43,7 +43,7 @@ _REQUIRED_CREDENTIAL_ENDPOINTS = frozenset(
 _OPTION_COMPONENTS = frozenset({"select", "multiSelect", "radio", "checkboxGroup"})
 _VISIBILITY_OPERATORS = frozenset({"equals", "notEquals", "in", "notIn", "exists", "notExists"})
 _PROTOCOL_SCHEMA_FILES = (
-    "assistant-binding.schema.json",
+    "entry-binding.schema.json",
     "channel-outbound-frame.schema.json",
     "channel-outbound-frame-ack.schema.json",
     "channel-outbound-frame-subscription.schema.json",

@@ -72,7 +72,8 @@ final class FeishuTypingReactionService implements ChannelInboundSessionDispatch
 
         String sessionId = repository.findBindingByProfileAndExternalConversation(
             turn.channelProfileId(),
-            turn.externalConversationId()
+            turn.externalConversationId(),
+            turn.externalUserId()
         ).map(binding -> trimToNull(binding.sessionId())).orElse(null);
         FeishuTypingReactionState state = new FeishuTypingReactionState(
             profile.id(),

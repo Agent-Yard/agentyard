@@ -1,182 +1,22 @@
-export type PageKey =
-  | 'tasks'
-  | 'organizations'
-  | 'domain'
-  | 'scenario'
-  | 'assistant'
-  | 'agent'
-  | 'playbook'
-  | 'playbook-editor'
-  | 'knowledge-library'
-  | 'resource-library'
-  | 'integration-account'
-  | 'channel-admin'
-  | 'runtime';
-
-export type SectionKey = 'design' | 'build' | 'knowledge' | 'resource' | 'runtime-observe';
-
-export const defaultPageKey: PageKey = 'tasks';
+export type PageKey = 'reception' | 'tasks' | 'organizations' | 'role-templates' | 'entries' | 'playbook' | 'playbook-editor' | 'knowledge-library' | 'resource-library' | 'integration-account' | 'channel-admin';
+export type SectionKey = 'work' | 'configuration';
+export const defaultPageKey: PageKey = 'reception';
 export const consoleBasePath = '/console';
-
-export const sectionMeta: Record<SectionKey, { label: string; description: string }> = {
-  design: {
-    label: '平台设计',
-    description: '沉淀业务域和场景边界，定义平台承载的业务上下文。',
-  },
-  build: {
-    label: '助手构建',
-    description: '围绕助手、智能体和运行策略，完成核心协作链路配置。',
-  },
-  knowledge: {
-    label: '知识库',
-    description: '管理知识库目录、内容导入、索引快照和发布版本。',
-  },
-  resource: {
-    label: '能力资源',
-    description: '管理 Tool / LLM / Skill 等可复用能力资源。',
-  },
-  'runtime-observe': {
-    label: '运行与观测',
-    description: '查看运行会话、任务流程和人工介入状态。',
-  },
-};
-
+export const sectionMeta = { work: { label: '协作', description: '与 Agent 交流，跟进工作与成果。' }, configuration: { label: '管理', description: '独立配置角色、能力和接待入口。' } };
 export const pageMeta: Record<PageKey, { label: string; title: string; subtitle: string; section: SectionKey; path: string }> = {
-  tasks: { label: '协作任务', title: '协作工作台', subtitle: '围绕目标、上下文、参与者和成果，让人与 Agent 持续协作。', section: 'runtime-observe', path: `${consoleBasePath}/tasks` },
-  organizations: { label: '组织与角色', title: '组织与角色', subtitle: '组织成员和职责；任务内的参与范围独立授权。', section: 'design', path: `${consoleBasePath}/organizations` },
-  domain: {
-    label: '业务域',
-    title: '业务域页',
-    subtitle: '查看平台承载的业务域、域内资源和场景入口。',
-    section: 'design',
-    path: `${consoleBasePath}/domains`,
-  },
-  scenario: {
-    label: '业务场景',
-    title: '业务场景页',
-    subtitle: '定义业务目标、场景边界以及承载它的助手。',
-    section: 'design',
-    path: `${consoleBasePath}/scenarios`,
-  },
-  assistant: {
-    label: '助手配置',
-    title: '助手配置页',
-    subtitle: '管理助手基础信息、发布状态和冻结资源版本快照。',
-    section: 'build',
-    path: `${consoleBasePath}/assistants`,
-  },
-  agent: {
-    label: '智能体',
-    title: '智能体详情与资源绑定页',
-    subtitle: '配置智能体职责、继承覆盖和可用 Tool 集。',
-    section: 'build',
-    path: `${consoleBasePath}/agents`,
-  },
-  playbook: {
-    label: 'Playbook',
-    title: 'Playbook 配置页',
-    subtitle: '维护强流程定义、节点、边以及等待点策略。',
-    section: 'build',
-    path: `${consoleBasePath}/playbooks`,
-  },
-  'playbook-editor': {
-    label: 'Playbook 编排',
-    title: 'Playbook 可视化编排页',
-    subtitle: '在独立编排台中编辑 DAG、节点属性、条件路由与画布布局。',
-    section: 'build',
-    path: `${consoleBasePath}/playbooks/editor`,
-  },
-  'knowledge-library': {
-    label: '知识库目录',
-    title: '知识库工作台',
-    subtitle: '集中处理内容导入、文档、索引快照、发布版本与引用分析。',
-    section: 'knowledge',
-    path: `${consoleBasePath}/knowledge`,
-  },
-  'resource-library': {
-    label: '资源目录',
-    title: '资源目录页',
-    subtitle: '查看 Tool / LLM / Skill 的版本流转、生效状态和引用分析。',
-    section: 'resource',
-    path: `${consoleBasePath}/resources`,
-  },
-  'integration-account': {
-    label: '接入账号',
-    title: 'Integration Account',
-    subtitle: '统一管理 Tool Connector 与 Channel Provider 的接入账号、非敏感配置和凭证生命周期。',
-    section: 'resource',
-    path: `${consoleBasePath}/integration-accounts`,
-  },
-  'channel-admin': {
-    label: 'Channel Admin',
-    title: 'Channel Admin',
-    subtitle: '维护 Channel Profile、Provider Job、外部模板绑定和运行态记录。',
-    section: 'resource',
-    path: `${consoleBasePath}/channel-admin`,
-  },
-  runtime: {
-    label: '会话运行',
-    title: '运行时对话页',
-    subtitle: '围绕 session event、当前 owner、playbook 和 handoff 观察运行状态。',
-    section: 'runtime-observe',
-    path: `${consoleBasePath}/runtime`,
-  },
+  reception: { label: '与 Agent 交流', title: '与 Agent 交流', subtitle: '告诉我你想完成什么，也可以继续之前的工作。', section: 'work', path: '/console/reception' },
+  tasks: { label: '工作与成果', title: '工作与成果', subtitle: '查看目标、进展、参与者、共享资料和决定。', section: 'work', path: '/console/tasks' },
+  organizations: { label: '组织与协作', title: '组织与协作', subtitle: '维护长期成员关系与职责，具体工作独立授权。', section: 'work', path: '/console/organizations' },
+  'role-templates': { label: '角色模板', title: '角色模板', subtitle: '提示词和能力引用独立版本化；执行权限由授权决定。', section: 'configuration', path: '/console/role-templates' },
+  entries: { label: '接待入口', title: '接待入口', subtitle: '指定持续接待的角色和管理员授予的能力范围。', section: 'configuration', path: '/console/entries' },
+  playbook: { label: '流程工具', title: '流程工具', subtitle: '可持久等待和恢复的工具，独立维护与发布版本。', section: 'configuration', path: '/console/playbooks' },
+  'playbook-editor': { label: '流程编排', title: '流程编排', subtitle: '编辑节点、分支和等待点，保存为新的独立版本。', section: 'configuration', path: '/console/playbooks/editor' },
+  'knowledge-library': { label: '知识库', title: '知识库', subtitle: '导入资料、构建索引和管理可引用的知识版本。', section: 'configuration', path: '/console/knowledge' },
+  'resource-library': { label: '模型、工具与技能', title: '模型、工具与技能', subtitle: '独立维护共享能力和版本。', section: 'configuration', path: '/console/resources' },
+  'integration-account': { label: '接入账号', title: '接入账号', subtitle: '管理连接器账号与凭证生命周期。', section: 'configuration', path: '/console/integration-accounts' },
+  'channel-admin': { label: '沟通渠道', title: '沟通渠道', subtitle: '将渠道消息送入持续接待入口。', section: 'configuration', path: '/console/channel-admin' },
 };
-
-export const pagePathByKey: Record<PageKey, string> = Object.fromEntries(
-  Object.entries(pageMeta).map(([key, meta]) => [key, meta.path]),
-) as Record<PageKey, string>;
-
-const pageKeyByPath = Object.fromEntries(
-  Object.entries(pageMeta).map(([key, meta]) => [meta.path, key]),
-) as Record<string, PageKey>;
-
-export function resolvePageKeyFromPath(path: string): PageKey {
-  const normalizedPath = path.length > 1 ? path.replace(/\/+$/, '') : path;
-  return pageKeyByPath[normalizedPath] ?? defaultPageKey;
-}
-
-export const menuItems = [
-  {
-    key: 'design',
-    label: sectionMeta.design.label,
-    children: [
-      { key: 'organizations', label: pageMeta.organizations.label },
-      { key: 'domain', label: pageMeta.domain.label },
-      { key: 'scenario', label: pageMeta.scenario.label },
-    ],
-  },
-  {
-    key: 'build',
-    label: sectionMeta.build.label,
-    children: [
-      { key: 'assistant', label: pageMeta.assistant.label },
-      { key: 'agent', label: pageMeta.agent.label },
-      { key: 'playbook', label: pageMeta.playbook.label },
-    ],
-  },
-  {
-    key: 'resource',
-    label: sectionMeta.resource.label,
-    children: [
-      { key: 'resource-library', label: pageMeta['resource-library'].label },
-      { key: 'integration-account', label: pageMeta['integration-account'].label },
-      { key: 'channel-admin', label: pageMeta['channel-admin'].label },
-    ],
-  },
-  {
-    key: 'knowledge',
-    label: sectionMeta.knowledge.label,
-    children: [
-      { key: 'knowledge-library', label: pageMeta['knowledge-library'].label },
-    ],
-  },
-  {
-    key: 'runtime-observe',
-    label: sectionMeta['runtime-observe'].label,
-    children: [
-      { key: 'tasks', label: pageMeta.tasks.label },
-      { key: 'runtime', label: pageMeta.runtime.label },
-    ],
-  },
-];
+export const pagePathByKey = Object.fromEntries(Object.entries(pageMeta).map(([key, item]) => [key, item.path])) as Record<PageKey, string>;
+export function resolvePageKeyFromPath(path: string): PageKey { return (Object.entries(pageMeta).find(([, item]) => item.path === path.replace(/\/$/, ''))?.[0] as PageKey) ?? defaultPageKey; }
+export const menuItems = (['work', 'configuration'] as SectionKey[]).map(key => ({ key, label: sectionMeta[key].label,
+  children: Object.entries(pageMeta).filter(([page, meta]) => meta.section === key && page !== 'playbook-editor').map(([page, meta]) => ({ key: page, label: meta.label })) }));

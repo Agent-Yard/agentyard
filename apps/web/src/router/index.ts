@@ -5,19 +5,17 @@ const LoginPage = () => import('../pages/LoginPage.vue');
 const ConsolePage = () => import('../pages/ConsolePage.vue');
 
 const consolePageComponents: Record<PageKey, () => Promise<unknown>> = {
+  reception: () => import('../pages/ReceptionPage.vue'),
   tasks: () => import('../pages/TaskWorkspacePage.vue'),
   organizations: () => import('../pages/OrganizationPage.vue'),
-  domain: () => import('../pages/DomainPage.vue'),
-  scenario: () => import('../pages/ScenarioPage.vue'),
-  assistant: () => import('../pages/AssistantPage.vue'),
-  agent: () => import('../pages/AgentPage.vue'),
+  'role-templates': () => import('../pages/RoleTemplatePage.vue'),
+  entries: () => import('../pages/EntryPage.vue'),
   playbook: () => import('../pages/PlaybookPage.vue'),
   'playbook-editor': () => import('../pages/PlaybookEditorPage.vue'),
   'knowledge-library': () => import('../pages/KnowledgeLibraryPage.vue'),
   'resource-library': () => import('../pages/ResourceLibraryPage.vue'),
   'integration-account': () => import('../pages/IntegrationAccountPage.vue'),
   'channel-admin': () => import('../pages/ChannelAdminPage.vue'),
-  runtime: () => import('../pages/RuntimeConversationPage.vue'),
 };
 
 const defaultConsolePath = pageMeta[defaultPageKey].path;
@@ -41,7 +39,6 @@ export const router = createRouter({
     },
     {
       path: consoleBasePath,
-      name: 'console',
       component: ConsolePage,
       children: [
         {

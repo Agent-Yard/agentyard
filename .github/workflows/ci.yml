@@ -123,8 +123,8 @@ jobs:
           echo "API test result files:"
           find apps/api/build/test-results/test -maxdepth 1 -type f | sort || true
           echo
-          echo "MultiInstanceApiIntegrationTest XML:"
-          sed -n '1,260p' apps/api/build/test-results/test/TEST-com.agentyard.platform.session.MultiInstanceApiIntegrationTest.xml || true
+          echo "AgentIntegrationTest XML:"
+          sed -n '1,260p' apps/api/build/test-results/test/TEST-com.agentyard.platform.agent.AgentIntegrationTest.xml || true
           echo
           echo "API HTML report path:"
           ls -la apps/api/build/reports/tests/test || true
@@ -139,6 +139,18 @@ jobs:
     name: Task Collaboration End To End
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      AGENTYARD_REDIS_URL: redis://127.0.0.1:6379/15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -167,7 +179,7 @@ jobs:
           name: task-collaboration-e2e
           path: |
             apps/api/build/reports/tests/taskE2eTest
-            apps/api/build/reports/task-e2e
+            apps/api/build/task-e2e
             apps/api/build/test-results/taskE2eTest
 
   node:

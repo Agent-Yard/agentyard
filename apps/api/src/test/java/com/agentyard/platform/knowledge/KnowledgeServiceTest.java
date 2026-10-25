@@ -18,9 +18,8 @@ class KnowledgeServiceTest {
     @Test
     void shouldRejectKnowledgeWriteWhenAnotherInstanceCommitsDuringMutation() {
         InMemoryCatalogRepository catalogRepository = new InMemoryCatalogRepository();
-        CatalogDtos.BusinessDomainDto domain = seedDomain(catalogRepository);
         KnowledgeService knowledgeService = new KnowledgeService(
-            new ConflictingKnowledgeRepository(domain.id()),
+            new ConflictingKnowledgeRepository("operator"),
             catalogRepository,
             new StubKnowledgeServiceClient(),
             new TrackingKnowledgeWorkflowGateway()
@@ -30,11 +29,10 @@ class KnowledgeServiceTest {
             ConflictException.class,
             () -> knowledgeService.createKnowledgeBase(
                 new CatalogDtos.CreateKnowledgeBaseRequest(
-                    domain.id(),
                     "本地知识库",
-                    ShareScope.DOMAIN_SHARED,
-                    "DOMAIN",
-                    domain.id(),
+                    ShareScope.SHARED,
+                    "PERSON",
+                    "operator",
                     "local",
                     "知识运营",
                     List.of("local")
@@ -49,7 +47,6 @@ class KnowledgeServiceTest {
     @Test
     void shouldRetryFailedImportJobAndTriggerWorkflow() {
         InMemoryCatalogRepository catalogRepository = new InMemoryCatalogRepository();
-        CatalogDtos.BusinessDomainDto domain = seedDomain(catalogRepository);
         TrackingKnowledgeWorkflowGateway workflowGateway = new TrackingKnowledgeWorkflowGateway();
         StubKnowledgeServiceClient client = new StubKnowledgeServiceClient();
         KnowledgeService knowledgeService = new KnowledgeService(
@@ -60,11 +57,10 @@ class KnowledgeServiceTest {
         );
         CatalogDtos.KnowledgeBaseDto knowledgeBase = knowledgeService.createKnowledgeBase(
             new CatalogDtos.CreateKnowledgeBaseRequest(
-                domain.id(),
                 "客服知识库",
-                ShareScope.DOMAIN_SHARED,
-                "DOMAIN",
-                domain.id(),
+                ShareScope.SHARED,
+                "PERSON",
+                "operator",
                 "FAQ",
                 "知识运营",
                 List.of("FAQ")
@@ -114,7 +110,6 @@ class KnowledgeServiceTest {
     @Test
     void shouldPreviewRetrievalAgainstReadySnapshot() {
         InMemoryCatalogRepository catalogRepository = new InMemoryCatalogRepository();
-        CatalogDtos.BusinessDomainDto domain = seedDomain(catalogRepository);
         StubKnowledgeServiceClient client = new StubKnowledgeServiceClient();
         KnowledgeService knowledgeService = new KnowledgeService(
             new InMemoryKnowledgeRepository(),
@@ -124,11 +119,10 @@ class KnowledgeServiceTest {
         );
         CatalogDtos.KnowledgeBaseDto knowledgeBase = knowledgeService.createKnowledgeBase(
             new CatalogDtos.CreateKnowledgeBaseRequest(
-                domain.id(),
                 "客服知识库",
-                ShareScope.DOMAIN_SHARED,
-                "DOMAIN",
-                domain.id(),
+                ShareScope.SHARED,
+                "PERSON",
+                "operator",
                 "FAQ",
                 "知识运营",
                 List.of("FAQ")
@@ -181,7 +175,6 @@ class KnowledgeServiceTest {
     @Test
     void shouldBlockDocumentDeletionWhenSnapshotExists() {
         InMemoryCatalogRepository catalogRepository = new InMemoryCatalogRepository();
-        CatalogDtos.BusinessDomainDto domain = seedDomain(catalogRepository);
         StubKnowledgeServiceClient client = new StubKnowledgeServiceClient();
         KnowledgeService knowledgeService = new KnowledgeService(
             new InMemoryKnowledgeRepository(),
@@ -191,11 +184,10 @@ class KnowledgeServiceTest {
         );
         CatalogDtos.KnowledgeBaseDto knowledgeBase = knowledgeService.createKnowledgeBase(
             new CatalogDtos.CreateKnowledgeBaseRequest(
-                domain.id(),
                 "客服知识库",
-                ShareScope.DOMAIN_SHARED,
-                "DOMAIN",
-                domain.id(),
+                ShareScope.SHARED,
+                "PERSON",
+                "operator",
                 "FAQ",
                 "知识运营",
                 List.of("FAQ")
@@ -225,15 +217,6 @@ class KnowledgeServiceTest {
         );
 
         assertEquals("knowledge document is referenced by snapshot: snapshot-1", error.getMessage());
-    }
-
-    private static CatalogDtos.BusinessDomainDto seedDomain(InMemoryCatalogRepository catalogRepository) {
-        CatalogService catalogService = new CatalogService(
-            catalogRepository,
-            new StubKnowledgeServiceClient(),
-            new TrackingKnowledgeWorkflowGateway()
-        );
-        return catalogService.createDomain(new CatalogDtos.CreateDomainRequest("知识运营域", "承载知识沉淀"));
     }
 
     private static final class StubKnowledgeServiceClient extends KnowledgeServiceClient {
@@ -295,11 +278,11 @@ class KnowledgeServiceTest {
     }
 
     private static final class ConflictingKnowledgeRepository extends InMemoryKnowledgeRepository {
-        private final String domainId;
+        private final String ownerId;
         private boolean injectConflict = true;
 
-        private ConflictingKnowledgeRepository(String domainId) {
-            this.domainId = domainId;
+        private ConflictingKnowledgeRepository(String ownerId) {
+            this.ownerId = ownerId;
         }
 
         @Override
@@ -310,11 +293,10 @@ class KnowledgeServiceTest {
                 remoteData.knowledgeBases.clear();
                 remoteData.knowledgeBases.add(new CatalogDtos.KnowledgeBaseDto(
                         "knowledge-base-remote",
-                        domainId,
                         "远端知识库",
-                        ShareScope.DOMAIN_SHARED,
-                        "DOMAIN",
-                        domainId,
+                        ShareScope.SHARED,
+                        "PERSON",
+                        ownerId,
                         "remote",
                         "知识运营",
                         List.of("remote"),

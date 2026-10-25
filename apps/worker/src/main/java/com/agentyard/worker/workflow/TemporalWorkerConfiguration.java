@@ -1,14 +1,14 @@
 package com.agentyard.worker.workflow;
 
-import com.agentyard.contracts.session.PlaybookWorkflow;
-import com.agentyard.contracts.session.SessionWorkflow;
+import com.agentyard.contracts.agent.ActivationWorkflow;
+import com.agentyard.contracts.agent.ToolRunWorkflow;
 import com.agentyard.contracts.runtime.KnowledgeImportWorkflow;
 import com.agentyard.contracts.runtime.KnowledgeIndexBuildWorkflow;
-import com.agentyard.worker.session.AgentTurnActivitiesImpl;
-import com.agentyard.worker.session.SessionPersistenceActivitiesImpl;
+import com.agentyard.worker.agent.ActivationActivitiesImpl;
+import com.agentyard.worker.agent.ActivationWorkflowImpl;
+import com.agentyard.worker.agent.ToolRunActivitiesImpl;
 import com.agentyard.worker.session.PlaybookNodeActivitiesImpl;
-import com.agentyard.worker.session.PlaybookWorkflowImpl;
-import com.agentyard.worker.session.SessionWorkflowImpl;
+import com.agentyard.worker.session.ToolRunWorkflowImpl;
 import io.temporal.client.WorkflowClient;
 import io.temporal.client.WorkflowClientOptions;
 import io.temporal.serviceclient.WorkflowServiceStubsOptions;
@@ -33,11 +33,10 @@ public class TemporalWorkerConfiguration {
     @Bean
     WorkerFactory workerFactory(
         WorkflowServiceStubs serviceStubs,
-        AgentTurnActivitiesImpl agentTurnActivities,
-        SessionPersistenceActivitiesImpl sessionPersistenceActivities,
+        ActivationActivitiesImpl activationActivities,
+        ToolRunActivitiesImpl toolRunActivities,
         PlaybookNodeActivitiesImpl playbookNodeActivities,
         KnowledgeActivitiesImpl knowledgeActivities,
-        com.agentyard.worker.task.TaskExecutionActivitiesImpl taskExecutionActivities,
         @Value("${agentyard.temporal.task-queue}") String taskQueue,
         @Value("${agentyard.temporal.namespace}") String namespace,
         @Value("${agentyard.temporal.activity-start-to-close-timeout:PT2M}") Duration activityStartToCloseTimeout,
@@ -49,14 +48,10 @@ public class TemporalWorkerConfiguration {
         );
         WorkerFactory factory = WorkerFactory.newInstance(workflowClient);
         Worker worker = factory.newWorker(taskQueue, workerOptions(workflowDeadlockDetectionTimeout));
-        worker.registerWorkflowImplementationTypes(com.agentyard.worker.task.TaskExecutionWorkflowImpl.class);
+        worker.registerWorkflowImplementationTypes(ActivationWorkflowImpl.class);
         worker.registerWorkflowImplementationFactory(
-            SessionWorkflow.class,
-            () -> new SessionWorkflowImpl(activityStartToCloseTimeout)
-        );
-        worker.registerWorkflowImplementationFactory(
-            PlaybookWorkflow.class,
-            () -> new PlaybookWorkflowImpl(activityStartToCloseTimeout)
+            ToolRunWorkflow.class,
+            () -> new ToolRunWorkflowImpl(activityStartToCloseTimeout)
         );
         worker.registerWorkflowImplementationFactory(
             KnowledgeImportWorkflow.class,
@@ -68,9 +63,8 @@ public class TemporalWorkerConfiguration {
         );
         worker.registerActivitiesImplementations(
             knowledgeActivities,
-            taskExecutionActivities,
-            agentTurnActivities,
-            sessionPersistenceActivities,
+            activationActivities,
+            toolRunActivities,
             playbookNodeActivities
         );
         factory.start();

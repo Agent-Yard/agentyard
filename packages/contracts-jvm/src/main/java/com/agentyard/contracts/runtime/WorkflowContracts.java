@@ -29,7 +29,7 @@ public final class WorkflowContracts {
 
     public enum ShareScope {
         PRIVATE,
-        DOMAIN_SHARED
+        SHARED
     }
 
     public enum VersionStatus {

@@ -8,7 +8,7 @@ import com.agentyard.persistence.jooq.tables.CollaborationTaskSession;
 
 import java.time.OffsetDateTime;
 
-import org.jooq.Record3;
+import org.jooq.Record2;
 import org.jooq.impl.UpdatableRecordImpl;
 
 
@@ -81,8 +81,8 @@ public class CollaborationTaskSessionRecord extends UpdatableRecordImpl<Collabor
     // -------------------------------------------------------------------------
 
     @Override
-    public Record3<String, String, String> key() {
-        return (Record3) super.key();
+    public Record2<String, String> key() {
+        return (Record2) super.key();
     }
 
     // -------------------------------------------------------------------------

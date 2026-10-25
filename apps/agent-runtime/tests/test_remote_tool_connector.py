@@ -10,7 +10,7 @@ import pytest
 os.environ.setdefault("AGENTYARD_INTERNAL_AUTH_TOKEN", "test-internal-token")
 
 from agentyard_agent_runtime.http_clients import reset_shared_http_client_registry  # noqa: E402
-from agentyard_agent_runtime.models import PlaybookToolTaskRequest, ToolDescriptor, ToolOperationDescriptor  # noqa: E402
+from agentyard_agent_runtime.models import ResolvedToolNode, ToolDescriptor, ToolOperationDescriptor  # noqa: E402
 from agentyard_agent_runtime.tool_connectors import (  # noqa: E402
     ConnectorRuntime,
     ToolConnectorProtocolError,
@@ -20,7 +20,7 @@ from agentyard_agent_runtime.tool_connectors import (  # noqa: E402
     reset_remote_tool_connector_circuits,
     set_default_tool_connector_registry,
 )
-from agentyard_agent_runtime.tooling import execute_playbook_tool_task  # noqa: E402
+from agentyard_agent_runtime.tooling import _execute_resolved_tool_node  # noqa: E402
 from agentyard_agent_runtime.extension_registry import (  # noqa: E402
     ToolConnectorRegistry,
     ToolConnectorRegistryEntry,
@@ -407,7 +407,7 @@ def test_remote_retry_can_match_retryable_error_code(monkeypatch: pytest.MonkeyP
 
 def test_playbook_tool_task_enables_remote_connector_retry(monkeypatch: pytest.MonkeyPatch) -> None:
     payload = _playbook_request_payload()
-    tool = payload["ownerAgent"]["tools"][0]
+    tool = payload["agent"]["tools"][0]
     tool["connector"] = {
         "connectorType": "enterprise.acme.crm",
         "accountSnapshot": None,
@@ -422,7 +422,7 @@ def test_playbook_tool_task_enables_remote_connector_retry(monkeypatch: pytest.M
         "config": {},
         "operationMappings": {"create_ticket": {}},
     }
-    request = PlaybookToolTaskRequest.model_validate(payload)
+    request = ResolvedToolNode.model_validate(payload)
     request_log: list[dict[str, Any]] = []
 
     set_default_tool_connector_registry(_registry(_entry("enterprise.acme.crm")))
@@ -437,7 +437,7 @@ def test_playbook_tool_task_enables_remote_connector_retry(monkeypatch: pytest.M
         ),
     )
 
-    result = execute_playbook_tool_task(request)
+    result = _execute_resolved_tool_node(request)
 
     assert result.statePatch["workflow.ticket"]["ticketId"] == "t-100"
     assert len(request_log) == 2
@@ -624,7 +624,7 @@ def test_remote_circuit_open_stops_call_without_sending_request(monkeypatch: pyt
 
 def test_remote_output_schema_validation_still_runs(monkeypatch: pytest.MonkeyPatch) -> None:
     payload = _playbook_request_payload()
-    tool = payload["ownerAgent"]["tools"][0]
+    tool = payload["agent"]["tools"][0]
     tool["connector"] = {
         "connectorType": "enterprise.acme.crm",
         "accountSnapshot": {"accountId": "integration-account-1", "externalSecretRef": "vault://secret-1"},
@@ -633,7 +633,7 @@ def test_remote_output_schema_validation_still_runs(monkeypatch: pytest.MonkeyPa
         "config": {},
         "operationMappings": {"create_ticket": {}},
     }
-    request = PlaybookToolTaskRequest.model_validate(payload)
+    request = ResolvedToolNode.model_validate(payload)
     request_log: list[dict[str, Any]] = []
 
     set_default_tool_connector_registry(_registry(_entry("enterprise.acme.crm")))
@@ -643,7 +643,7 @@ def test_remote_output_schema_validation_still_runs(monkeypatch: pytest.MonkeyPa
     )
 
     with pytest.raises(ValueError, match=r"\$\.ticketId expected type string"):
-        execute_playbook_tool_task(request)
+        _execute_resolved_tool_node(request)
     assert len(request_log) == 1
 
 
@@ -794,12 +794,13 @@ def _retry_policy(
 def _playbook_request_payload() -> dict[str, Any]:
     return {
         "sessionId": "session-1",
-        "playbookRunId": "run-1",
-        "playbookId": "pb-1",
+        "toolRunId": "run-1",
+        "activationId": "activation-1",
+        "executionId": "run-1:tool-node:1",
+        "participantId": "participant-agent-1",
         "nodeKey": "tool-node",
         "nodeName": "Create Ticket",
-        "ownerAgent": {
-            "agentId": "agent-a",
+        "agent": {
             "name": "Agent A",
             "role": "support",
             "responsibility": "help the customer",

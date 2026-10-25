@@ -1,0 +1,28 @@
+// @vitest-environment jsdom
+import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
+import {createApp,h,nextTick,type App,type Slots} from 'vue';
+import ReceptionPage from './ReceptionPage.vue';
+import {api} from '../services/api';
+import {collaborationApi} from '../services/collaboration';
+import type {Reception,CollaborationMessage} from '../types';
+vi.mock('vue-router',()=>({useRoute:()=>({query:{}})}));
+vi.mock('../services/api',()=>({api:{receptionEntries:vi.fn(),reception:vi.fn(),receptionDetail:vi.fn(),controlAgent:vi.fn(),sendMessage:vi.fn(),openReceptionStream:vi.fn()}}));
+vi.mock('../services/collaboration',()=>({collaborationApi:{sessionTasks:vi.fn()}}));
+const question:CollaborationMessage={id:'question',senderId:'specialist',recipientId:'human',taskId:'task-1',replyToMessageId:null,kind:'QUESTION',body:{text:'请确认配送日期'},createdAt:'2026-10-01T10:00:00Z'};
+const state=():Reception=>({session:{id:'session',participantId:'reception',templateVersionId:'role-v1',name:'接待',status:'ACTIVE',createdBy:'human',replyToParticipantId:'human',workMemory:{},revision:1,createdAt:'2026-10-01T09:00:00Z',updatedAt:'2026-10-01T09:00:00Z'},humanParticipantId:'human',messages:[question],latestActivation:null,previousCursor:'older-cursor',participants:[{id:'human',kind:'HUMAN',subjectId:'user',displayName:'小陈',active:true,createdAt:''},{id:'specialist',kind:'AGENT',subjectId:'specialist-session',displayName:'物流协调员',active:true,createdAt:''}]});
+let app:App;let container:HTMLElement;let onUpdate:(value:Reception)=>void;
+beforeEach(()=>{vi.resetAllMocks();window.matchMedia=vi.fn().mockReturnValue({matches:false,addListener:vi.fn(),removeListener:vi.fn(),addEventListener:vi.fn(),removeEventListener:vi.fn()});HTMLElement.prototype.scrollTo=vi.fn();vi.mocked(api.receptionEntries).mockResolvedValue([{} as never]);vi.mocked(api.reception).mockResolvedValue(state());vi.mocked(api.receptionDetail).mockResolvedValue(state());vi.mocked(collaborationApi.sessionTasks).mockResolvedValue([]);vi.mocked(api.openReceptionStream).mockImplementation((_id,listener)=>{onUpdate=listener;return {close:vi.fn()} as unknown as EventSource;});container=document.createElement('div');document.body.append(container);app=createApp(ReceptionPage);app.component('RouterLink',{setup(_props:unknown,{slots}:{slots:Slots}){return()=>h('a',slots.default?.());}});app.mount(container);});
+afterEach(()=>{app.unmount();container.remove();vi.restoreAllMocks();});
+describe('shared participant conversation',()=>{
+ it('keeps a previous sender name when the latest snapshot contains only newer participants',async()=>{
+  await vi.waitFor(()=>expect(container.textContent).toContain('物流协调员'));
+  onUpdate({...state(),participants:state().participants.filter(item=>item.id==='human'),messages:[]});
+  await nextTick();
+  expect(container.textContent).toContain('物流协调员');
+  expect(container.textContent).toContain('请确认配送日期');
+ });
+ it('pauses the existing reception and resumes the same persistent instance',async()=>{await vi.waitFor(()=>expect(container.textContent).toContain('暂停接待'));vi.mocked(api.controlAgent).mockResolvedValue({...state().session,status:'PAUSED'});vi.mocked(api.receptionDetail).mockResolvedValue({...state(),session:{...state().session,status:'PAUSED'}});[...container.querySelectorAll('button')].find(button=>button.textContent?.trim()==='暂停接待')!.click();await vi.waitFor(()=>expect(api.controlAgent).toHaveBeenCalledWith('session','PAUSED'));await vi.waitFor(()=>expect(container.textContent).toContain('当前 Agent 已暂停'));vi.mocked(api.receptionDetail).mockResolvedValue(state());[...container.querySelectorAll('button')].find(button=>button.textContent?.replace(/\s/g,'')==='继续')!.click();await vi.waitFor(()=>expect(api.controlAgent).toHaveBeenCalledWith('session','ACTIVE'));expect(api.reception).toHaveBeenCalledTimes(1);});
+
+ it('replies directly to a specialist while preserving work and message association',async()=>{await vi.waitFor(()=>expect(container.textContent).toContain('物流协调员'));const reply=[...container.querySelectorAll('button')].find(button=>button.textContent?.trim()==='回复');reply!.click();await nextTick();expect(container.textContent).toContain('回复 物流协调员');const input=container.querySelector('textarea')!;input.value='周五下午';input.dispatchEvent(new Event('input',{bubbles:true}));await nextTick();vi.mocked(api.sendMessage).mockResolvedValue({...question,id:'reply',senderId:'human',recipientId:'specialist',replyToMessageId:'question',body:{text:'周五下午'}});container.querySelector('form')!.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));await vi.waitFor(()=>expect(api.sendMessage).toHaveBeenCalledWith(expect.objectContaining({recipientId:'specialist',taskId:'task-1',replyToMessageId:'question',body:{text:'周五下午'}})));});
+ it('keeps loaded older messages when a live snapshot arrives',async()=>{await vi.waitFor(()=>expect(container.textContent).toContain('查看更早的交流'));vi.mocked(api.receptionDetail).mockResolvedValue({...state(),messages:[{...question,id:'older',body:{text:'之前已确认的地址'},createdAt:'2026-09-30T10:00:00Z'}],previousCursor:null});const older=[...container.querySelectorAll('button')].find(button=>button.textContent?.includes('查看更早的交流'));older!.click();await vi.waitFor(()=>expect(container.textContent).toContain('之前已确认的地址'));expect(api.receptionDetail).toHaveBeenCalledWith('session',{before:'older-cursor'});onUpdate({...state(),messages:[{...question,id:'new',body:{text:'新的进展'},createdAt:'2026-10-02T10:00:00Z'}]});await nextTick();expect(container.textContent).toContain('之前已确认的地址');expect(container.textContent).toContain('新的进展');});
+});

@@ -1,4 +1,4 @@
-import type { Playbook, PlaybookEdge, PlaybookNode, PlaybookNodeLayout, PlaybookNodeType } from '../types';
+import type { PlaybookDefinition, PlaybookEdge, PlaybookNode, PlaybookNodeLayout, PlaybookNodeType } from '../types';
 
 export interface PlaybookEditorNode extends PlaybookNode {
   configText: string;
@@ -120,7 +120,7 @@ export function createStarterPlaybookGraph(): PlaybookEditorSnapshot {
   };
 }
 
-export function toEditorSnapshot(playbook: Pick<Playbook, 'entryNodeKey' | 'nodes' | 'edges'>): PlaybookEditorSnapshot {
+export function toEditorSnapshot(playbook: Pick<PlaybookDefinition, 'entryNodeKey' | 'nodes' | 'edges'>): PlaybookEditorSnapshot {
   return {
     entryNodeKey: playbook.entryNodeKey,
     nodes: playbook.nodes.map((node, index) => ({

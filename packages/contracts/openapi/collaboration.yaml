@@ -1,7 +1,10 @@
 openapi: 3.1.0
 info:
   title: AgentYard Task Collaboration API
-  version: 1.0.0
+  version: 2.0.0
+  description: Persistent human and Agent-instance participants coordinate work. Tasks hold shared information; authorized
+    participants make decisions. Agent tools call the same business services with server-bound identity and current source-message
+    provenance.
 servers:
 - url: /api
 paths:
@@ -39,7 +42,7 @@ paths:
         '404':
           description: Object not found in the accessible scope
         '409':
-          description: Revision, dependency, review, waiting or idempotency conflict
+          description: Revision, lifecycle, graph or idempotency conflict; reread the current authorized object before reconciling.
   /collaboration/actors:
     get:
       summary: Search the active actor directory (up to 100)
@@ -81,48 +84,7 @@ paths:
         '404':
           description: Object not found in the accessible scope
         '409':
-          description: Revision, dependency, review, waiting or idempotency conflict
-  /collaboration/actors/agents:
-    post:
-      summary: Register an existing catalog Agent as an actor without granting permissions
-      tags:
-      - Task collaboration
-      parameters: []
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                - success
-                - data
-                - timestamp
-                properties:
-                  success:
-                    type: boolean
-                  data:
-                    $ref: '#/components/schemas/Actor'
-                  timestamp:
-                    type: string
-                    format: date-time
-        '400':
-          description: Invalid command or policy
-        '401':
-          description: Authentication required
-        '403':
-          description: Actor lacks scoped permission
-        '404':
-          description: Object not found in the accessible scope
-        '409':
-          description: Revision, dependency, review, waiting or idempotency conflict
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateAgentActor'
+          description: Revision, lifecycle, graph or idempotency conflict; reread the current authorized object before reconciling.
   /collaboration/organizations:
     get:
       summary: List organizations where the current actor is a member
@@ -159,7 +121,7 @@ paths:
         '404':
           description: Object not found in the accessible scope
         '409':
-          description: Revision, dependency, review, waiting or idempotency conflict
+          description: Revision, lifecycle, graph or idempotency conflict; reread the current authorized object before reconciling.
     post:
       summary: Create an organization with configurable roles
       tags:
@@ -193,7 +155,7 @@ paths:
         '404':
           description: Object not found in the accessible scope
         '409':
-          description: Revision, dependency, review, waiting or idempotency conflict
+          description: Revision, lifecycle, graph or idempotency conflict; reread the current authorized object before reconciling.
       requestBody:
         required: true
         content:
@@ -239,7 +201,7 @@ paths:
         '404':
           description: Object not found in the accessible scope
         '409':
-          description: Revision, dependency, review, waiting or idempotency conflict
+          description: Revision, lifecycle, graph or idempotency conflict; reread the current authorized object before reconciling.
     put:
       summary: Update organization roles and metadata at expected revision
       tags:
@@ -278,7 +240,7 @@ paths:
         '404':
           description: Object not found in the accessible scope
         '409':
-          description: Revision, dependency, review, waiting or idempotency conflict
+          description: Revision, lifecycle, graph or idempotency conflict; reread the current authorized object before reconciling.
       requestBody:
         required: true
         content:
@@ -324,7 +286,7 @@ paths:
         '404':
           description: Object not found in the accessible scope
         '409':
-          description: Revision, dependency, review, waiting or idempotency conflict
+          description: Revision, lifecycle, graph or idempotency conflict; reread the current authorized object before reconciling.
       requestBody:
         required: true
         content:
@@ -385,7 +347,7 @@ paths:
         '404':
           description: Object not found in the accessible scope
         '409':
-          description: Revision, dependency, review, waiting or idempotency conflict
+          description: Revision, lifecycle, graph or idempotency conflict; reread the current authorized object before reconciling.
     post:
       summary: Create a persistent unit of collaborative work
       tags:
@@ -419,7 +381,7 @@ paths:
         '404':
           description: Object not found in the accessible scope
         '409':
-          description: Revision, dependency, review, waiting or idempotency conflict
+          description: Revision, lifecycle, graph or idempotency conflict; reread the current authorized object before reconciling.
       requestBody:
         required: true
         content:
@@ -465,7 +427,7 @@ paths:
         '404':
           description: Object not found in the accessible scope
         '409':
-          description: Revision, dependency, review, waiting or idempotency conflict
+          description: Revision, lifecycle, graph or idempotency conflict; reread the current authorized object before reconciling.
   /collaboration/tasks/{id}/commands:
     post:
       summary: Apply one scoped atomic task command
@@ -505,7 +467,7 @@ paths:
         '404':
           description: Object not found in the accessible scope
         '409':
-          description: Revision, dependency, review, waiting or idempotency conflict
+          description: Revision, lifecycle, graph or idempotency conflict; reread the current authorized object before reconciling.
       requestBody:
         required: true
         content:
@@ -561,7 +523,7 @@ paths:
         '404':
           description: Object not found in the accessible scope
         '409':
-          description: Revision, dependency, review, waiting or idempotency conflict
+          description: Revision, lifecycle, graph or idempotency conflict; reread the current authorized object before reconciling.
   /collaboration/tasks/{id}/context/{entryId}/versions:
     get:
       summary: Read up to 100 visible historical entry versions
@@ -608,7 +570,7 @@ paths:
         '404':
           description: Object not found in the accessible scope
         '409':
-          description: Revision, dependency, review, waiting or idempotency conflict
+          description: Revision, lifecycle, graph or idempotency conflict; reread the current authorized object before reconciling.
   /collaboration/tasks/{id}/events:
     get:
       summary: Read reference-only task events after a revision
@@ -660,7 +622,7 @@ paths:
         '404':
           description: Object not found in the accessible scope
         '409':
-          description: Revision, dependency, review, waiting or idempotency conflict
+          description: Revision, lifecycle, graph or idempotency conflict; reread the current authorized object before reconciling.
   /collaboration/sessions/{sessionId}/tasks:
     get:
       summary: List tasks explicitly linked by the current actor to this session
@@ -702,164 +664,15 @@ paths:
         '404':
           description: Object not found in the accessible scope
         '409':
-          description: Revision, dependency, review, waiting or idempotency conflict
-  /internal/task-executions/{id}:
+          description: Revision, lifecycle, graph or idempotency conflict; reread the current authorized object before reconciling.
+  /collaboration/tasks/{id}/decisions:
     get:
-      summary: Read currently authorized execution and frozen input snapshot
+      summary: Read decisions newest first, including older pages with a stable cursor
       tags:
       - Task collaboration
       parameters:
       - name: id
         in: path
-        required: true
-        schema:
-          type: string
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExecutionInput'
-        '400':
-          description: Invalid command or policy
-        '401':
-          description: Authentication required
-        '403':
-          description: Actor lacks scoped permission
-        '404':
-          description: Object not found in the accessible scope
-        '409':
-          description: Revision, dependency, review, waiting or idempotency conflict
-      security:
-      - InternalBearer: []
-  /internal/task-executions/{id}/progress:
-    post:
-      summary: Persist execution progress without overriding a terminal outcome
-      tags:
-      - Task collaboration
-      parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Execution'
-        '400':
-          description: Invalid command or policy
-        '401':
-          description: Authentication required
-        '403':
-          description: Actor lacks scoped permission
-        '404':
-          description: Object not found in the accessible scope
-        '409':
-          description: Revision, dependency, review, waiting or idempotency conflict
-      security:
-      - InternalBearer: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ExecutionProgress'
-  /internal/task-executions/{id}/commands:
-    post:
-      summary: Contribute under the stored execution actor; only PUT_CONTEXT, SET_CONTEXT_STATE, CREATE_CHILD
-      tags:
-      - Task collaboration
-      parameters:
-      - name: id
-        in: path
-        required: true
-        schema:
-          type: string
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CommandResult'
-        '400':
-          description: Invalid command or policy
-        '401':
-          description: Authentication required
-        '403':
-          description: Actor lacks scoped permission
-        '404':
-          description: Object not found in the accessible scope
-        '409':
-          description: Revision, dependency, review, waiting or idempotency conflict
-      security:
-      - InternalBearer: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TaskCommand'
-  /internal/task-sessions/{sessionId}:
-    get:
-      summary: List linked tasks visible to both customer and current Agent
-      tags:
-      - Task collaboration
-      parameters:
-      - name: sessionId
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: agentId
-        in: query
-        required: true
-        schema:
-          type: string
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Task'
-        '400':
-          description: Invalid command or policy
-        '401':
-          description: Authentication required
-        '403':
-          description: Actor lacks scoped permission
-        '404':
-          description: Object not found in the accessible scope
-        '409':
-          description: Revision, dependency, review, waiting or idempotency conflict
-      security:
-      - InternalBearer: []
-  /internal/task-sessions/{sessionId}/tasks/{taskId}/context:
-    get:
-      summary: Read the intersection of human and Agent context scopes
-      tags:
-      - Task collaboration
-      parameters:
-      - name: sessionId
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: taskId
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: agentId
-        in: query
         required: true
         schema:
           type: string
@@ -868,13 +681,30 @@ paths:
         required: false
         schema:
           type: string
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
       responses:
         '200':
           description: Success
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ContextEntryPage'
+                type: object
+                required:
+                - success
+                - data
+                - timestamp
+                properties:
+                  success:
+                    type: boolean
+                  data:
+                    $ref: '#/components/schemas/DecisionPage'
+                  timestamp:
+                    type: string
+                    format: date-time
         '400':
           description: Invalid command or policy
         '401':
@@ -884,14 +714,8 @@ paths:
         '404':
           description: Object not found in the accessible scope
         '409':
-          description: Revision, dependency, review, waiting or idempotency conflict
-      security:
-      - InternalBearer: []
+          description: Revision, lifecycle, graph or idempotency conflict; reread the current authorized object before reconciling.
 components:
-  securitySchemes:
-    InternalBearer:
-      type: http
-      scheme: bearer
   schemas:
     Permission:
       type: string
@@ -900,7 +724,6 @@ components:
       - CONTRIBUTE
       - DECIDE
       - EXECUTE
-      - REVIEW
       - MANAGE
     TaskStatus:
       type: string
@@ -908,7 +731,8 @@ components:
       - OPEN
       - ACTIVE
       - WAITING
-      - IN_REVIEW
+      - PAUSED
+      - SUBMITTED
       - COMPLETED
       - CANCELLED
     ContextKind:
@@ -936,15 +760,6 @@ components:
       - CHILD
       - DEPENDS_ON
       - RELATED
-    ExecutionStatus:
-      type: string
-      enum:
-      - QUEUED
-      - RUNNING
-      - WAITING
-      - SUCCEEDED
-      - FAILED
-      - CANCELLED
     Actor:
       type: object
       required:
@@ -963,6 +778,8 @@ components:
           - AGENT
         subjectId:
           type: string
+          description: For AGENT, the concrete persistent Session ID. A role template is never an actor. For HUMAN, the trusted
+            platform or namespaced external identity.
         displayName:
           type: string
         active:
@@ -1001,20 +818,12 @@ components:
       type: object
       required:
       - roles
-      - requiredApprovals
-      - allowSelfReview
       - acceptanceCriteria
       properties:
         roles:
           type: array
           items:
             $ref: '#/components/schemas/Role'
-        requiredApprovals:
-          type: integer
-          minimum: 0
-          maximum: 100
-        allowSelfReview:
-          type: boolean
         acceptanceCriteria:
           type: array
           items:
@@ -1090,6 +899,8 @@ components:
       - submittedBy
       - createdAt
       - updatedAt
+      - initiatedBy
+      - confirmerId
       properties:
         id:
           type: string
@@ -1125,6 +936,10 @@ components:
         updatedAt:
           type: string
           format: date-time
+        initiatedBy:
+          type: string
+        confirmerId:
+          type: string
     ContextEntry:
       type: object
       required:
@@ -1199,78 +1014,6 @@ components:
         createdAt:
           type: string
           format: date-time
-    Review:
-      type: object
-      required:
-      - taskId
-      - contentRevision
-      - actorId
-      - approved
-      - comment
-      - createdAt
-      properties:
-        taskId:
-          type: string
-        contentRevision:
-          type: integer
-        actorId:
-          type: string
-        approved:
-          type: boolean
-        comment:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-    Execution:
-      type: object
-      required:
-      - id
-      - taskId
-      - actorId
-      - requestedBy
-      - kind
-      - status
-      - instruction
-      - input
-      - result
-      - waiting
-      - failureReason
-      - createdAt
-      - updatedAt
-      properties:
-        id:
-          type: string
-        taskId:
-          type: string
-        actorId:
-          type: string
-        requestedBy:
-          type: string
-        kind:
-          enum:
-          - AGENT
-          - PLAYBOOK
-        status:
-          $ref: '#/components/schemas/ExecutionStatus'
-        instruction:
-          type: string
-        input:
-          type: object
-        result:
-          type: object
-        waiting:
-          type: object
-        failureReason:
-          anyOf:
-          - type: string
-          - type: 'null'
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
     TaskDetail:
       type: object
       required:
@@ -1279,9 +1022,8 @@ components:
       - context
       - relations
       - sessions
-      - executions
-      - reviews
       - permissions
+      - decisions
       properties:
         task:
           $ref: '#/components/schemas/Task'
@@ -1293,6 +1035,7 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ContextEntry'
+          description: A bounded preview. Use /context for complete paginated content.
         relations:
           type: array
           items:
@@ -1301,18 +1044,15 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SessionLink'
-        executions:
-          type: array
-          items:
-            $ref: '#/components/schemas/Execution'
-        reviews:
-          type: array
-          items:
-            $ref: '#/components/schemas/Review'
         permissions:
           type: array
           items:
             $ref: '#/components/schemas/Permission'
+        decisions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Decision'
+          description: The latest 200 decisions in chronological order; use /decisions for complete paginated history.
     Event:
       type: object
       required:
@@ -1437,13 +1177,6 @@ components:
           type: array
           items:
             type: string
-    CreateAgentActor:
-      type: object
-      required:
-      - agentId
-      properties:
-        agentId:
-          type: string
     CommandResult:
       type: object
       required:
@@ -1451,6 +1184,9 @@ components:
       - revision
       - objectId
       - duplicate
+      - status
+      - contentRevision
+      - submissionInvalidated
       properties:
         taskId:
           type: string
@@ -1462,530 +1198,113 @@ components:
           - type: 'null'
         duplicate:
           type: boolean
-    UPDATECommand:
-      type: object
-      required:
-      - requestId
-      - expectedRevision
-      - kind
-      - data
-      properties:
-        requestId:
-          type: string
-          minLength: 1
-        expectedRevision:
-          type: integer
-          minimum: 1
-        kind:
-          type: string
-          const: UPDATE
-        data:
-          type: object
-          required: []
-          properties:
-            title:
-              type: string
-            goal:
-              type: string
-            stage:
-              type: string
-            attributes:
-              type: object
-            policy:
-              $ref: '#/components/schemas/Policy'
-    TRANSITIONCommand:
-      type: object
-      required:
-      - requestId
-      - expectedRevision
-      - kind
-      - data
-      properties:
-        requestId:
-          type: string
-          minLength: 1
-        expectedRevision:
-          type: integer
-          minimum: 1
-        kind:
-          type: string
-          const: TRANSITION
-        data:
-          type: object
-          required:
-          - status
-          properties:
-            status:
-              $ref: '#/components/schemas/TaskStatus'
-    SET_PARTICIPANTCommand:
-      type: object
-      required:
-      - requestId
-      - expectedRevision
-      - kind
-      - data
-      properties:
-        requestId:
-          type: string
-          minLength: 1
-        expectedRevision:
-          type: integer
-          minimum: 1
-        kind:
-          type: string
-          const: SET_PARTICIPANT
-        data:
-          type: object
-          required:
-          - actorId
-          - roles
-          properties:
-            actorId:
-              type: string
-            roles:
-              type: array
-              items:
-                type: string
-    REMOVE_PARTICIPANTCommand:
-      type: object
-      required:
-      - requestId
-      - expectedRevision
-      - kind
-      - data
-      properties:
-        requestId:
-          type: string
-          minLength: 1
-        expectedRevision:
-          type: integer
-          minimum: 1
-        kind:
-          type: string
-          const: REMOVE_PARTICIPANT
-        data:
-          type: object
-          required:
-          - actorId
-          properties:
-            actorId:
-              type: string
-    PUT_CONTEXTCommand:
-      type: object
-      required:
-      - requestId
-      - expectedRevision
-      - kind
-      - data
-      properties:
-        requestId:
-          type: string
-          minLength: 1
-        expectedRevision:
-          type: integer
-          minimum: 1
-        kind:
-          type: string
-          const: PUT_CONTEXT
-        data:
-          type: object
-          required:
-          - title
-          - body
-          properties:
-            entryId:
-              type: string
-            entryRevision:
-              type: integer
-            kind:
-              $ref: '#/components/schemas/ContextKind'
-            title:
-              type: string
-            body:
-              type: object
-            state:
-              $ref: '#/components/schemas/ContextState'
-            visibleToRoles:
-              type: array
-              items:
-                type: string
-            source:
-              type: object
-    SET_CONTEXT_STATECommand:
-      type: object
-      required:
-      - requestId
-      - expectedRevision
-      - kind
-      - data
-      properties:
-        requestId:
-          type: string
-          minLength: 1
-        expectedRevision:
-          type: integer
-          minimum: 1
-        kind:
-          type: string
-          const: SET_CONTEXT_STATE
-        data:
-          type: object
-          required:
-          - entryId
-          - entryRevision
-          - state
-          properties:
-            entryId:
-              type: string
-            entryRevision:
-              type: integer
-            state:
-              $ref: '#/components/schemas/ContextState'
-    CREATE_CHILDCommand:
-      type: object
-      required:
-      - requestId
-      - expectedRevision
-      - kind
-      - data
-      properties:
-        requestId:
-          type: string
-          minLength: 1
-        expectedRevision:
-          type: integer
-          minimum: 1
-        kind:
-          type: string
-          const: CREATE_CHILD
-        data:
-          type: object
-          required:
-          - title
-          - goal
-          properties:
-            title:
-              type: string
-            goal:
-              type: string
-            attributes:
-              type: object
-            policy:
-              $ref: '#/components/schemas/Policy'
-            participants:
-              type: array
-              description: Explicit parent participants to assign to the child. Execution-created children may include only actors able to read all selected input. The creator receives the first management role by default.
-              items:
-                $ref: '#/components/schemas/Participant'
-    LINK_TASKCommand:
-      type: object
-      required:
-      - requestId
-      - expectedRevision
-      - kind
-      - data
-      properties:
-        requestId:
-          type: string
-          minLength: 1
-        expectedRevision:
-          type: integer
-          minimum: 1
-        kind:
-          type: string
-          const: LINK_TASK
-        data:
-          type: object
-          required:
-          - relatedTaskId
-          - kind
-          properties:
-            relatedTaskId:
-              type: string
-            kind:
-              $ref: '#/components/schemas/RelationKind'
-    UNLINK_TASKCommand:
-      type: object
-      required:
-      - requestId
-      - expectedRevision
-      - kind
-      - data
-      properties:
-        requestId:
-          type: string
-          minLength: 1
-        expectedRevision:
-          type: integer
-          minimum: 1
-        kind:
-          type: string
-          const: UNLINK_TASK
-        data:
-          type: object
-          required:
-          - relatedTaskId
-          - kind
-          properties:
-            relatedTaskId:
-              type: string
-            kind:
-              $ref: '#/components/schemas/RelationKind'
-    LINK_SESSIONCommand:
-      type: object
-      required:
-      - requestId
-      - expectedRevision
-      - kind
-      - data
-      properties:
-        requestId:
-          type: string
-          minLength: 1
-        expectedRevision:
-          type: integer
-          minimum: 1
-        kind:
-          type: string
-          const: LINK_SESSION
-        data:
-          type: object
-          required:
-          - sessionId
-          properties:
-            sessionId:
-              type: string
-    UNLINK_SESSIONCommand:
-      type: object
-      required:
-      - requestId
-      - expectedRevision
-      - kind
-      - data
-      properties:
-        requestId:
-          type: string
-          minLength: 1
-        expectedRevision:
-          type: integer
-          minimum: 1
-        kind:
-          type: string
-          const: UNLINK_SESSION
-        data:
-          type: object
-          required:
-          - sessionId
-          properties:
-            sessionId:
-              type: string
-    REVIEWCommand:
-      type: object
-      required:
-      - requestId
-      - expectedRevision
-      - kind
-      - data
-      properties:
-        requestId:
-          type: string
-          minLength: 1
-        expectedRevision:
-          type: integer
-          minimum: 1
-        kind:
-          type: string
-          const: REVIEW
-        data:
-          type: object
-          required:
-          - contentRevision
-          - approved
-          properties:
-            contentRevision:
-              type: integer
-            approved:
-              type: boolean
-            comment:
-              type: string
-    START_EXECUTIONCommand:
-      type: object
-      required:
-      - requestId
-      - expectedRevision
-      - kind
-      - data
-      properties:
-        requestId:
-          type: string
-          minLength: 1
-        expectedRevision:
-          type: integer
-          minimum: 1
-        kind:
-          type: string
-          const: START_EXECUTION
-        data:
-          type: object
-          required:
-          - actorId
-          - releaseId
-          - instruction
-          properties:
-            actorId:
-              type: string
-            releaseId:
-              type: string
-            playbookId:
-              anyOf:
-              - type: string
-              - type: 'null'
-            instruction:
-              type: string
-            input:
-              type: object
-            contextEntryIds:
-              type: array
-              items:
-                type: string
-    CANCEL_EXECUTIONCommand:
-      type: object
-      required:
-      - requestId
-      - expectedRevision
-      - kind
-      - data
-      properties:
-        requestId:
-          type: string
-          minLength: 1
-        expectedRevision:
-          type: integer
-          minimum: 1
-        kind:
-          type: string
-          const: CANCEL_EXECUTION
-        data:
-          type: object
-          required:
-          - executionId
-          properties:
-            executionId:
-              type: string
-    RESUME_EXECUTIONCommand:
-      type: object
-      required:
-      - requestId
-      - expectedRevision
-      - kind
-      - data
-      properties:
-        requestId:
-          type: string
-          minLength: 1
-        expectedRevision:
-          type: integer
-          minimum: 1
-        kind:
-          type: string
-          const: RESUME_EXECUTION
-        data:
-          type: object
-          required:
-          - executionId
-          - waitingId
-          - payload
-          properties:
-            executionId:
-              type: string
-            waitingId:
-              type: string
-            payload:
-              type: object
-    TaskCommand:
-      description: Atomic, optimistic and idempotent task mutation. Reconcile current revision after 409. PUT_CONTEXT creates
-        when entryId is absent (kind required); edits require entryRevision and retain audience. Role/context/dependency changes
-          invalidate content reviews. See docs/architecture/code-framework.md.
-      oneOf:
-      - $ref: '#/components/schemas/UPDATECommand'
-      - $ref: '#/components/schemas/TRANSITIONCommand'
-      - $ref: '#/components/schemas/SET_PARTICIPANTCommand'
-      - $ref: '#/components/schemas/REMOVE_PARTICIPANTCommand'
-      - $ref: '#/components/schemas/PUT_CONTEXTCommand'
-      - $ref: '#/components/schemas/SET_CONTEXT_STATECommand'
-      - $ref: '#/components/schemas/CREATE_CHILDCommand'
-      - $ref: '#/components/schemas/LINK_TASKCommand'
-      - $ref: '#/components/schemas/UNLINK_TASKCommand'
-      - $ref: '#/components/schemas/LINK_SESSIONCommand'
-      - $ref: '#/components/schemas/UNLINK_SESSIONCommand'
-      - $ref: '#/components/schemas/REVIEWCommand'
-      - $ref: '#/components/schemas/START_EXECUTIONCommand'
-      - $ref: '#/components/schemas/CANCEL_EXECUTIONCommand'
-      - $ref: '#/components/schemas/RESUME_EXECUTIONCommand'
-      discriminator:
-        propertyName: kind
-        mapping:
-          UPDATE: '#/components/schemas/UPDATECommand'
-          TRANSITION: '#/components/schemas/TRANSITIONCommand'
-          SET_PARTICIPANT: '#/components/schemas/SET_PARTICIPANTCommand'
-          REMOVE_PARTICIPANT: '#/components/schemas/REMOVE_PARTICIPANTCommand'
-          PUT_CONTEXT: '#/components/schemas/PUT_CONTEXTCommand'
-          SET_CONTEXT_STATE: '#/components/schemas/SET_CONTEXT_STATECommand'
-          CREATE_CHILD: '#/components/schemas/CREATE_CHILDCommand'
-          LINK_TASK: '#/components/schemas/LINK_TASKCommand'
-          UNLINK_TASK: '#/components/schemas/UNLINK_TASKCommand'
-          LINK_SESSION: '#/components/schemas/LINK_SESSIONCommand'
-          UNLINK_SESSION: '#/components/schemas/UNLINK_SESSIONCommand'
-          REVIEW: '#/components/schemas/REVIEWCommand'
-          START_EXECUTION: '#/components/schemas/START_EXECUTIONCommand'
-          CANCEL_EXECUTION: '#/components/schemas/CANCEL_EXECUTIONCommand'
-          RESUME_EXECUTION: '#/components/schemas/RESUME_EXECUTIONCommand'
-    ExecutionProgress:
-      type: object
-      required:
-      - status
-      - result
-      - waiting
-      - failureReason
-      properties:
         status:
-          $ref: '#/components/schemas/ExecutionStatus'
-        result:
+          $ref: '#/components/schemas/TaskStatus'
+        contentRevision:
+          type: integer
+          format: int64
+        submissionInvalidated:
+          type: boolean
+          description: This command changed shared material after submission; submit the current content again when ready for confirmation.
+    TaskCommand:
+      type: object
+      required:
+      - requestId
+      - expectedRevision
+      - kind
+      - data
+      properties:
+        requestId:
+          type: string
+          minLength: 1
+          description: Idempotency key scoped to task and actual caller. Reusing it with different input conflicts.
+        expectedRevision:
+          type: integer
+          format: int64
+          minimum: 1
+        kind:
+          type: string
+          enum:
+          - UPDATE
+          - TRANSITION
+          - SET_PARTICIPANT
+          - REMOVE_PARTICIPANT
+          - PUT_CONTEXT
+          - SET_CONTEXT_STATE
+          - CREATE_CHILD
+          - LINK_TASK
+          - UNLINK_TASK
+          - LINK_SESSION
+          - UNLINK_SESSION
+          - SUBMIT
+          - CONFIRM
+          - REQUEST_CHANGES
+          - CONFIRM_STAGE
+          - TRANSFER_CONFIRMATION
+        data:
           type: object
-        waiting:
-          type: object
-        failureReason:
+          additionalProperties: true
+          description: 'Command-specific parameters. TRANSITION: status; SET_PARTICIPANT: actorId,roles; PUT_CONTEXT: kind,title,body,visibleToRoles,source
+            and optional entryId/entryRevision. SUBMIT records an execution participant delivery. CONFIRM/REQUEST_CHANGES/CONFIRM_STAGE
+            require contentRevision and optional comment. TRANSFER_CONFIRMATION requires participantId. Only the designated
+            confirmer can make final/stage/transfer decisions. Completed work requires an explicit authorized reopen. Parent/child
+            completion is not a universal approval gate.'
+    Decision:
+      type: object
+      required:
+      - id
+      - taskId
+      - contentRevision
+      - kind
+      - decidedBy
+      - executedBy
+      - comment
+      - createdAt
+      properties:
+        id:
+          type: string
+        taskId:
+          type: string
+        contentRevision:
+          type: integer
+          format: int64
+        kind:
+          type: string
+          enum:
+          - SUBMIT
+          - CONFIRM
+          - REQUEST_CHANGES
+          - CONFIRM_STAGE
+          - TRANSFER_CONFIRMATION
+          - PAUSE
+          - RESUME
+          - CANCEL
+        decidedBy:
+          type: string
+          description: The actual authorized decision maker; a human proxy instruction remains a human decision.
+        executedBy:
+          type: string
+          description: The participant who executed the operation, including the proxy Agent instance.
+        sourceMessageId:
+          type:
+          - string
+          - 'null'
+        comment:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+    DecisionPage:
+      type: object
+      required:
+      - items
+      - nextCursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Decision'
+        nextCursor:
           anyOf:
           - type: string
           - type: 'null'
-    RuntimeSnapshot:
-      type: object
-      required:
-      - assistantId
-      - releaseVersion
-      - agent
-      - playbook
-      properties:
-        assistantId:
-          type: string
-        releaseVersion:
-          type: string
-        agent:
-          type: object
-        playbook:
-          anyOf:
-          - type: object
-          - type: 'null'
-    ExecutionInput:
-      type: object
-      required:
-      - execution
-      - runtime
-      - context
-      properties:
-        execution:
-          $ref: '#/components/schemas/Execution'
-        runtime:
-          $ref: '#/components/schemas/RuntimeSnapshot'
-        context:
-          $ref: '#/components/schemas/TaskDetail'

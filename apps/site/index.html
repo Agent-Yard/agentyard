@@ -6,12 +6,12 @@
     <meta name="theme-color" content="#17211d" />
     <meta
       name="description"
-      content="AgentYard 是开源的人与 Agent 协作系统，以 Task 管理目标、共享上下文和成果，以发布快照和可恢复执行支撑协作。"
+      content="AgentYard 是开源的人与 Agent 协作系统。以持续接待开始，通过持久 Agent 实例、Task 共享上下文与独立版本化能力推进工作。"
     />
     <meta property="og:title" content="AgentYard — 人与 Agent 的任务协作系统" />
     <meta
       property="og:description"
-      content="围绕 Task 协作：组织人与 Agent、共享上下文、推进独立执行并验收成果。"
+      content="持续交流，共享工作目标，组织人与 Agent 一起完成复杂任务。"
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://agent-yard.github.io/agentyard/" />
@@ -103,9 +103,7 @@
         <div class="hero-content">
           <p class="eyebrow" data-i18n="hero-eyebrow">开源智能体系统</p>
           <h1 id="hero-title">AgentYard</h1>
-          <p class="hero-lede" data-i18n="hero-lede">
-            围绕 Task 协作：组织人与 Agent、积累共享上下文、运行独立执行并验收成果。
-          </p>
+          <p class="hero-lede" data-i18n="hero-lede">从自然交流开始，让人与 Agent 围绕共同目标持续协作，积累上下文并交付可验证的成果。</p>
           <div class="hero-actions" data-i18n-aria="aria-project-links" aria-label="项目链接">
             <a class="button button-primary" href="https://github.com/Agent-Yard/agentyard" rel="noopener" data-i18n="btn-view-source">查看源码</a>
             <a class="button button-secondary" href="https://github.com/Agent-Yard/agentyard#quick-start" rel="noopener" data-i18n="btn-quick-start">快速上手</a>
@@ -150,8 +148,8 @@
               ></iframe>
             </div>
             <div class="demo-meta">
-              <h3 data-i18n="demo-1-h">会话演示</h3>
-              <p data-i18n="demo-1-p">控制台里跑通一次最简单的会话。</p>
+              <h3 data-i18n="demo-1-h">交流与协作</h3>
+              <p data-i18n="demo-1-p">通过持续接待表达目标，查看 Agent 组织工作的过程。</p>
             </div>
           </article>
           <article class="demo-card">
@@ -167,8 +165,8 @@
               ></iframe>
             </div>
             <div class="demo-meta">
-              <h3 data-i18n="demo-2-h">后台演示</h3>
-              <p data-i18n="demo-2-p">业务域、助手、智能体、知识库、资源与发布快照的治理面走查。</p>
+              <h3 data-i18n="demo-2-h">配置与治理</h3>
+              <p data-i18n="demo-2-p">独立配置模型、角色模板、接待入口、知识与执行能力。</p>
             </div>
           </article>
         </div>
@@ -181,22 +179,16 @@
         </div>
         <div class="problem-grid">
           <article class="card accent-teal">
-            <h3 data-i18n="why-governance-h">治理</h3>
-            <p data-i18n="why-governance-p">
-              业务域、场景、助手、智能体、playbook、知识库与资源均作为一等治理对象建模。
-            </p>
+            <h3 data-i18n="why-governance-h">协作模型</h3>
+            <p data-i18n="why-governance-p">人和 Agent 都是参与者；Task 记录目标、事实、决定和成果，组织提供灵活的成员与权限结构。</p>
           </article>
           <article class="card accent-clay">
             <h3 data-i18n="why-integration-h">集成</h3>
-            <p data-i18n="why-integration-p">
-              工具连接器与通道提供方位于协议边界之后，将厂商鉴权、签名、厂商 SDK 与长连接隔离在智能体逻辑之外。
-            </p>
+            <p data-i18n="why-integration-p">工具连接器与通道提供方位于协议边界之后，将厂商鉴权、签名、厂商 SDK 与长连接隔离在智能体逻辑之外。</p>
           </article>
           <article class="card accent-amber">
             <h3 data-i18n="why-operations-h">运维</h3>
-            <p data-i18n="why-operations-p">
-              会话、事件、playbook 运行、人工转交与共享状态全程持久化，并以面向真实业务的运行时视图呈现。
-            </p>
+            <p data-i18n="why-operations-p">每个 Agent 拥有持久 Session。消息触发有界执行，定时器、事件订阅和长期工具运行让工作在后台持续推进。</p>
           </article>
         </div>
       </section>
@@ -204,42 +196,24 @@
       <section class="section model-section" id="model" aria-labelledby="model-title">
         <div class="section-heading">
           <p class="eyebrow" data-i18n="model-eyebrow">核心模型</p>
-          <h2 id="model-title" data-i18n="model-title">一棵贯通运行时的治理树。</h2>
+          <h2 id="model-title" data-i18n="model-title">简单的核心概念，组合复杂的工作。</h2>
         </div>
         <div class="model-layout">
-          <div class="model-tree" role="img" data-i18n-aria="aria-tree" aria-label="治理层级">
+          <div class="model-tree" role="img" data-i18n-aria="aria-tree" aria-label="参与者、持续 Agent 上下文、Task 共享工作，以及独立版本化的角色与资源">
             <ul class="tree-root">
-              <li>
-                <span class="tree-node" data-i18n="tree-domain">业务域</span>
-                <ul>
-                  <li>
-                    <span class="tree-node" data-i18n="tree-scenario">场景</span>
-                    <ul>
-                      <li>
-                        <span class="tree-node tree-anchor">
-                          <span data-i18n="tree-assistant">助手发布</span>
-                          <em data-i18n="tree-assistant-tag">发布锚定</em>
-                        </span>
-                        <ul class="tree-leaves">
-                          <li><span class="tree-leaf" data-i18n="tree-owner">Owner 智能体</span></li>
-                          <li><span class="tree-leaf" data-i18n="tree-playbook">Playbook</span></li>
-                          <li><span class="tree-leaf"><span data-i18n="tree-resource">资源</span> <small data-i18n="tree-resource-sub">工具 · 技能 · 模型 · 知识</small></span></li>
-                        </ul>
-                      </li>
-                    </ul>
-                  </li>
-                </ul>
-              </li>
+              <li><span class="tree-node tree-anchor" data-i18n="model-participants">参与者：人 + Agent</span><ul class="tree-leaves">
+                <li><span class="tree-leaf" data-i18n="model-session">Session · 持续的私有上下文</span></li>
+                <li><span class="tree-leaf"><span data-i18n="model-task">Task · 共享目标与工作记录</span> <small data-i18n="model-context">事实 · 决定 · 进展 · 成果</small></span></li>
+              </ul></li>
+              <li><span class="tree-node" data-i18n="model-config">独立版本化的配置</span><ul class="tree-leaves"><li><span class="tree-leaf" data-i18n="model-config-sub">角色 · 模型 · 工具 · Skill · 知识 · Playbook</span></li></ul></li>
             </ul>
           </div>
           <div class="model-copy">
-            <p data-i18n="model-copy-p">
-              AgentYard 把配置视为契约。草稿对象可以持续演进，但运行中的会话锚定在一个已固化 Owner 智能体、策略、资源版本、知识绑定与 playbook 定义的助手发布上。
-            </p>
+            <p data-i18n="model-copy-p">Session 是 Agent 的持续上下文实例，Task 是参与者共享的工作记录。角色模板提供版本化提示词、模型与能力引用，入口独立授予权限；智能体通过消息、共享上下文和受控工具协作。</p>
             <ul class="check-list">
-              <li data-i18n="model-check-1">发布快照避免运行期配置漂移。</li>
-              <li data-i18n="model-check-2">工具、技能、模型与知识都带有稳定的资源版本锚点。</li>
-              <li data-i18n="model-check-3">智能体做决策，playbook 执行结构化业务流程。</li>
+              <li data-i18n="model-check-1">实例保留自己的上下文，重要工作信息进入 Task 供参与者共享。</li>
+              <li data-i18n="model-check-2">角色、模型、工具、Skill、知识与 Playbook 独立版本化，运行实例固定引用。</li>
+              <li data-i18n="model-check-3">工具执行时检查实际授权，模板不能自行授予权限。</li>
             </ul>
           </div>
         </div>
@@ -248,31 +222,31 @@
       <section class="section runtime-section" id="runtime" aria-labelledby="runtime-title">
         <div class="section-heading">
           <p class="eyebrow" data-i18n="runtime-eyebrow">运行时架构</p>
-          <h2 id="runtime-title" data-i18n="runtime-title">跨会话持续协作，可恢复的独立执行。</h2>
+          <h2 id="runtime-title" data-i18n="runtime-title">持续上下文，有界执行，长期协作。</h2>
         </div>
         <ol class="arch-flow" data-i18n-aria="aria-runtime-flow" aria-label="运行时流程">
           <li class="arch-step">
             <span class="arch-tag" data-i18n="arch-1-tag">控制平面</span>
-            <h3 data-i18n="arch-1-h">发布装配</h3>
-            <p data-i18n="arch-1-p">Spring Boot API 管理任务命令、组织角色、上下文与验收，同时装配发布和会话视图。</p>
+            <h3 data-i18n="arch-1-h">协作与授权</h3>
+            <p data-i18n="arch-1-p">Spring Boot API 管理参与者、Task、消息、Session 与授权，按模板版本装配执行上下文。</p>
             <span class="arch-tech" data-i18n="arch-1-tech">Spring Boot · PostgreSQL</span>
           </li>
           <li class="arch-step arch-step-runtime">
             <span class="arch-tag" data-i18n="arch-2-tag">工作流 Worker</span>
             <h3 data-i18n="arch-2-h">可恢复编排</h3>
-            <p data-i18n="arch-2-p">Temporal 承载独立 Task 执行及会话流程，处理等待、恢复和人工协作。</p>
+            <p data-i18n="arch-2-p">Temporal 承载 Agent Activation 和 Playbook ToolRun，处理执行、等待、恢复与取消。</p>
             <span class="arch-tech" data-i18n="arch-2-tech">Temporal · JVM worker</span>
           </li>
           <li class="arch-step">
             <span class="arch-tag" data-i18n="arch-3-tag">智能体运行时</span>
             <h3 data-i18n="arch-3-h">决策与执行</h3>
-            <p data-i18n="arch-3-p">Python 执行任务贡献、Owner 轮次、工具、隐私策略与知识调用。</p>
+            <p data-i18n="arch-3-p">Python 读取实例上下文，调用模型与受控工具，保存完整运行记录并提交回复和工作记忆。</p>
             <span class="arch-tech" data-i18n="arch-3-tech">Python · LLM 提供方</span>
           </li>
           <li class="arch-step arch-step-aside">
             <span class="arch-tag" data-i18n="arch-4-tag">知识服务</span>
             <h3 data-i18n="arch-4-h">检索面</h3>
-            <p data-i18n="arch-4-p">URL 与文件来源被切分为 chunk，生成索引快照，按发布维度做检索。</p>
+            <p data-i18n="arch-4-p">URL 与文件被解析为文档，构建索引快照，再由独立知识版本提供检索。</p>
             <span class="arch-tech" data-i18n="arch-4-tech">Python · 向量索引</span>
           </li>
         </ol>
@@ -287,23 +261,17 @@
           <article class="card">
             <span class="pill pill-teal" data-i18n="ext-tool-pill">工具连接器</span>
             <h3 data-i18n="ext-tool-h">业务能力接入</h3>
-            <p data-i18n="ext-tool-p">
-              扩展服务通过 manifest 暴露工具操作 schema，AgentYard 负责把智能体运行时的工具调用路由到对应连接器。
-            </p>
+            <p data-i18n="ext-tool-p">扩展服务通过 manifest 暴露工具操作 schema，AgentYard 负责把智能体运行时的工具调用路由到对应连接器。</p>
           </article>
           <article class="card">
             <span class="pill pill-clay" data-i18n="ext-channel-pill">通道提供方</span>
             <h3 data-i18n="ext-channel-h">会话通道接入</h3>
-            <p data-i18n="ext-channel-p">
-              通道提供方在通道网关一侧归一化 IM、工单与服务台入站事件，并消费出站消息帧。
-            </p>
+            <p data-i18n="ext-channel-p">通道提供方在通道网关一侧归一化 IM、工单与服务台入站事件，并消费出站消息帧。</p>
           </article>
           <article class="card">
             <span class="pill pill-amber" data-i18n="ext-protocol-pill">协议 + SDK</span>
             <h3 data-i18n="ext-protocol-h">契约优先的扩展开发</h3>
-            <p data-i18n="ext-protocol-p">
-              OpenAPI、JSON Schema、示例、标准 fixture 及 JVM / Python Extension SDK 让扩展服务与平台边界保持一致。
-            </p>
+            <p data-i18n="ext-protocol-p">OpenAPI、JSON Schema、示例、标准 fixture 及 JVM / Python Extension SDK 让扩展服务与平台边界保持一致。</p>
           </article>
         </div>
       </section>
@@ -342,9 +310,7 @@
           <div class="cta-copy">
             <p class="eyebrow" data-i18n="cta-eyebrow">项目状态</p>
             <h2 id="cta-title" data-i18n="cta-title">Alpha 阶段，面向评估与本地集成。</h2>
-            <p data-i18n="cta-p">
-              AgentYard 已经打通 控制平面 → 发布快照 → Temporal worker → Python 运行时 的核心链路。在面向生产的强化过程中，接口、数据结构与配置在小版本间仍可能调整。
-            </p>
+            <p data-i18n="cta-p">AgentYard 正围绕持续接待、持久 Agent 实例、Task 共享上下文与可恢复执行完善实际协作体验。项目处于 Alpha 阶段，接口和数据结构仍可能直接调整。</p>
           </div>
           <div class="cta-actions">
             <a class="button button-primary" href="https://github.com/Agent-Yard/agentyard" rel="noopener" data-i18n="btn-star">在 GitHub 上 Star</a>

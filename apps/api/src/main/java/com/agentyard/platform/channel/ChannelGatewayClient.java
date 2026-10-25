@@ -181,7 +181,7 @@ public class ChannelGatewayClient {
 
     public ChannelTemplateBinding upsertTemplateBinding(
         String channelProfileId,
-        String assistantId,
+        String entryId,
         String messageType,
         String messageSubtype,
         String messageVersion,
@@ -189,9 +189,9 @@ public class ChannelGatewayClient {
     ) {
         return invoke(() -> body(restClient.put()
             .uri(
-                "/internal/channel-admin/profiles/{channelProfileId}/template-bindings/{assistantId}/{messageType}/{messageSubtype}/{messageVersion}",
+                "/internal/channel-admin/profiles/{channelProfileId}/template-bindings/{entryId}/{messageType}/{messageSubtype}/{messageVersion}",
                 channelProfileId,
-                assistantId,
+                entryId,
                 messageType,
                 messageSubtype,
                 messageVersion
@@ -204,7 +204,7 @@ public class ChannelGatewayClient {
 
     public ChannelTemplateBinding deleteTemplateBinding(
         String channelProfileId,
-        String assistantId,
+        String entryId,
         String messageType,
         String messageSubtype,
         String messageVersion,
@@ -212,9 +212,9 @@ public class ChannelGatewayClient {
     ) {
         return invoke(() -> body(restClient.delete()
             .uri(uriBuilder -> uriBuilder
-                .path("/internal/channel-admin/profiles/{channelProfileId}/template-bindings/{assistantId}/{messageType}/{messageSubtype}/{messageVersion}")
+                .path("/internal/channel-admin/profiles/{channelProfileId}/template-bindings/{entryId}/{messageType}/{messageSubtype}/{messageVersion}")
                 .queryParam("expectedRevision", expectedRevision)
-                .build(channelProfileId, assistantId, messageType, messageSubtype, messageVersion))
+                .build(channelProfileId, entryId, messageType, messageSubtype, messageVersion))
             .retrieve()
             .body(new ParameterizedTypeReference<ApiEnvelope<ChannelTemplateBinding>>() {
             })));
@@ -286,8 +286,8 @@ public class ChannelGatewayClient {
             snapshot.channelProfileId(),
             snapshot.externalConversationId(),
             snapshot.externalUserId(),
-            snapshot.assistantId(),
-            snapshot.customerId(),
+            snapshot.entryId(),
+            snapshot.participantId(),
             snapshot.sessionId(),
             com.agentyard.contracts.channel.ChannelContracts.ChannelConversationBindingStatus.valueOf(snapshot.bindingStatus()),
             java.util.Map.of(),

@@ -11,10 +11,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import com.agentyard.contracts.channel.ChannelContracts;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelOutboundFrame;
 import com.agentyard.contracts.channel.ChannelContracts.ChannelOutboundFrameKind;
-import com.agentyard.contracts.session.SessionContracts.SessionMessageRole;
-import com.agentyard.persistence.session.SessionRuntimeStore;
 import com.agentyard.platform.channel.ChannelOutboundFramePublisher.FinalReplayWindowExhausted;
-import com.agentyard.platform.session.SessionRuntimeRepository;
 import com.agentyard.platform.shared.redis.RedisSharedStateProperties;
 import com.agentyard.shared.redis.RedisJsonCodec;
 import com.agentyard.shared.redis.RedisKeyspace;
@@ -44,11 +41,11 @@ class ChannelOutboundFramePublisherTest {
 
     @Test
     void lastEventIdMissDoesNotBlockDurableFinalReplay() {
-        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        ChannelCollaborationOutbox repository = mock(ChannelCollaborationOutbox.class);
         RedisPubSubBus pubSubBus = mock(RedisPubSubBus.class);
         TrackingSseEmitter emitter = new TrackingSseEmitter();
         ChannelOutboundFramePublisher publisher = publisher(repository, pubSubBus, emitter);
-        when(repository.listChannelOutboundFinalMessages("channel-profile-1", 0L, 101))
+        when(repository.listFinalFrames("channel-profile-1", 0L, 101))
             .thenReturn(List.of(finalMessage(11L, "message-11")));
         publisher.publishTransient(transientFrame(1L));
 
@@ -63,10 +60,10 @@ class ChannelOutboundFramePublisherTest {
 
     @Test
     void emitsWindowExhaustedWhenFinalReplayBacklogExceedsMax() {
-        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        ChannelCollaborationOutbox repository = mock(ChannelCollaborationOutbox.class);
         TrackingSseEmitter emitter = new TrackingSseEmitter();
         ChannelOutboundFramePublisher publisher = publisher(repository, mock(RedisPubSubBus.class), emitter);
-        when(repository.listChannelOutboundFinalMessages("channel-profile-1", 0L, 3)).thenReturn(List.of(
+        when(repository.listFinalFrames("channel-profile-1", 0L, 3)).thenReturn(List.of(
             finalMessage(7L, "message-7"),
             finalMessage(8L, "message-8"),
             finalMessage(9L, "message-9")
@@ -82,31 +79,31 @@ class ChannelOutboundFramePublisherTest {
 
     @Test
     void finalReplayStartsAfterCheckpointAndUsesStableFinalFrameShape() {
-        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        ChannelCollaborationOutbox repository = mock(ChannelCollaborationOutbox.class);
         TrackingSseEmitter emitter = new TrackingSseEmitter();
         ChannelOutboundFramePublisher publisher = publisher(repository, mock(RedisPubSubBus.class), emitter);
-        when(repository.listChannelOutboundFinalMessages("channel-profile-1", 10L, 101))
+        when(repository.listFinalFrames("channel-profile-1", 10L, 101))
             .thenReturn(List.of(finalMessage(12L, "message-12")));
 
         publisher.connect("channel-profile-1", null, 10L, null);
 
         ChannelOutboundFrame frame = emitter.frames().get(0);
-        assertEquals("channel-profile-1:session-1:message-12:FINAL_DELIVERY", frame.frameId());
+        assertEquals("channel-profile-1:12:FINAL_DELIVERY", frame.frameId());
         assertEquals(ChannelContracts.channelOutboundFrameIdempotencyKey(frame.frameId()), frame.idempotencyKey());
         assertNotEquals(frame.frameId(), frame.idempotencyKey());
         assertTrue(frame.idempotencyKey().length() <= 50);
         assertEquals(12L, frame.finalSequence());
         assertEquals("message-12", frame.payload().get("sessionMessageId"));
-        assertEquals(3L, frame.payload().get("messageSequence"));
+        assertEquals(12L, frame.payload().get("messageSequence"));
         assertEquals(List.of(Map.of("type", "TEXT", "text", "hello message-12")), frame.payload().get("messageBlocks"));
     }
 
     @Test
     void emitsHeartbeatAsCommentWithoutCursorEventOrData() {
-        SessionRuntimeRepository repository = mock(SessionRuntimeRepository.class);
+        ChannelCollaborationOutbox repository = mock(ChannelCollaborationOutbox.class);
         TrackingSseEmitter emitter = new TrackingSseEmitter();
         ChannelOutboundFramePublisher publisher = publisher(repository, mock(RedisPubSubBus.class), emitter);
-        when(repository.listChannelOutboundFinalMessages("channel-profile-1", 10L, 101))
+        when(repository.listFinalFrames("channel-profile-1", 10L, 101))
             .thenReturn(List.of())
             .thenReturn(List.of(finalMessage(12L, "message-12")));
 
@@ -124,7 +121,7 @@ class ChannelOutboundFramePublisherTest {
     }
 
     private ChannelOutboundFramePublisher publisher(
-        SessionRuntimeRepository repository,
+        ChannelCollaborationOutbox repository,
         RedisPubSubBus pubSubBus,
         TrackingSseEmitter emitter
     ) {
@@ -154,23 +151,13 @@ class ChannelOutboundFramePublisherTest {
         return publisher;
     }
 
-    private static SessionRuntimeStore.ChannelOutboundFinalMessageData finalMessage(long finalSequence, String messageId) {
-        Instant now = Instant.parse("2026-05-02T00:00:00Z");
-        return new SessionRuntimeStore.ChannelOutboundFinalMessageData(
-            finalSequence,
-            messageId,
-            "session-1",
-            3L,
-            SessionMessageRole.ASSISTANT,
-            List.of(Map.of("type", "TEXT", "text", "hello " + messageId)),
-            Map.of(),
-            now,
-            now,
-            "channel-profile-1",
-            "provider.acme",
-            "chat-1",
-            "assistant-1"
-        );
+    private static ChannelOutboundFrame finalMessage(long sequence, String messageId) {
+        String frameId = "channel-profile-1:" + sequence + ":FINAL_DELIVERY";
+        return new ChannelOutboundFrame(ChannelContracts.CHANNEL_OUTBOUND_FRAME_PROTOCOL, frameId,
+            "channel-profile-1", "provider.acme", "entry-1", "chat-1", "session-1", null, null, null,
+            sequence, ChannelOutboundFrameKind.FINAL_DELIVERY, Instant.parse("2026-05-02T00:00:00Z"),
+            ChannelContracts.channelOutboundFrameIdempotencyKey(frameId), Map.of("sessionMessageId", messageId,
+                "messageSequence",sequence,"messageBlocks",List.of(Map.of("type","TEXT","text","hello " + messageId))), null);
     }
 
     private static ChannelOutboundFrame transientFrame(long sourceSeq) {
@@ -189,7 +176,7 @@ class ChannelOutboundFramePublisherTest {
             ChannelOutboundFrameKind.TYPING_START,
             Instant.parse("2026-05-02T00:00:00Z"),
             "channel-profile-1:exec-1:" + sourceSeq + ":TYPING_START",
-            Map.of("replyMessageId", "message-1"),
+            Map.of("messageId", "message-1"),
             null
         );
     }

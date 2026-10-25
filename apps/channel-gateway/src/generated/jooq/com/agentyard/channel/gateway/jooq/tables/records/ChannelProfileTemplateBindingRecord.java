@@ -52,18 +52,16 @@ public class ChannelProfileTemplateBindingRecord extends UpdatableRecordImpl<Cha
     }
 
     /**
-     * Setter for
-     * <code>public.channel_profile_template_binding.assistant_id</code>.
+     * Setter for <code>public.channel_profile_template_binding.entry_id</code>.
      */
-    public void setAssistantId(String value) {
+    public void setEntryId(String value) {
         set(2, value);
     }
 
     /**
-     * Getter for
-     * <code>public.channel_profile_template_binding.assistant_id</code>.
+     * Getter for <code>public.channel_profile_template_binding.entry_id</code>.
      */
-    public String getAssistantId() {
+    public String getEntryId() {
         return (String) get(2);
     }
 
@@ -278,12 +276,12 @@ public class ChannelProfileTemplateBindingRecord extends UpdatableRecordImpl<Cha
     /**
      * Create a detached, initialised ChannelProfileTemplateBindingRecord
      */
-    public ChannelProfileTemplateBindingRecord(String id, String channelProfileId, String assistantId, String messageType, String messageSubtype, String messageVersion, String externalTemplateId, String externalTemplateVersion, Boolean enabled, JSONB variableSchema, String displayName, String externalEditUrl, Long revision, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+    public ChannelProfileTemplateBindingRecord(String id, String channelProfileId, String entryId, String messageType, String messageSubtype, String messageVersion, String externalTemplateId, String externalTemplateVersion, Boolean enabled, JSONB variableSchema, String displayName, String externalEditUrl, Long revision, OffsetDateTime createdAt, OffsetDateTime updatedAt) {
         super(ChannelProfileTemplateBinding.CHANNEL_PROFILE_TEMPLATE_BINDING);
 
         setId(id);
         setChannelProfileId(channelProfileId);
-        setAssistantId(assistantId);
+        setEntryId(entryId);
         setMessageType(messageType);
         setMessageSubtype(messageSubtype);
         setMessageVersion(messageVersion);

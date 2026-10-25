@@ -47,10 +47,10 @@ class ChannelContractsTest {
             "profile-1:exec-1:2:DRAFT_UPDATE",
             "profile-1",
             "provider.acme",
-            "assistant-1",
+            "entry-1",
             "chat-1",
             "session-1",
-            "turn-1",
+            "message-1",
             "exec-1",
             2L,
             null,
@@ -58,7 +58,7 @@ class ChannelContractsTest {
             Instant.parse("2026-05-05T00:00:00Z"),
             "profile-1:exec-1:2:DRAFT_UPDATE",
             Map.of(
-                "replyMessageId", "session-message-reply-1",
+                "messageId", "activation-1:reply",
                 "blockId", "reply-block-1",
                 "blockType", "TEXT",
                 "delta", delta
